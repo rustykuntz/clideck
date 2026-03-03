@@ -9,44 +9,61 @@ Implemented foundation
 - PTY sessions run through `node-pty` and render in the browser via xterm.js.
 - The `node-pty` macOS `spawn-helper` permission issue is handled automatically at startup.
 - Settings persist to a local `config.json` file in the project root.
-- Config schema currently includes:
-- `defaultPath`
-- `commands`
-- `profiles`
-- `prompts`
-- The `+` button is now a smart launcher:
-- If one enabled command exists, it launches immediately.
-- If multiple enabled commands exist, it shows a dropdown.
-- Sessions auto-name from the selected command label unless renamed manually.
-- A basic Settings overlay exists with:
-- default working directory
-- CLI command list
-- add/remove/enable/disable commands
-- auto-save behavior
-- A backend directory-listing message exists (`dirs.list`) for a future folder picker UI.
+- Config schema includes: `defaultPath`, `commands`, `profiles`, `prompts`, `defaultProfile`, `confirmClose`.
+- Agent presets defined in `agent-presets.json` (Claude Code, Codex, Gemini CLI, Shell).
+- Server sends presets on WebSocket connect (`type: 'presets'`).
+- Session creation uses an inline creator card in the sidebar panel:
+  - Random fun session name placeholders (Color + Animal combos, e.g. "Blue Panda").
+  - Agent preset buttons with icons rendered from presets message.
+  - MRU ordering: last-used agent floats to top, Shell always last.
+  - Clicking an agent auto-creates the matching command in config if needed, then spawns the session.
+- Left navigation rail with 4 icons: Sessions, Projects, Prompt Library, Settings.
+  - Rail acts as a unified menu — clicking any icon switches context.
+  - Settings opens as an overlay in main; panel items switch sidebar content.
+- Profiles / theme system:
+  - 10 built-in terminal themes (Default, Dracula, Nord, Catppuccin Mocha, Solarized Dark, One Dark, Monokai, Tokyo Night, GitHub Dark, Gruvbox Dark).
+  - Per-session profile switching via colored accent dot in sidebar.
+  - Progressive settings UI: single profile = "Appearance" (just theme + accent), multiple = "Terminal Styles" with cards, stars, and MRU.
+  - Custom Tailwind-styled theme dropdown with color preview strips (replaces native selects).
+- Settings overlay with two-panel layout: category nav sidebar (General, CLI Agents, Appearance) + content panels.
+- Close confirmation modal (toggleable via settings).
+- Folder picker modal with directory browsing.
+- Tailwind CSS v3 compiled once to static file (`npm run build:css`).
+- Session resume infrastructure (backend): sessions.json persistence, resumable session list, resume command support.
 
 Stability fixes already in place
-- Empty command lists now fall back to a shell command.
-- Command parsing now supports quoted arguments better than the original whitespace split.
+- Empty command lists fall back to a shell command.
+- Command parsing supports quoted arguments.
 - Working directories are validated and fall back safely.
 - Config defaults are deep-copied, avoiding shared mutable default arrays.
-- Adding a command is now persisted immediately.
+- Config migration backfills empty profiles.
+- Static file serving has path traversal protection.
+- Settings scrolling uses `min-h-0` for proper flexbox overflow.
 
 Current code structure
 - Backend:
-- `server.js` for HTTP/WebSocket bootstrap
-- `config.js` for config load/save
-- `sessions.js` for PTY/session lifecycle
-- `handlers.js` for WebSocket dispatch
-- `utils.js` for shared backend helpers
-- Frontend:
-- `public/index.html` for markup and CSS
-- `public/js/app.js` for app bootstrap
-- `public/js/state.js` for shared client state
-- `public/js/terminals.js` for terminal/session UI behavior
-- `public/js/settings.js` for settings panel logic
-- `public/js/launcher.js` for launcher dropdown behavior
-- `public/js/utils.js` for small frontend helpers
+  - `server.js` — HTTP/WebSocket bootstrap
+  - `config.js` — config load/save with migration
+  - `sessions.js` — PTY/session lifecycle, resume, persistence
+  - `handlers.js` — WebSocket message dispatch (sends config, themes, presets, sessions, resumable on connect)
+  - `utils.js` — shared backend helpers
+  - `themes.js` — 10 built-in terminal theme presets
+  - `agent-presets.json` — CLI agent definitions (Claude Code, Codex, Gemini CLI, Shell)
+- Frontend (ES modules in `public/js/`):
+  - `app.js` — app bootstrap, WebSocket message routing
+  - `state.js` — shared client state (ws, terms, cfg, themes, presets, resumable)
+  - `terminals.js` — terminal add/remove/select/rename, per-session profile picker dropdown
+  - `settings.js` — settings panel rendering, custom theme dropdown, save logic
+  - `creator.js` — inline session creation card with agent preset buttons
+  - `nav.js` — left navigation rail panel switching
+  - `profiles.js` — profile/theme resolution helpers
+  - `confirm.js` — close confirmation modal
+  - `folder-picker.js` — directory browser modal
+  - `utils.js` — small frontend helpers (esc, debounce)
+- Styling:
+  - `src/input.css` — Tailwind source with custom `.term-wrap` rules
+  - `public/tailwind.css` — compiled Tailwind output
+  - `tailwind.config.js` — Tailwind v3 config
 
 Product Direction
 - Keep the PTY architecture.
@@ -57,26 +74,32 @@ Product Direction
 What Is Done vs Not Done
 
 Done
-- Config persistence
-- Basic settings shell
-- CLI command manager
-- Smart launcher
-- Basic default path setting
-- Basic folder picker UI
-- Backend directory listing primitive
-- Initial modular refactor
+- Config persistence with migration
+- Settings overlay (General, Behavior, CLI Commands, Appearance)
+- CLI command manager (add/remove/enable/disable)
+- Inline session creator card (replaced old launcher dropdown)
+- Agent presets integration (presets message, auto-create commands, MRU ordering)
+- Default path setting with folder picker
+- Folder picker modal with directory browsing
+- Close confirmation modal (toggleable)
+- Initial modular refactor (backend: 6 files, frontend: 10 ES modules)
+- Left navigation rail (Sessions, Projects, Prompt Library, Settings)
+- Profiles / theme system (10 presets, per-session switching, progressive settings UI)
+- Custom Tailwind-styled dropdowns (theme picker with color preview strips)
+- Tailwind CSS v3 integration
+- Static file path traversal protection
+- Session resume backend (persistence, resumable list, resume commands)
 
 Not done
-- Left navigation rail (WhatsApp-style app rail)
+- Resume UI (show resumable sessions in sidebar, resume button)
 - Project hierarchy and project-scoped session filtering
 - Folder picker polish (hidden dirs, clearer error/disabled states)
-- Profiles UI and profile application
-- Theme/color system
 - Session metadata (timestamps, previews, unread state)
+- Session status: idle / working (heuristic detection)
+- WhatsApp-style session list layout (thumbnails, preview text, timestamps)
 - Search
 - `All` / `Unread` filters
 - Prompt library UI and injection flow
-- WhatsApp-style session list layout
 
 Next Phase Priorities
 
@@ -87,23 +110,11 @@ Next Phase Priorities
 - clearer disabled/error states
 - better validation feedback when a path cannot be resolved
 
-2. Left Navigation Rail
-- Add a slim left-most navigation rail similar to WhatsApp Web.
-- This rail should be the app-level navigation above the current session list.
-- Initial rail items:
-- `Chats`
-- `Projects`
-- `Prompt Library`
-- `Settings`
-- user avatar / profile entry at the bottom
-
-UI intent
-- Keep the current main session list as the second column.
-- The new left rail should switch the active view/panel, not replace the session list entirely.
-- `Chats` should show the session list.
-- `Projects` should show project navigation/selection.
-- `Prompt Library` should open the prompt library panel.
-- `Settings` should open settings.
+2. Left Navigation Rail — DONE
+- Slim 48px icon rail on the far left with SVG icons.
+- Acts as a unified menu: Sessions, Projects, Prompt Library switch sidebar panels; Settings opens overlay.
+- Active icon highlighted, panels switch instantly, settings close button removed (rail is the menu).
+- Projects and Prompt Library panels show "Coming soon" placeholders.
 
 3. Projects
 - Add a lightweight project layer above sessions.
@@ -135,14 +146,13 @@ Why this matters
 - preferred commands
 - prompt sets
 
-4. Profiles / Theme System
-- Add a real profile system for terminal sessions.
-- Let the user create and manage profiles in Settings.
-- Initial profile scope:
-- terminal background/foreground
-- ANSI palette colors
-- optional UI accent color
-- Allow a profile to be selected per session later.
+4. Profiles / Theme System — DONE
+- 10 built-in theme presets with full ANSI palettes in `themes.js`.
+- Profiles in config: name, themeId, accentColor.
+- Per-session profile switching via colored dot in sidebar (opens preset picker dropdown).
+- Progressive settings UI: single profile = simple "Appearance"; multiple = "Terminal Styles" cards with star-for-default.
+- Custom theme dropdown with color preview strips (no native selects).
+- Theme changes apply instantly to running terminals.
 
 5. Session Metadata Layer
 - Add per-session metadata needed for richer list behavior.
@@ -312,16 +322,20 @@ Layout reference
 - insert into active PTY
 - optional mode to auto-send with newline
 
-12. Session Creation Enhancements
-- Allow each configured command to optionally carry:
-- default profile
-- default working directory override
-- Later, allow the create flow to select command/profile/path intentionally without slowing down the one-click case.
+12. Session Creation Enhancements — PARTIALLY DONE
+- Inline creator card replaces the old launcher dropdown.
+- Agent presets (Claude Code, Codex, Gemini CLI, Shell) rendered as buttons with icons.
+- MRU ordering: last-used agent at top, Shell always last.
+- Random fun session names as placeholders (Color + Animal combos).
+- Auto-creates matching command in config from preset if not found.
+- Still TODO: per-command default profile, per-command default working directory override.
 
 Design Notes
-- The current Settings UI is functional but not yet close to WhatsApp Web quality.
-- The refactor is a good baseline, but further feature work should preserve module boundaries.
+- Settings UI uses Tailwind CSS with custom styled dropdowns (no native selects).
+- Progressive disclosure: simple Appearance section when one profile, full Terminal Styles cards when multiple.
+- The refactor is a good baseline; further feature work should preserve module boundaries.
 - New features should be implemented on top of explicit session metadata, not inferred from DOM state.
+- Two agents work in parallel: one on UI (this workplan), one on command/resume schema. Do not modify config.js DEFAULTS or agent-presets.json from the UI side.
 
 Known Review Note
 - Keep the static file serving path traversal protection intact as the server evolves.
@@ -339,16 +353,13 @@ Open Questions
 - Should we show per-command badges/icons in the session list?
 - Should the folder picker allow hidden directories in an advanced mode?
 
-Recommended Order
-- Harden static file serving
-- Add the left navigation rail
+Recommended Order (remaining)
+- Resume UI (show resumable sessions in sidebar with resume button)
 - Add lightweight project model + project-scoped session filtering
-- Polish folder picker
-- Add profiles/theme system
-- Add session metadata tracking
+- Polish folder picker (hidden dirs, error states)
+- Add session metadata tracking (timestamps, previews)
 - Add heuristic session status (`idle` / `working`)
-- Define resumable command model + persisted session restoration
-- Upgrade session list with timestamp/preview/unread
+- Upgrade session list to WhatsApp-style layout (thumbnails, preview text, timestamps)
 - Add search
 - Add `All` / `Unread` filters
-- Add prompt library
+- Add prompt library UI and injection flow

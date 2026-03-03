@@ -53,60 +53,77 @@
         <span class="text-sm text-slate-600">Coming soon</span>
       </div>
     </div>
+    <!-- Settings panel (category nav in sidebar) -->
+    <div id="panel-settings" class="hidden flex-col flex-1 min-h-0">
+      <div class="px-4 py-3 border-b border-slate-700/50">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Settings</span>
+      </div>
+      <div id="settings-nav" class="flex-1 overflow-y-auto pt-1">
+        <button class="settings-cat active-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-200 bg-slate-800/60 transition-colors" data-cat="general">
+          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 2.9 0 3.4a1.7 1.7 0 0 0-1 2.5c.9 1.6-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-2.9 1.8-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.3a1.7 1.7 0 0 0-1.1-2.6c-1.7-.4-1.7-2.9 0-3.3a1.7 1.7 0 0 0 1.1-2.6c-.9-1.6.8-3.3 2.4-2.4 1 .6 2.3.1 2.5-1"/><circle cx="12" cy="12" r="3"/></svg>
+          General
+        </button>
+        <button class="settings-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800/30 transition-colors" data-cat="agents">
+          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 10l2 2 4-4"/></svg>
+          CLI Agents
+        </button>
+        <button class="settings-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800/30 transition-colors" data-cat="appearance">
+          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8"/><circle cx="12" cy="9" r="1.5" fill="currentColor"/></svg>
+          Appearance
+        </button>
+      </div>
+    </div>
   </aside>
 
   <!-- Main -->
   <main id="main" class="flex-1 flex relative">
     <div id="terminals" class="absolute inset-0" style="pointer-events:none"></div>
+    <!-- TEMPORARY: stats overlay -->
+    <div id="stats-overlay" class="absolute top-2 right-3 z-[100] text-[11px] font-mono text-green-400 px-3 py-2 rounded shadow-lg pointer-events-none hidden" style="background:rgba(0,0,0,0.95)"></div>
     <div id="empty" class="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Press + to create a session</div>
 
-    <!-- Launcher dropdown -->
-    <div id="launcher" class="absolute z-50 hidden min-w-[200px] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1"></div>
+    <!-- Settings overlay (content panels only — category nav is in sidebar panel-settings) -->
+    <div id="settings-overlay" class="absolute inset-0 z-[200] bg-slate-950 hidden overflow-y-auto">
 
-    <!-- Settings overlay -->
-    <div id="settings-overlay" class="absolute inset-0 z-[200] bg-slate-950 hidden flex-col">
-      <div class="px-5 py-4 border-b border-slate-700/50">
-        <span class="text-base font-semibold">Settings</span>
-      </div>
-      <div class="flex-1 min-h-0 overflow-y-auto p-6 max-w-xl">
-
-        <!-- General -->
-        <div class="mb-8">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">General</h3>
-          <div class="mb-3">
-            <label class="block text-xs text-slate-400 mb-1.5">Default working directory</label>
-            <div class="flex gap-2">
-              <input type="text" id="cfg-default-path" placeholder="/Users/you/projects"
-                class="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors">
-              <button class="px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-browse-path">Browse</button>
-            </div>
+      <!-- General -->
+      <div id="settings-general" class="settings-panel p-6 max-w-xl">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">General</h3>
+        <div class="mb-5">
+          <label class="block text-xs text-slate-400 mb-1.5">Default working directory</label>
+          <div class="flex gap-2">
+            <input type="text" id="cfg-default-path" placeholder="/Users/you/projects"
+              class="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors">
+            <button class="px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-browse-path">Browse</button>
           </div>
         </div>
-
-        <!-- Behavior -->
-        <div class="mb-8">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Behavior</h3>
-          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" id="cfg-confirm-close" class="accent-blue-500">
-            Confirm before closing a session
-          </label>
-        </div>
-
-        <!-- CLI Commands -->
-        <div class="mb-8">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">CLI Commands</h3>
-          <div id="cmd-list" class="space-y-2 mb-3"></div>
-          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-cmd">+ Add command</button>
-        </div>
-
-        <!-- Appearance / Terminal Styles -->
-        <div class="mb-8">
-          <h3 id="appearance-title" class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Appearance</h3>
-          <div id="profile-list" class="space-y-2 mb-3"></div>
-          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-profile">+ Add style</button>
-        </div>
-
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 mt-8">Behavior</h3>
+        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+          <input type="checkbox" id="cfg-confirm-close" class="accent-blue-500">
+          Confirm before closing a session
+        </label>
       </div>
+
+      <!-- CLI Agents -->
+      <div id="settings-agents" class="settings-panel hidden p-6 max-w-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">CLI Agents</h3>
+          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-agent">+ Add agent</button>
+        </div>
+        <div id="agent-list" class="space-y-3"></div>
+      </div>
+
+      <!-- Appearance -->
+      <div id="settings-appearance" class="settings-panel hidden p-6 max-w-xl">
+        <h3 id="appearance-title" class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">Appearance</h3>
+        <div id="profile-list" class="space-y-2 mb-3"></div>
+        <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-profile">+ Add style</button>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 mt-8">Monitoring</h3>
+        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+          <input type="checkbox" id="cfg-stats-overlay" class="accent-blue-500">
+          Show process stats overlay (CPU, memory, network)
+        </label>
+      </div>
+
     </div>
 
     <!-- Close confirmation -->

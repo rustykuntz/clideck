@@ -2,7 +2,7 @@
   {
     "presetId": "claude-code",
     "name": "Claude Code",
-    "icon": "🟠",
+    "icon": "/img/claude-code.png",
     "command": "claude",
     "isAgent": true,
     "canResume": true,
@@ -12,7 +12,7 @@
   {
     "presetId": "codex",
     "name": "Codex",
-    "icon": "🟢",
+    "icon": "/img/codex.png",
     "command": "codex",
     "isAgent": true,
     "canResume": true,
@@ -22,7 +22,7 @@
   {
     "presetId": "gemini-cli",
     "name": "Gemini CLI",
-    "icon": "🔵",
+    "icon": "/img/gemini.png",
     "command": "gemini",
     "isAgent": true,
     "canResume": true,
@@ -30,9 +30,19 @@
     "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
   },
   {
+    "presetId": "opencode",
+    "name": "OpenCode",
+    "icon": "/img/opencode.png",
+    "command": "opencode",
+    "isAgent": true,
+    "canResume": true,
+    "resumeCommand": "opencode --session {{sessionId}}",
+    "sessionIdPattern": "(ses_[a-zA-Z0-9]{10,})"
+  },
+  {
     "presetId": "shell",
     "name": "Shell",
-    "icon": "⚫",
+    "icon": "terminal",
     "command": "/bin/zsh",
     "isAgent": false,
     "canResume": false,

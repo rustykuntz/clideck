@@ -1,29 +1,250 @@
 import { state, send } from './state.js';
-import { esc, debounce } from './utils.js';
+import { esc, debounce, agentIcon } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
 import { themePreviewColors } from './profiles.js';
+
+// ── Category navigation ──
+
+function switchCategory(catId) {
+  document.querySelectorAll('.settings-cat').forEach(btn => {
+    const match = btn.dataset.cat === catId;
+    btn.classList.toggle('text-slate-200', match);
+    btn.classList.toggle('bg-slate-800/60', match);
+    btn.classList.toggle('active-cat', match);
+    btn.classList.toggle('text-slate-500', !match);
+    btn.classList.toggle('hover:text-slate-300', !match);
+    btn.classList.toggle('hover:bg-slate-800/30', !match);
+  });
+  document.querySelectorAll('.settings-panel').forEach(p => p.classList.add('hidden'));
+  const panel = document.getElementById(`settings-${catId}`);
+  if (panel) panel.classList.remove('hidden');
+}
+
+document.getElementById('settings-nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.settings-cat');
+  if (btn) switchCategory(btn.dataset.cat);
+});
+
+// ── Render all ──
 
 export function renderSettings() {
   document.getElementById('cfg-default-path').value = state.cfg.defaultPath || '';
   document.getElementById('cfg-confirm-close').checked = state.cfg.confirmClose !== false;
-  renderCommandList();
+  document.getElementById('cfg-stats-overlay').checked = !!state.cfg.statsOverlay;
+  document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
+  renderAgentList();
   renderProfileSection();
 }
 
-// --- Commands ---
+// ── CLI Agents ──
 
-function renderCommandList() {
-  document.getElementById('cmd-list').innerHTML = state.cfg.commands.map((c, i) =>
-    `<div class="cmd-row flex items-center gap-2 p-2.5 bg-slate-800/50 border border-slate-700/50 rounded-lg" data-idx="${i}">
-      <input type="checkbox" ${c.enabled ? 'checked' : ''} class="cmd-enabled accent-blue-500" title="Enabled">
-      <input type="text" value="${esc(c.label)}" class="cmd-label-input flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors" placeholder="Label">
-      <input type="text" value="${esc(c.command)}" class="cmd-command-input flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors font-mono" placeholder="Command">
-      <button class="cmd-del text-slate-500 hover:text-red-400 px-1 transition-colors" title="Remove">&times;</button>
-    </div>`
-  ).join('');
+// ── Icon picker ──
+
+let iconPickerCleanup = null;
+
+function closeIconPicker() {
+  if (iconPickerCleanup) iconPickerCleanup();
 }
 
-// --- Profiles ---
+function getAllIcons() {
+  const icons = [{ value: 'terminal', label: 'Terminal' }];
+  for (const p of (state.presets || [])) {
+    if (p.icon && p.icon !== 'terminal' && !icons.find(i => i.value === p.icon)) {
+      icons.push({ value: p.icon, label: p.name });
+    }
+  }
+  return icons;
+}
+
+function openIconPicker(triggerEl, cardIdx) {
+  closeIconPicker();
+  const rect = triggerEl.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'fixed z-[500] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 p-2 flex gap-2';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+
+  const icons = getAllIcons();
+  menu.innerHTML = icons.map(ic =>
+    `<div class="icon-pick cursor-pointer rounded-lg p-1.5 hover:bg-slate-700 transition-colors" data-icon="${esc(ic.value)}" title="${esc(ic.label)}">
+      ${agentIcon(ic.value)}
+    </div>`
+  ).join('');
+
+  document.body.appendChild(menu);
+
+  const onClick = (e) => {
+    const item = e.target.closest('.icon-pick');
+    if (item) {
+      state.cfg.commands[cardIdx].icon = item.dataset.icon;
+      renderAgentList();
+      saveConfig();
+    }
+    closeIconPicker();
+  };
+  const onOutside = (e) => {
+    if (!menu.contains(e.target) && !triggerEl.contains(e.target)) closeIconPicker();
+  };
+  menu.addEventListener('click', onClick);
+  requestAnimationFrame(() => document.addEventListener('click', onOutside));
+
+  iconPickerCleanup = () => {
+    menu.removeEventListener('click', onClick);
+    document.removeEventListener('click', onOutside);
+    menu.remove();
+    iconPickerCleanup = null;
+  };
+}
+
+function renderAgentList() {
+  document.getElementById('agent-list').innerHTML = state.cfg.commands.map((c, i) => `
+    <div class="agent-card p-4 bg-slate-800/50 border border-slate-700/50 rounded-lg" data-idx="${i}">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="agent-icon-btn cursor-pointer rounded-lg hover:ring-2 hover:ring-slate-500 transition-shadow" title="Change icon">
+          ${agentIcon(c.icon)}
+        </div>
+        <input type="text" value="${esc(c.label)}" class="agent-name flex-1 px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors" placeholder="Agent name">
+        <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none" title="Enabled">
+          <input type="checkbox" ${c.enabled ? 'checked' : ''} class="agent-enabled accent-blue-500">
+          On
+        </label>
+        <button class="agent-del text-slate-500 hover:text-red-400 px-1 text-lg transition-colors" title="Remove">&times;</button>
+      </div>
+      <div class="mb-3">
+        <label class="block text-xs text-slate-500 mb-1">Command</label>
+        <input type="text" value="${esc(c.command)}" class="agent-command w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors font-mono" placeholder="e.g. claude, codex, gemini">
+      </div>
+      <div class="mb-3">
+        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+          <input type="checkbox" ${c.isAgent ? 'checked' : ''} class="agent-is-agent accent-blue-500">
+          AI Agent
+          <span class="text-xs text-slate-500">(enables resume support)</span>
+        </label>
+      </div>
+      <div class="agent-resume-section ${c.isAgent ? '' : 'hidden'} pl-4 border-l-2 border-slate-700 space-y-3">
+        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+          <input type="checkbox" ${c.canResume ? 'checked' : ''} class="agent-can-resume accent-blue-500">
+          Supports session resume
+        </label>
+        <div class="agent-resume-fields ${c.canResume ? '' : 'hidden'} space-y-2">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Resume command <span class="text-slate-600">— use {{sessionId}} as placeholder</span></label>
+            <input type="text" value="${esc(c.resumeCommand || '')}" class="agent-resume-cmd w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors font-mono" placeholder="e.g. claude --resume {{sessionId}}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Session ID pattern <span class="text-slate-600">— regex to capture from terminal output</span></label>
+            <input type="text" value="${esc(c.sessionIdPattern || '')}" class="agent-session-pattern w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors font-mono" placeholder="e.g. Session ID:\\s+([0-9a-f-]{36})">
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Add Agent (preset picker) ──
+
+let presetMenuCleanup = null;
+
+function closePresetMenu() {
+  if (presetMenuCleanup) presetMenuCleanup();
+}
+
+function openPresetMenu(anchorEl) {
+  closePresetMenu();
+  const rect = anchorEl.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'fixed z-[500] min-w-[220px] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+
+  const presets = state.presets || [];
+  menu.innerHTML = presets.map(p => `
+    <div class="preset-item flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors text-sm" data-preset="${p.presetId}">
+      ${agentIcon(p.icon)}
+      <span class="text-slate-200">${esc(p.name)}</span>
+    </div>
+  `).join('') + `
+    <div class="border-t border-slate-700 my-1"></div>
+    <div class="preset-item flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors text-sm" data-preset="custom">
+      <div class="w-8 h-8 rounded bg-slate-700 flex items-center justify-center text-slate-400 text-lg">+</div>
+      <span class="text-slate-200">Custom</span>
+    </div>
+  `;
+
+  document.body.appendChild(menu);
+
+  const onClick = (e) => {
+    const item = e.target.closest('.preset-item');
+    if (!item) return;
+    const presetId = item.dataset.preset;
+    if (presetId === 'custom') {
+      state.cfg.commands.push({
+        id: crypto.randomUUID(), label: '', icon: 'terminal', command: '',
+        enabled: true, defaultPath: '', isAgent: false, canResume: false,
+        resumeCommand: null, sessionIdPattern: null,
+      });
+    } else {
+      const p = presets.find(x => x.presetId === presetId);
+      if (p) state.cfg.commands.push({
+        id: crypto.randomUUID(), label: p.name, icon: p.icon, command: p.command,
+        enabled: true, defaultPath: '', isAgent: p.isAgent, canResume: p.canResume,
+        resumeCommand: p.resumeCommand, sessionIdPattern: p.sessionIdPattern,
+      });
+    }
+    renderAgentList();
+    saveConfig();
+    closePresetMenu();
+  };
+  const onOutside = (e) => {
+    if (!menu.contains(e.target) && !anchorEl.contains(e.target)) closePresetMenu();
+  };
+  menu.addEventListener('click', onClick);
+  requestAnimationFrame(() => document.addEventListener('click', onOutside));
+
+  presetMenuCleanup = () => {
+    menu.removeEventListener('click', onClick);
+    document.removeEventListener('click', onOutside);
+    menu.remove();
+    presetMenuCleanup = null;
+  };
+}
+
+document.getElementById('btn-add-agent').addEventListener('click', (e) => openPresetMenu(e.currentTarget));
+
+// ── Agent list events ──
+
+const agentList = document.getElementById('agent-list');
+
+agentList.addEventListener('click', (e) => {
+  const iconBtn = e.target.closest('.agent-icon-btn');
+  if (iconBtn) {
+    const idx = +iconBtn.closest('.agent-card').dataset.idx;
+    openIconPicker(iconBtn, idx);
+    return;
+  }
+  if (e.target.classList.contains('agent-del')) {
+    const idx = +e.target.closest('.agent-card').dataset.idx;
+    state.cfg.commands.splice(idx, 1);
+    renderAgentList();
+    saveConfig();
+  }
+});
+
+agentList.addEventListener('change', (e) => {
+  if (e.target.classList.contains('agent-is-agent')) {
+    const card = e.target.closest('.agent-card');
+    card.querySelector('.agent-resume-section').classList.toggle('hidden', !e.target.checked);
+  }
+  if (e.target.classList.contains('agent-can-resume')) {
+    const card = e.target.closest('.agent-card');
+    card.querySelector('.agent-resume-fields').classList.toggle('hidden', !e.target.checked);
+  }
+  saveConfig();
+});
+
+agentList.addEventListener('input', debounce(saveConfig, 500));
+
+// ── Profiles / Appearance ──
 
 function stripHTML(themeId) {
   const colors = themePreviewColors(themeId);
@@ -54,8 +275,7 @@ function openThemeMenu(triggerEl) {
   const hidden = row.querySelector('.prof-theme');
 
   const rect = triggerEl.getBoundingClientRect();
-  const maxH = 280;
-  const gap = 4;
+  const maxH = 280, gap = 4;
   const spaceBelow = window.innerHeight - rect.bottom - gap;
   const spaceAbove = rect.top - gap;
   const openAbove = spaceBelow < maxH && spaceAbove > spaceBelow;
@@ -65,11 +285,8 @@ function openThemeMenu(triggerEl) {
   menu.className = 'fixed z-[500] min-w-[260px] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1 overflow-y-auto';
   menu.style.maxHeight = menuH + 'px';
   menu.style.left = rect.left + 'px';
-  if (openAbove) {
-    menu.style.bottom = (window.innerHeight - rect.top + gap) + 'px';
-  } else {
-    menu.style.top = (rect.bottom + gap) + 'px';
-  }
+  if (openAbove) menu.style.bottom = (window.innerHeight - rect.top + gap) + 'px';
+  else menu.style.top = (rect.bottom + gap) + 'px';
 
   menu.innerHTML = state.themes.map(t => {
     const colors = themePreviewColors(t.id);
@@ -88,8 +305,7 @@ function openThemeMenu(triggerEl) {
     const item = e.target.closest('.theme-option');
     if (item) {
       hidden.value = item.dataset.value;
-      triggerEl.querySelector('.theme-label').textContent =
-        state.themes.find(t => t.id === item.dataset.value)?.name || 'Default';
+      triggerEl.querySelector('.theme-label').textContent = state.themes.find(t => t.id === item.dataset.value)?.name || 'Default';
       const strip = row.querySelector('.theme-strip');
       if (strip) strip.innerHTML = stripHTML(item.dataset.value);
       saveConfig();
@@ -156,18 +372,26 @@ function renderProfileSection() {
   }
 }
 
-// --- Save ---
+// ── Save ──
 
 function saveConfig() {
-  // Commands
-  const cmdRows = document.querySelectorAll('.cmd-row');
-  state.cfg.commands = [...cmdRows].map((row, i) => ({
-    id: state.cfg.commands[i]?.id || crypto.randomUUID(),
-    label: row.querySelector('.cmd-label-input').value.trim() || 'Untitled',
-    command: row.querySelector('.cmd-command-input').value.trim() || '/bin/zsh',
-    enabled: row.querySelector('.cmd-enabled').checked,
-    defaultPath: state.cfg.commands[i]?.defaultPath || '',
-  }));
+  // Agents
+  const agentCards = document.querySelectorAll('.agent-card');
+  state.cfg.commands = [...agentCards].map((card, i) => {
+    const existing = state.cfg.commands[i] || {};
+    return {
+      id: existing.id || crypto.randomUUID(),
+      label: card.querySelector('.agent-name').value.trim() || 'Untitled',
+      icon: existing.icon || 'terminal',
+      command: card.querySelector('.agent-command').value.trim() || '/bin/zsh',
+      enabled: card.querySelector('.agent-enabled').checked,
+      defaultPath: existing.defaultPath || '',
+      isAgent: card.querySelector('.agent-is-agent').checked,
+      canResume: card.querySelector('.agent-can-resume').checked,
+      resumeCommand: card.querySelector('.agent-resume-cmd')?.value.trim() || null,
+      sessionIdPattern: card.querySelector('.agent-session-pattern')?.value.trim() || null,
+    };
+  });
 
   // Profiles
   const profRows = document.querySelectorAll('.profile-row');
@@ -180,31 +404,17 @@ function saveConfig() {
 
   state.cfg.defaultPath = document.getElementById('cfg-default-path').value.trim();
   state.cfg.confirmClose = document.getElementById('cfg-confirm-close').checked;
+  state.cfg.statsOverlay = document.getElementById('cfg-stats-overlay').checked;
+  document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
   send({ type: 'config.update', config: state.cfg });
 }
 
-// --- Events: Commands ---
-document.getElementById('cmd-list').addEventListener('change', saveConfig);
-document.getElementById('cmd-list').addEventListener('input', debounce(saveConfig, 500));
+// ── Events: General ──
 document.getElementById('cfg-default-path').addEventListener('input', debounce(saveConfig, 500));
 document.getElementById('cfg-confirm-close').addEventListener('change', saveConfig);
+document.getElementById('cfg-stats-overlay').addEventListener('change', saveConfig);
 
-document.getElementById('btn-add-cmd').addEventListener('click', () => {
-  state.cfg.commands.push({ id: crypto.randomUUID(), label: '', command: '', enabled: true, defaultPath: '' });
-  renderCommandList();
-  saveConfig();
-});
-
-document.getElementById('cmd-list').addEventListener('click', (e) => {
-  if (e.target.classList.contains('cmd-del')) {
-    const idx = +e.target.closest('.cmd-row').dataset.idx;
-    state.cfg.commands.splice(idx, 1);
-    renderCommandList();
-    saveConfig();
-  }
-});
-
-// --- Events: Profiles ---
+// ── Events: Profiles ──
 document.getElementById('profile-list').addEventListener('change', saveConfig);
 document.getElementById('profile-list').addEventListener('input', debounce(saveConfig, 500));
 
@@ -222,12 +432,9 @@ document.getElementById('btn-add-profile').addEventListener('click', () => {
 
 document.getElementById('profile-list').addEventListener('click', (e) => {
   const trigger = e.target.closest('.theme-trigger');
-  if (trigger) {
-    openThemeMenu(trigger);
-    return;
-  }
+  if (trigger) { openThemeMenu(trigger); return; }
   if (e.target.classList.contains('prof-default')) {
-    saveConfig(); // persist any pending edits first
+    saveConfig();
     const idx = +e.target.closest('.profile-row').dataset.idx;
     state.cfg.defaultProfile = state.cfg.profiles[idx].id;
     renderProfileSection();
@@ -244,7 +451,7 @@ document.getElementById('profile-list').addEventListener('click', (e) => {
   }
 });
 
-// --- Browse ---
+// ── Browse ──
 document.getElementById('btn-browse-path').addEventListener('click', () => {
   const current = document.getElementById('cfg-default-path').value.trim();
   openFolderPicker(current, (path) => {

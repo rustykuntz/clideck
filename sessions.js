@@ -2,6 +2,7 @@ const pty = require('node-pty');
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
 const { parseCommand, resolveValidDir } = require('./utils');
+const stats = require('./stats'); // TEMPORARY
 
 const MAX_BUFFER = 200 * 1024;
 const SAVED_PATH = join(__dirname, 'sessions.json');
@@ -40,10 +41,12 @@ function spawnSession(id, cmd, parts, cwd, name, profileId, commandId) {
       const match = session.buffer.match(sessionIdRe);
       if (match) session.sessionToken = match[1];
     }
+    stats.trackOut(id, data); // TEMPORARY
     broadcast({ type: 'output', id, data });
   });
 
   term.onExit(() => {
+    stats.clear(id); // TEMPORARY
     sessions.delete(id);
     broadcast({ type: 'closed', id });
   });
@@ -118,7 +121,7 @@ function resume(msg, ws, cfg) {
 
 // --- Standard session operations ---
 
-function input(msg)  { sessions.get(msg.id)?.pty.write(msg.data); }
+function input(msg)  { stats.trackIn(msg.id, msg.data.length); sessions.get(msg.id)?.pty.write(msg.data); } // TEMPORARY: trackIn
 function resize(msg) { sessions.get(msg.id)?.pty.resize(msg.cols, msg.rows); }
 
 function rename(msg) {
@@ -194,7 +197,7 @@ function shutdown(cfg) {
 }
 
 module.exports = {
-  clients, broadcast,
+  clients, broadcast, getSessions: () => sessions,
   create, resume, input, resize, rename, setProfile, close,
   list, getResumable, sendBuffers,
   loadSessions, shutdown,

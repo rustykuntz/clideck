@@ -10,7 +10,7 @@ ensurePtyHelper();
 sessions.loadSessions();
 
 const PORT = 4000;
-const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' };
+const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const ALIASES = {
   '/xterm.css':    join(__dirname, 'node_modules/xterm/css/xterm.css'),
   '/xterm.js':     join(__dirname, 'node_modules/xterm/lib/xterm.js'),
@@ -33,9 +33,14 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on('connection', onConnection);
 
+// TEMPORARY: stats overlay
+const stats = require('./stats');
+stats.start(sessions.getSessions(), sessions.broadcast);
+
 // Graceful shutdown: persist sessions before exit
 const { getConfig } = require('./handlers');
 function onShutdown() {
+  stats.stop();
   sessions.shutdown(getConfig());
   process.exit(0);
 }

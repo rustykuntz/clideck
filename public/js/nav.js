@@ -1,6 +1,6 @@
 import { closeThemeMenu } from './settings.js';
 
-const PANELS = ['chats', 'projects', 'prompts'];
+const ALL_PANELS = ['chats', 'projects', 'prompts', 'settings'];
 const ACTIVE = ['text-slate-200', 'bg-slate-800'];
 const INACTIVE = ['text-slate-500', 'hover:text-slate-300', 'hover:bg-slate-800/50'];
 
@@ -12,13 +12,18 @@ function setRailActive(id) {
   });
 }
 
-function showSettings() {
-  PANELS.forEach(id => {
+function hideAllPanels() {
+  ALL_PANELS.forEach(id => {
     const el = document.getElementById(`panel-${id}`);
     if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
   });
+}
+
+function showSettings() {
+  hideAllPanels();
+  document.getElementById('panel-settings').classList.remove('hidden');
+  document.getElementById('panel-settings').classList.add('flex');
   document.getElementById('settings-overlay').classList.remove('hidden');
-  document.getElementById('settings-overlay').classList.add('flex');
   document.getElementById('btn-new').classList.add('opacity-30', 'pointer-events-none');
   setRailActive('settings');
 }
@@ -26,18 +31,15 @@ function showSettings() {
 function hideSettings() {
   closeThemeMenu();
   document.getElementById('settings-overlay').classList.add('hidden');
-  document.getElementById('settings-overlay').classList.remove('flex');
   document.getElementById('btn-new').classList.remove('opacity-30', 'pointer-events-none');
 }
 
 export function switchPanel(panelId) {
   hideSettings();
-  PANELS.forEach(id => {
-    const el = document.getElementById(`panel-${id}`);
-    if (!el) return;
-    el.classList.toggle('hidden', id !== panelId);
-    el.classList.toggle('flex', id === panelId);
-  });
+  hideAllPanels();
+  document.getElementById('session-creator')?.remove();
+  const el = document.getElementById(`panel-${panelId}`);
+  if (el) { el.classList.remove('hidden'); el.classList.add('flex'); }
   setRailActive(panelId);
 }
 

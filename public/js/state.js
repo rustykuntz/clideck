@@ -4,6 +4,8 @@ export const state = {
   active: null,
   cfg: { commands: [], defaultPath: '', profiles: [], defaultProfile: 'default' },
   themes: [],
+  presets: [],
+  resumable: [],
 };
 
 export function send(msg) {

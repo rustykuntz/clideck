@@ -7,7 +7,7 @@ const DEFAULTS = {
   defaultPath: process.env.HOME || '/tmp',
   commands: [
     {
-      id: '1', label: 'Shell', icon: '⚫', command: '/bin/zsh', enabled: true,
+      id: '1', label: 'Shell', icon: 'terminal', command: '/bin/zsh', enabled: true,
       defaultPath: '', isAgent: false, canResume: false, resumeCommand: null, sessionIdPattern: null,
     },
   ],
@@ -35,14 +35,28 @@ function migrate(cfg) {
   if (!cfg.defaultProfile) {
     cfg.defaultProfile = 'default';
   }
-  // Backfill missing fields on existing commands
+  // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
     const preset = matchPreset(cmd);
-    if (cmd.icon === undefined)             cmd.icon = preset?.icon || '⚫';
+    // Icon always syncs from preset — the preset is the source of truth for logos
+    if (preset) cmd.icon = preset.icon;
+    else if (!cmd.icon) cmd.icon = 'terminal';
     if (cmd.isAgent === undefined)          cmd.isAgent = preset?.isAgent ?? false;
     if (cmd.canResume === undefined)        cmd.canResume = preset?.canResume ?? false;
     if (cmd.resumeCommand === undefined)    cmd.resumeCommand = preset?.resumeCommand || null;
     if (cmd.sessionIdPattern === undefined) cmd.sessionIdPattern = preset?.sessionIdPattern || null;
+  }
+  // Auto-add any shipped presets not yet in the commands list
+  for (const preset of PRESETS) {
+    const exists = cfg.commands.some(c => matchPreset(c)?.presetId === preset.presetId);
+    if (!exists) {
+      cfg.commands.push({
+        id: crypto.randomUUID(), label: preset.name, icon: preset.icon,
+        command: preset.command, enabled: true, defaultPath: '',
+        isAgent: preset.isAgent, canResume: preset.canResume,
+        resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern,
+      });
+    }
   }
   return cfg;
 }

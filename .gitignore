@@ -1,0 +1,15 @@
+node_modules/
+
+# Local app state
+config.json
+sessions.json
+
+# Generated assets
+public/tailwind.css
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store

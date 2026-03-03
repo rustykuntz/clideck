@@ -1,0 +1,42 @@
+[
+  {
+    "presetId": "claude-code",
+    "name": "Claude Code",
+    "icon": "🟠",
+    "command": "claude",
+    "isAgent": true,
+    "canResume": true,
+    "resumeCommand": "claude --resume {{sessionId}}",
+    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+  },
+  {
+    "presetId": "codex",
+    "name": "Codex",
+    "icon": "🟢",
+    "command": "codex",
+    "isAgent": true,
+    "canResume": true,
+    "resumeCommand": "codex resume {{sessionId}}",
+    "sessionIdPattern": "Session:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+  },
+  {
+    "presetId": "gemini-cli",
+    "name": "Gemini CLI",
+    "icon": "🔵",
+    "command": "gemini",
+    "isAgent": true,
+    "canResume": true,
+    "resumeCommand": "gemini --resume {{sessionId}}",
+    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+  },
+  {
+    "presetId": "shell",
+    "name": "Shell",
+    "icon": "⚫",
+    "command": "/bin/zsh",
+    "isAgent": false,
+    "canResume": false,
+    "resumeCommand": null,
+    "sessionIdPattern": null
+  }
+]

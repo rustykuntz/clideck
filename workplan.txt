@@ -1,0 +1,354 @@
+Terminal UI Workplan
+
+Goal
+- Build a local, PTY-based terminal dashboard inspired by WhatsApp Web for managing many CLI agent sessions with better scanability, launch controls, and session organization.
+
+Current State
+
+Implemented foundation
+- PTY sessions run through `node-pty` and render in the browser via xterm.js.
+- The `node-pty` macOS `spawn-helper` permission issue is handled automatically at startup.
+- Settings persist to a local `config.json` file in the project root.
+- Config schema currently includes:
+- `defaultPath`
+- `commands`
+- `profiles`
+- `prompts`
+- The `+` button is now a smart launcher:
+- If one enabled command exists, it launches immediately.
+- If multiple enabled commands exist, it shows a dropdown.
+- Sessions auto-name from the selected command label unless renamed manually.
+- A basic Settings overlay exists with:
+- default working directory
+- CLI command list
+- add/remove/enable/disable commands
+- auto-save behavior
+- A backend directory-listing message exists (`dirs.list`) for a future folder picker UI.
+
+Stability fixes already in place
+- Empty command lists now fall back to a shell command.
+- Command parsing now supports quoted arguments better than the original whitespace split.
+- Working directories are validated and fall back safely.
+- Config defaults are deep-copied, avoiding shared mutable default arrays.
+- Adding a command is now persisted immediately.
+
+Current code structure
+- Backend:
+- `server.js` for HTTP/WebSocket bootstrap
+- `config.js` for config load/save
+- `sessions.js` for PTY/session lifecycle
+- `handlers.js` for WebSocket dispatch
+- `utils.js` for shared backend helpers
+- Frontend:
+- `public/index.html` for markup and CSS
+- `public/js/app.js` for app bootstrap
+- `public/js/state.js` for shared client state
+- `public/js/terminals.js` for terminal/session UI behavior
+- `public/js/settings.js` for settings panel logic
+- `public/js/launcher.js` for launcher dropdown behavior
+- `public/js/utils.js` for small frontend helpers
+
+Product Direction
+- Keep the PTY architecture.
+- Keep the code slim and local-first.
+- Prefer simple, explicit data models over smart-but-fragile abstractions.
+- Continue moving toward a WhatsApp Web-style management experience.
+
+What Is Done vs Not Done
+
+Done
+- Config persistence
+- Basic settings shell
+- CLI command manager
+- Smart launcher
+- Basic default path setting
+- Basic folder picker UI
+- Backend directory listing primitive
+- Initial modular refactor
+
+Not done
+- Left navigation rail (WhatsApp-style app rail)
+- Project hierarchy and project-scoped session filtering
+- Folder picker polish (hidden dirs, clearer error/disabled states)
+- Profiles UI and profile application
+- Theme/color system
+- Session metadata (timestamps, previews, unread state)
+- Search
+- `All` / `Unread` filters
+- Prompt library UI and injection flow
+- WhatsApp-style session list layout
+
+Next Phase Priorities
+
+1. Folder Picker Polish
+- Keep the browse-style directory picker as the primary path selection flow.
+- Improve the remaining UX gaps:
+- hidden-directory access when needed
+- clearer disabled/error states
+- better validation feedback when a path cannot be resolved
+
+2. Left Navigation Rail
+- Add a slim left-most navigation rail similar to WhatsApp Web.
+- This rail should be the app-level navigation above the current session list.
+- Initial rail items:
+- `Chats`
+- `Projects`
+- `Prompt Library`
+- `Settings`
+- user avatar / profile entry at the bottom
+
+UI intent
+- Keep the current main session list as the second column.
+- The new left rail should switch the active view/panel, not replace the session list entirely.
+- `Chats` should show the session list.
+- `Projects` should show project navigation/selection.
+- `Prompt Library` should open the prompt library panel.
+- `Settings` should open settings.
+
+3. Projects
+- Add a lightweight project layer above sessions.
+- A project is a grouping container for multiple sessions.
+- The hierarchy should become:
+- App
+- Project
+- Session
+
+Recommended v1 scope
+- project id
+- project name
+- optional icon or accent color
+- active project selection
+- filter the session list by the selected project
+- fallback project such as `General` or `No Project`
+
+Session behavior
+- Every session should belong to a project.
+- When creating a new session, allow associating it with a project.
+- If the user does not choose one, assign it to the default fallback project.
+- Switching projects should scope the visible session list to that project.
+
+Why this matters
+- It matches the real workflow: one project containing multiple agent sessions.
+- It reduces session-list noise.
+- It creates a natural place for future project-level defaults:
+- default path
+- preferred commands
+- prompt sets
+
+4. Profiles / Theme System
+- Add a real profile system for terminal sessions.
+- Let the user create and manage profiles in Settings.
+- Initial profile scope:
+- terminal background/foreground
+- ANSI palette colors
+- optional UI accent color
+- Allow a profile to be selected per session later.
+
+5. Session Metadata Layer
+- Add per-session metadata needed for richer list behavior.
+- Track:
+- `createdAt`
+- `lastInputAt`
+- `lastOutputAt`
+- `lastViewedAt`
+- `lastActivityAt`
+- `lastPreviewText`
+- `lastPreviewSource` (input or output, but UI can render the same either way)
+- command id/label
+- command type / icon id
+- project id
+- cwd
+- This is the foundation for timestamps, previews, search, and unread.
+
+6. Session Status: Idle / Working
+- Add a visible live status for each session so the user can quickly tell whether an agent is currently active.
+- Initial statuses:
+- `working`
+- `idle`
+
+Recommended v1 detection model
+- Do not try to infer deep semantic state from raw terminal text alone.
+- Start with a timing-based heuristic built on session metadata:
+- when the user sends input that likely starts work, mark the session as `working`
+- while terminal output continues arriving, keep it `working`
+- after a quiet period with no output for a short timeout, switch it back to `idle`
+- Treat PTY output as the primary truth signal because it is direct and reliable.
+
+Suggested metadata / timers
+- `lastStatus`
+- `lastStatusAt`
+- `lastWorkStartAt`
+- `lastOutputAt`
+- `lastInputAt`
+- per-session idle timeout handle (server-side derived state)
+
+Smart behavior
+- Reset the idle timer on each output chunk.
+- Only mark `working` on meaningful input, not every keystroke if possible.
+- Best practical v1 rule:
+- mark `working` when Enter is submitted to the PTY
+- fall back to `working` on any input event if exact submit detection is not available
+
+Future refinement
+- Allow command-specific status adapters later.
+- Some CLI agents may expose stronger signals:
+- resume/wait states
+- explicit "working" text patterns
+- prompt reappearance meaning "idle"
+- Optionally add local CPU / process activity as a secondary hint, not the primary source of truth.
+- If added later, CPU should only extend or increase confidence in `working`; it should not override PTY output on its own.
+- Any CPU-based check should consider the session process tree / process group, not just a single PID.
+- Keep the core system generic, then let specific commands opt into better status detection.
+
+UI placement
+- Show the status directly in the session pill.
+- Preferred treatment:
+- small status icon to the left of the preview line
+- status icon should sit inline before the last preview text
+- `working` should be visually distinct but subtle
+- `idle` should be quiet and low-emphasis
+- The preview text should read like a live status line, for example:
+- working icon + `Compiling main.go...`
+- idle icon + `Waiting for input...`
+
+7. Session Preservation Across Node Restarts
+- Add session restoration after the Node server is closed and started again.
+- Do not try to preserve the original PTY process itself across server shutdown.
+- Instead, restore compatible sessions by relaunching the CLI and using that agent's own resume flow.
+- Session restoration must be capability-based:
+- some commands support resume
+- some commands do not
+- each configured command should be able to declare whether it supports resume and how
+
+Required persisted data for resumable sessions
+- command id / label
+- cwd
+- launch command
+- resume strategy / resume command template
+- any agent-specific resume token, task id, conversation id, or checkpoint data
+- last known display name
+
+Command model extension
+- Each command config should optionally include resumability metadata.
+- Suggested fields:
+- `canResume`
+- `resumeCommand` or `resumeArgsTemplate`
+- `resumeMode` (agent-specific strategy)
+
+Coding-agent wrapper reference
+- The local Rocie `coding-agent` wrapper explicitly supports resume.
+- Its resume flow is:
+- `node skills/coding-agent/run_coding_agent.mjs --resume --task "<ANSWER>" --cwd <PROJECT_DIR>`
+- That means restoration must preserve the project working directory and enough agent state to invoke the resume path correctly.
+
+Restore UX
+- On startup, load previously persisted sessions.
+- For resumable sessions:
+- either auto-restore them
+- or show them as restorable and let the user restore intentionally
+- For non-resumable sessions:
+- preserve history/metadata in the UI if useful, but do not pretend the live session can continue.
+
+8. WhatsApp-Style Session List
+- Upgrade each session pill to show:
+- session thumbnail / avatar
+- manual session title (user-defined display name)
+- last activity timestamp
+- one-line preview of the latest visible terminal text
+- optional unread indicator
+- session status (`idle` / `working`) shown as an inline icon before the preview text
+
+Session thumbnail / avatar
+- Add a thumbnail at the left side of each session row.
+- Use the CLI agent identity as the source of the thumbnail.
+- Preferred approach:
+- use a real icon/logo per CLI agent when available
+- Fallback:
+- generate a simple default avatar from the command type / initials (`CD`, `CC`, etc.)
+- The thumbnail should be stable per command type so sessions are quickly scannable.
+
+Preview line behavior
+- The second line under the session title should show:
+- status icon first
+- then the first visible characters of the latest terminal text
+- The preview can come from either user input or agent output.
+- Do not force the user to care about source in the list; show the latest meaningful text regardless.
+- Truncate to a single line for scanability.
+
+Layout reference
+- Follow the mockup-style structure:
+- left: session thumbnail
+- center top: manual title
+- center bottom: status icon + preview text
+- right: last activity timestamp
+- Timestamp rules:
+- today: exact time
+- yesterday: `Yesterday`
+- within a week: weekday name
+- older: date
+
+9. Search
+- Add a search bar above the session list.
+- Recommended v1 search scope:
+- session name
+- last preview text
+- optional rolling terminal buffer
+- Note:
+- PTY traffic is raw terminal output, not structured messages.
+- True user-message vs agent-message search will require explicit input/output history tracking or parsing rules.
+
+10. Filters: All / Unread
+- Add two pill filters:
+- `All`
+- `Unread`
+- Unread should derive from output activity since last view/read event.
+- Define the exact “mark as read” rule when implementing.
+
+11. Prompt Library
+- Add a prompt library section in Settings.
+- Store reusable prompts/templates in config.
+- v1 interaction:
+- open prompt picker
+- insert into active PTY
+- optional mode to auto-send with newline
+
+12. Session Creation Enhancements
+- Allow each configured command to optionally carry:
+- default profile
+- default working directory override
+- Later, allow the create flow to select command/profile/path intentionally without slowing down the one-click case.
+
+Design Notes
+- The current Settings UI is functional but not yet close to WhatsApp Web quality.
+- The refactor is a good baseline, but further feature work should preserve module boundaries.
+- New features should be implemented on top of explicit session metadata, not inferred from DOM state.
+
+Known Review Note
+- Keep the static file serving path traversal protection intact as the server evolves.
+
+Open Questions
+- Should `Projects` be its own rail view with a project list, or should it directly switch the session column into grouped project mode?
+- Should the fallback project be called `General`, `Inbox`, or `No Project`?
+- Should profiles stay purely visual in v1, or also include command/path defaults?
+- Should status switch to `working` only on Enter, or on any input event in v1?
+- What idle timeout feels right for `working` → `idle` without flicker?
+- Should resumable sessions auto-restore on startup, or should restore always be explicit?
+- How should we represent non-resumable historical sessions after restart: archive, closed entry, or hide them?
+- Should unread clear on focus, click, or only after explicit interaction?
+- Should prompt library default to paste-only, or paste-and-send?
+- Should we show per-command badges/icons in the session list?
+- Should the folder picker allow hidden directories in an advanced mode?
+
+Recommended Order
+- Harden static file serving
+- Add the left navigation rail
+- Add lightweight project model + project-scoped session filtering
+- Polish folder picker
+- Add profiles/theme system
+- Add session metadata tracking
+- Add heuristic session status (`idle` / `working`)
+- Define resumable command model + persisted session restoration
+- Upgrade session list with timestamp/preview/unread
+- Add search
+- Add `All` / `Unread` filters
+- Add prompt library

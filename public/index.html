@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal UI</title>
+  <link rel="stylesheet" href="/xterm.css">
+  <link rel="stylesheet" href="/tailwind.css">
+</head>
+<body class="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
+
+  <!-- Navigation Rail -->
+  <nav id="nav-rail" class="w-12 flex-shrink-0 bg-slate-900 border-r border-slate-700/50 flex flex-col items-center py-3 gap-1">
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-200 bg-slate-800 transition-colors" data-panel="chats" title="Sessions">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </button>
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="projects" title="Projects">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    </button>
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="prompts" title="Prompt Library">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+    </button>
+    <div class="flex-1"></div>
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="rail-settings" title="Settings">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 2.9 0 3.4a1.7 1.7 0 0 0-1 2.5c.9 1.6-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-2.9 1.8-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.3a1.7 1.7 0 0 0-1.1-2.6c-1.7-.4-1.7-2.9 0-3.3a1.7 1.7 0 0 0 1.1-2.6c-.9-1.6.8-3.3 2.4-2.4 1 .6 2.3.1 2.5-1"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="w-64 min-w-[256px] bg-slate-900 border-r border-slate-700/50 flex flex-col">
+    <!-- Chats panel -->
+    <div id="panel-chats" class="flex flex-col flex-1 min-h-0">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Sessions</span>
+        <button class="icon-btn w-7 h-7 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors text-sm" id="btn-new" title="New session">+</button>
+      </div>
+      <div id="session-list" class="flex-1 overflow-y-auto"></div>
+    </div>
+    <!-- Projects panel -->
+    <div id="panel-projects" class="hidden flex-col flex-1 min-h-0">
+      <div class="px-4 py-3 border-b border-slate-700/50">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Projects</span>
+      </div>
+      <div class="flex-1 overflow-y-auto flex items-center justify-center">
+        <span class="text-sm text-slate-600">Coming soon</span>
+      </div>
+    </div>
+    <!-- Prompts panel -->
+    <div id="panel-prompts" class="hidden flex-col flex-1 min-h-0">
+      <div class="px-4 py-3 border-b border-slate-700/50">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Prompt Library</span>
+      </div>
+      <div class="flex-1 overflow-y-auto flex items-center justify-center">
+        <span class="text-sm text-slate-600">Coming soon</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main" class="flex-1 flex relative">
+    <div id="terminals" class="absolute inset-0" style="pointer-events:none"></div>
+    <div id="empty" class="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Press + to create a session</div>
+
+    <!-- Launcher dropdown -->
+    <div id="launcher" class="absolute z-50 hidden min-w-[200px] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1"></div>
+
+    <!-- Settings overlay -->
+    <div id="settings-overlay" class="absolute inset-0 z-[200] bg-slate-950 hidden flex-col">
+      <div class="px-5 py-4 border-b border-slate-700/50">
+        <span class="text-base font-semibold">Settings</span>
+      </div>
+      <div class="flex-1 min-h-0 overflow-y-auto p-6 max-w-xl">
+
+        <!-- General -->
+        <div class="mb-8">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">General</h3>
+          <div class="mb-3">
+            <label class="block text-xs text-slate-400 mb-1.5">Default working directory</label>
+            <div class="flex gap-2">
+              <input type="text" id="cfg-default-path" placeholder="/Users/you/projects"
+                class="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors">
+              <button class="px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-browse-path">Browse</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Behavior -->
+        <div class="mb-8">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Behavior</h3>
+          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input type="checkbox" id="cfg-confirm-close" class="accent-blue-500">
+            Confirm before closing a session
+          </label>
+        </div>
+
+        <!-- CLI Commands -->
+        <div class="mb-8">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">CLI Commands</h3>
+          <div id="cmd-list" class="space-y-2 mb-3"></div>
+          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-cmd">+ Add command</button>
+        </div>
+
+        <!-- Appearance / Terminal Styles -->
+        <div class="mb-8">
+          <h3 id="appearance-title" class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Appearance</h3>
+          <div id="profile-list" class="space-y-2 mb-3"></div>
+          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-profile">+ Add style</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Close confirmation -->
+    <div id="confirm-close" class="absolute inset-0 z-[250] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
+      <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl shadow-black/50 w-80 flex flex-col">
+        <div class="px-5 py-4 text-sm">Close this session? The terminal process will be killed.</div>
+        <div class="px-4 py-3 border-t border-slate-700 flex justify-end gap-2">
+          <button id="cc-cancel" class="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
+          <button id="cc-confirm" class="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-500 transition-colors">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Folder picker -->
+    <div id="folder-picker" class="absolute inset-0 z-[300] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
+      <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl shadow-black/50 w-[420px] max-h-[460px] flex flex-col">
+        <div class="px-4 py-3 border-b border-slate-700 text-sm font-semibold">Choose Directory</div>
+        <div id="fp-path" class="px-4 py-2 text-xs text-slate-400 border-b border-slate-700 break-all"></div>
+        <div id="fp-listing" class="flex-1 overflow-y-auto py-1 min-h-[200px]"></div>
+        <div class="px-4 py-3 border-t border-slate-700 flex justify-end gap-2">
+          <button id="fp-cancel" class="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
+          <button id="fp-select" class="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed">Select</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/xterm.js"></script>
+  <script src="/addon-fit.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

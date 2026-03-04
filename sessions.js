@@ -20,7 +20,7 @@ function broadcast(msg) {
 
 // --- Spawn a PTY and wire up a session ---
 
-function spawnSession(id, cmd, parts, cwd, name, profileId, commandId) {
+function spawnSession(id, cmd, parts, cwd, name, themeId, commandId) {
   let term;
   try {
     term = pty.spawn(parts[0], parts.slice(1), {
@@ -31,7 +31,7 @@ function spawnSession(id, cmd, parts, cwd, name, profileId, commandId) {
   }
 
   const sessionIdRe = cmd.sessionIdPattern ? new RegExp(cmd.sessionIdPattern) : null;
-  const session = { name, profileId, commandId, cwd, pty: term, buffer: '', sessionToken: null };
+  const session = { name, themeId, commandId, cwd, pty: term, buffer: '', sessionToken: null };
   sessions.set(id, session);
 
   term.onData((data) => {
@@ -66,17 +66,17 @@ function create(msg, ws, cfg) {
     || { label: 'Shell', command: '/bin/zsh' };
   const parts = parseCommand(cmd.command);
   const cwd = resolveValidDir(msg.cwd || cmd.defaultPath || cfg.defaultPath);
-  const profileId = msg.profileId || cmd.defaultProfile || cfg.defaultProfile || 'default';
+  const themeId = msg.themeId || cfg.defaultTheme || 'default';
   const name = msg.name || cmd.label;
 
-  const err = spawnSession(id, cmd, parts, cwd, name, profileId, cmd.id);
+  const err = spawnSession(id, cmd, parts, cwd, name, themeId, cmd.id);
   if (err) {
     console.error('Failed to spawn pty:', err.message);
     ws.send(JSON.stringify({ type: 'error', message: err.message }));
     return;
   }
 
-  broadcast({ type: 'created', id, name, profileId, commandId: cmd.id });
+  broadcast({ type: 'created', id, name, themeId, commandId: cmd.id });
 }
 
 // --- Resume a persisted session ---
@@ -108,7 +108,7 @@ function resume(msg, ws, cfg) {
   const cwd = resolveValidDir(saved.cwd || cfg.defaultPath);
   const id = saved.id;
 
-  const err = spawnSession(id, cmd, parts, cwd, saved.name, saved.profileId, saved.commandId);
+  const err = spawnSession(id, cmd, parts, cwd, saved.name, saved.themeId || saved.profileId || 'default', saved.commandId);
   if (err) {
     console.error('Failed to resume pty:', err.message);
     ws.send(JSON.stringify({ type: 'error', message: err.message }));
@@ -119,7 +119,7 @@ function resume(msg, ws, cfg) {
   resumable = resumable.filter(s => s.id !== id);
   broadcast({ type: 'sessions.resumable', list: resumable });
 
-  broadcast({ type: 'created', id, name: saved.name, profileId: saved.profileId, commandId: saved.commandId, resumed: true });
+  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, resumed: true });
 }
 
 // --- Standard session operations ---
@@ -136,9 +136,9 @@ function rename(msg) {
   if (s) { s.name = msg.name; broadcast({ type: 'renamed', id: msg.id, name: msg.name }); }
 }
 
-function setProfile(id, profileId) {
+function setTheme(id, themeId) {
   const s = sessions.get(id);
-  if (s) { s.profileId = profileId; return true; }
+  if (s) { s.themeId = themeId; return true; }
   return false;
 }
 
@@ -149,7 +149,7 @@ function close(msg) {
 
 function list() {
   return [...sessions].map(([id, s]) => ({
-    id, name: s.name, profileId: s.profileId, commandId: s.commandId,
+    id, name: s.name, themeId: s.themeId, commandId: s.commandId,
   }));
 }
 
@@ -175,7 +175,7 @@ function saveSessions(cfg) {
     })
     .map(([id, s]) => ({
       id, name: s.name, commandId: s.commandId, cwd: s.cwd,
-      profileId: s.profileId, sessionToken: s.sessionToken,
+      themeId: s.themeId, sessionToken: s.sessionToken,
       savedAt: new Date().toISOString(),
     }));
 
@@ -205,7 +205,7 @@ function shutdown(cfg) {
 
 module.exports = {
   clients, broadcast, getSessions: () => sessions,
-  create, resume, input, resize, rename, setProfile, close,
+  create, resume, input, resize, rename, setTheme, close,
   list, getResumable, sendBuffers,
   loadSessions, shutdown,
 };

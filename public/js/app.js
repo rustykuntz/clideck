@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { addTerminal, removeTerminal, select, startRename, setSessionProfile, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, setSessionTheme, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab, renderResumable } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse } from './folder-picker.js';
@@ -24,7 +24,7 @@ function connect() {
       case 'config':
         state.cfg = msg.config;
         renderSettings();
-        for (const [, entry] of state.terms) applyTheme(entry.term, entry.profileId);
+        for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
         break;
       case 'themes':
         state.themes = msg.themes;
@@ -35,14 +35,16 @@ function connect() {
         break;
       case 'sessions.resumable':
         state.resumable = msg.list;
+        renderResumable();
         break;
       case 'sessions':
-        msg.list.forEach(s => addTerminal(s.id, s.name, s.profileId, s.commandId));
+        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId));
         if (msg.list.length) select(msg.list[0].id);
         break;
       case 'created':
-        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.profileId, msg.commandId);
+        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId);
         select(msg.id);
+        applyFilter();
         break;
       case 'output':
         state.terms.get(msg.id)?.term.write(msg.data);
@@ -109,11 +111,11 @@ function connect() {
       case 'dirs':
         handleDirsResponse(msg);
         break;
-      case 'session.profile': {
+      case 'session.theme': {
         const entry = state.terms.get(msg.id);
         if (entry) {
-          entry.profileId = msg.profileId;
-          applyTheme(entry.term, msg.profileId);
+          entry.themeId = msg.themeId;
+          applyTheme(entry.term, msg.themeId);
         }
         break;
       }
@@ -132,6 +134,13 @@ function connect() {
 const sessionList = document.getElementById('session-list');
 
 sessionList.addEventListener('click', (e) => {
+  // Resumable session click
+  const resumableRow = e.target.closest('[data-resumable-id]');
+  if (resumableRow) {
+    send({ type: 'session.resume', id: resumableRow.dataset.resumableId });
+    return;
+  }
+
   const item = e.target.closest('.group');
   if (!item) return;
 

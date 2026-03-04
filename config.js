@@ -12,10 +12,7 @@ const DEFAULTS = {
     },
   ],
   confirmClose: true,
-  defaultProfile: 'default',
-  profiles: [
-    { id: 'default', name: 'Default', themeId: 'default', accentColor: '#3b82f6' },
-  ],
+  defaultTheme: 'default',
   prompts: [],
 };
 
@@ -29,12 +26,14 @@ function matchPreset(cmd) {
 }
 
 function migrate(cfg) {
-  if (!cfg.profiles || cfg.profiles.length === 0) {
-    cfg.profiles = deepCopy(DEFAULTS.profiles);
+  // Migrate profiles → defaultTheme
+  if (cfg.profiles && !cfg.defaultTheme) {
+    const defProfile = cfg.profiles.find(p => p.id === cfg.defaultProfile) || cfg.profiles[0];
+    cfg.defaultTheme = defProfile?.themeId || 'default';
   }
-  if (!cfg.defaultProfile) {
-    cfg.defaultProfile = 'default';
-  }
+  delete cfg.profiles;
+  delete cfg.defaultProfile;
+  if (!cfg.defaultTheme) cfg.defaultTheme = 'default';
   // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
     const preset = matchPreset(cmd);

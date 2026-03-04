@@ -2,7 +2,7 @@ export const state = {
   ws: null,
   terms: new Map(),
   active: null,
-  cfg: { commands: [], defaultPath: '', profiles: [], defaultProfile: 'default' },
+  cfg: { commands: [], defaultPath: '', defaultTheme: 'default' },
   themes: [],
   presets: [],
   resumable: [],

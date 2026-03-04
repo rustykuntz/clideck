@@ -16,7 +16,7 @@ Termix is a local web UI for running, organizing, and resuming multiple CLI-base
 - Settings panel for:
   - default working directory
   - command list
-  - profiles/themes
+  - terminal themes
   - close confirmation
 - Folder picker for selecting the default path
 - Tailwind-based UI

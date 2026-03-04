@@ -5,6 +5,7 @@ const THEMES = [
   {
     id: 'default',
     name: 'Default',
+    accent: '#3b82f6',
     theme: {
       background: '#020617',
       foreground: '#e2e8f0',
@@ -19,6 +20,7 @@ const THEMES = [
   {
     id: 'dracula',
     name: 'Dracula',
+    accent: '#bd93f9',
     theme: {
       background: '#282a36',
       foreground: '#f8f8f2',
@@ -33,6 +35,7 @@ const THEMES = [
   {
     id: 'nord',
     name: 'Nord',
+    accent: '#81a1c1',
     theme: {
       background: '#2e3440',
       foreground: '#d8dee9',
@@ -47,6 +50,7 @@ const THEMES = [
   {
     id: 'catppuccin-mocha',
     name: 'Catppuccin Mocha',
+    accent: '#89b4fa',
     theme: {
       background: '#1e1e2e',
       foreground: '#cdd6f4',
@@ -61,6 +65,7 @@ const THEMES = [
   {
     id: 'solarized-dark',
     name: 'Solarized Dark',
+    accent: '#268bd2',
     theme: {
       background: '#002b36',
       foreground: '#839496',
@@ -75,6 +80,7 @@ const THEMES = [
   {
     id: 'one-dark',
     name: 'One Dark',
+    accent: '#61afef',
     theme: {
       background: '#282c34',
       foreground: '#abb2bf',
@@ -89,6 +95,7 @@ const THEMES = [
   {
     id: 'monokai',
     name: 'Monokai',
+    accent: '#66d9ef',
     theme: {
       background: '#272822',
       foreground: '#f8f8f2',
@@ -103,6 +110,7 @@ const THEMES = [
   {
     id: 'tokyo-night',
     name: 'Tokyo Night',
+    accent: '#7aa2f7',
     theme: {
       background: '#1a1b26',
       foreground: '#c0caf5',
@@ -117,6 +125,7 @@ const THEMES = [
   {
     id: 'github-dark',
     name: 'GitHub Dark',
+    accent: '#58a6ff',
     theme: {
       background: '#0d1117',
       foreground: '#c9d1d9',
@@ -131,6 +140,7 @@ const THEMES = [
   {
     id: 'gruvbox-dark',
     name: 'Gruvbox Dark',
+    accent: '#d79921',
     theme: {
       background: '#282828',
       foreground: '#ebdbb2',

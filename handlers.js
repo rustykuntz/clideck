@@ -39,9 +39,9 @@ function onConnection(ws) {
         sessions.broadcast({ type: 'config', config: cfg });
         break;
 
-      case 'session.profile': {
-        const s = sessions.setProfile(msg.id, msg.profileId);
-        if (s) sessions.broadcast({ type: 'session.profile', id: msg.id, profileId: msg.profileId });
+      case 'session.theme': {
+        const ok = sessions.setTheme(msg.id, msg.themeId);
+        if (ok) sessions.broadcast({ type: 'session.theme', id: msg.id, themeId: msg.themeId });
         break;
       }
 

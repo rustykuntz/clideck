@@ -64,14 +64,14 @@ export function openCreator() {
   }
   if (!state.presets.length) return;
 
-  const placeholder = randomName();
+  const fallbackName = randomName();
   const presets = sortedPresets();
 
   const card = document.createElement('div');
   card.id = 'session-creator';
   card.className = 'p-3 border-b border-slate-700/50 bg-slate-800/30';
   card.innerHTML = `
-    <input id="creator-name" type="text" maxlength="35" placeholder="${esc(placeholder)}"
+    <input id="creator-name" type="text" maxlength="35" placeholder="Session / Agent name"
       class="w-full px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors mb-2">
     <div class="space-y-0.5">
       ${presets.map(p => `
@@ -96,7 +96,7 @@ export function openCreator() {
     if (!btn) return;
     const preset = state.presets.find(p => p.presetId === btn.dataset.preset);
     if (!preset) return;
-    const name = nameInput.value.trim() || nameInput.placeholder;
+    const name = nameInput.value.trim() || fallbackName;
     createFromPreset(preset, name);
     closeCreator();
   });

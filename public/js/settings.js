@@ -33,6 +33,7 @@ export function renderSettings() {
   document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
   renderAgentList();
   renderThemeSection();
+  renderNotifications();
 }
 
 // ── CLI Agents ──
@@ -371,6 +372,48 @@ function renderThemeSection() {
   document.getElementById('default-theme-preview').innerHTML = themePreviewHTML(themeId);
 }
 
+// ── Notifications ──
+
+function renderNotifications() {
+  const enabled = !!state.cfg.notifyIdle;
+  document.getElementById('cfg-notify-idle').checked = enabled;
+  document.getElementById('cfg-notify-min-work').value = state.cfg.notifyMinWork || 20;
+
+  const permRow = document.getElementById('notify-permission-row');
+  const permStatus = document.getElementById('notify-permission-status');
+  permRow.classList.toggle('hidden', !enabled);
+
+  if (enabled && 'Notification' in window) {
+    const perm = Notification.permission;
+    if (perm === 'granted') {
+      permStatus.textContent = 'Notifications are enabled';
+      permStatus.className = 'text-xs text-emerald-500 mt-1.5';
+    } else if (perm === 'denied') {
+      permStatus.textContent = 'Notifications blocked — check browser settings';
+      permStatus.className = 'text-xs text-red-400 mt-1.5';
+    } else {
+      permStatus.textContent = '';
+    }
+  }
+}
+
+document.getElementById('cfg-notify-idle').addEventListener('change', (e) => {
+  const enabled = e.target.checked;
+  document.getElementById('notify-permission-row').classList.toggle('hidden', !enabled);
+  if (enabled && 'Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().then(() => renderNotifications());
+  }
+  saveConfig();
+});
+
+document.getElementById('cfg-notify-min-work').addEventListener('change', saveConfig);
+
+document.getElementById('btn-notify-permission').addEventListener('click', () => {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(() => renderNotifications());
+  }
+});
+
 // ── Save ──
 
 function saveConfig() {
@@ -400,6 +443,8 @@ function saveConfig() {
   state.cfg.confirmClose = document.getElementById('cfg-confirm-close').checked;
   state.cfg.statsOverlay = document.getElementById('cfg-stats-overlay').checked;
   document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
+  state.cfg.notifyIdle = document.getElementById('cfg-notify-idle').checked;
+  state.cfg.notifyMinWork = parseInt(document.getElementById('cfg-notify-min-work').value, 10) || 20;
   // Preserve fields not managed by this form
   // (projects, prompts, etc. live on state.cfg and must not be dropped)
   send({ type: 'config.update', config: state.cfg });

@@ -308,7 +308,7 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   ro.observe(el);
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
   setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; } }, 500);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, workStartedAt: Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
 
@@ -446,7 +446,27 @@ export function debugBuffer(term) {
 function setStatus(id, working) {
   const entry = state.terms.get(id);
   if (!entry || entry.working === working) return;
+
+  const wasWorking = entry.working;
   entry.working = working;
+
+  // Notify on working → idle transition
+  if (wasWorking && !working) {
+    const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
+    const minWork = state.cfg.notifyMinWork || 20;
+    const isViewing = document.hasFocus() && state.active === id;
+    if (state.cfg.notifyIdle && !isViewing && workDuration >= minWork
+        && 'Notification' in window && Notification.permission === 'granted') {
+      const name = document.querySelector(`.group[data-id="${id}"] .name`)?.textContent || 'Session';
+      const preview = entry.lastPreviewText || '';
+      const proj = state.cfg.projects?.find(p => p.id === entry.projectId);
+      const body = (proj ? proj.name + ' · ' : '') + preview;
+      const n = new Notification(`${name} is idle`, { body, icon: '/img/termix-logo-icon.png', tag: id });
+      n.onclick = () => { window.focus(); select(id); n.close(); };
+    }
+  }
+
+  if (working) entry.workStartedAt = Date.now();
 
   const el = document.querySelector(`.group[data-id="${id}"] .session-status`);
   if (!el) return;

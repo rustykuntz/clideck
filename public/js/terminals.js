@@ -1,6 +1,12 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
+function isLightBg(themeId) {
+  const bg = resolveTheme(themeId)?.background;
+  if (!bg || bg[0] !== '#') return false;
+  const r = parseInt(bg.slice(1, 3), 16), g = parseInt(bg.slice(3, 5), 16), b = parseInt(bg.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+}
 
 // --- Helpers ---
 
@@ -204,10 +210,12 @@ function openThemePicker(sessionId, anchorEl) {
   picker.style.top = (rect.bottom + 4) + 'px';
   picker.style.left = rect.left + 'px';
 
+  const currentIsLight = isLightBg(entry.themeId);
   picker.innerHTML = state.themes.map(t => {
+    const polarityFlip = isLightBg(t.id) !== currentIsLight;
     return `<div class="theme-pick px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors ${t.id === entry.themeId ? 'bg-blue-500/15 border-l-2 border-blue-400' : ''}" data-theme="${t.id}">
       <div class="text-sm text-slate-200 mb-1">${esc(t.name)}</div>
-      <div class="text-[10px] font-mono leading-[1.4] whitespace-pre rounded overflow-hidden" style="background:${t.theme.background};padding:4px 6px"><span style="color:${t.theme.green}">~</span> <span style="color:${t.theme.blue}">src</span> <span style="color:${t.theme.foreground}">$ ls</span>\n<span style="color:${t.theme.yellow}">app.ts</span>  <span style="color:${t.theme.cyan}">utils.ts</span>  <span style="color:${t.theme.brightBlack}">README</span></div>
+      <div class="text-[10px] font-mono leading-[1.4] whitespace-pre rounded overflow-hidden" style="background:${t.theme.background};padding:4px 6px"><span style="color:${t.theme.green}">~</span> <span style="color:${t.theme.blue}">src</span> <span style="color:${t.theme.foreground}">$ ls</span>\n<span style="color:${t.theme.yellow}">app.ts</span>  <span style="color:${t.theme.cyan}">utils.ts</span>  <span style="color:${t.theme.brightBlack}">README</span></div>${polarityFlip ? '<div class="text-[10px] text-slate-500 mt-1">Restart session to apply color mode</div>' : ''}
     </div>`;
   }).join('');
 
@@ -498,10 +506,43 @@ function setStatus(id, working) {
 export function setSessionTheme(id, themeId) {
   const entry = state.terms.get(id);
   if (!entry) return;
+  const oldLight = isLightBg(entry.themeId);
+  const newLight = isLightBg(themeId);
   entry.themeId = themeId;
   applyTheme(entry.term, themeId);
   entry.el.style.backgroundColor = resolveTheme(themeId).background;
   send({ type: 'session.theme', id, themeId });
+  if (oldLight !== newLight) showRestartBanner(id, themeId);
+  else hideRestartBanner(id);
+}
+
+function showRestartBanner(id, themeId) {
+  const group = document.querySelector(`.group[data-id="${id}"]`);
+  if (!group || group.querySelector('.restart-banner')) return;
+  const entry = state.terms.get(id);
+  if (!entry) return;
+  const mode = isLightBg(themeId) ? 'light' : 'dark';
+  const banner = document.createElement('div');
+  banner.className = 'restart-banner flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-blue-400 cursor-pointer hover:text-blue-300 transition-colors';
+  banner.style.marginLeft = '2.75rem'; // align with text (past icon)
+  banner.innerHTML = `<svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h4.5M20 20v-5h-4.5M4 9a9 9 0 0 1 15.36-5.36M20 15a9 9 0 0 1-15.36 5.36"/></svg><span>Restart to apply ${mode} theme</span>`;
+  banner.addEventListener('click', (e) => {
+    e.stopPropagation();
+    console.log('[restart] click banner, sending session.restart', { id, themeId: entry.themeId });
+    send({ type: 'session.restart', id, themeId: entry.themeId, cols: entry.term.cols, rows: entry.term.rows });
+  });
+  group.appendChild(banner);
+}
+
+function hideRestartBanner(id) {
+  document.querySelector(`.group[data-id="${id}"] .restart-banner`)?.remove();
+}
+
+export function restartComplete(id, msg) {
+  console.log('[restart] restartComplete received', id, msg);
+  hideRestartBanner(id);
+  const entry = state.terms.get(id);
+  if (entry) entry.term.clear();
 }
 
 // --- Rename ---

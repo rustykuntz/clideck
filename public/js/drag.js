@@ -23,8 +23,8 @@ export function initDrag() {
       ghost: null,
       active: false,
       dropTarget: null,
+      pointerId: e.pointerId,
     };
-    row.setPointerCapture(e.pointerId);
   });
 
   list.addEventListener('pointermove', (e) => {
@@ -34,6 +34,7 @@ export function initDrag() {
       const dx = Math.abs(e.clientX - dragState.startX);
       const dy = Math.abs(e.clientY - dragState.startY);
       if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
+      dragState.row.setPointerCapture(dragState.pointerId);
       startDrag(dragState);
     }
 

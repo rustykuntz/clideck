@@ -28,6 +28,7 @@ function onConnection(ws) {
     switch (msg.type) {
       case 'create':          sessions.create(msg, ws, cfg); break;
       case 'session.resume':  sessions.resume(msg, ws, cfg); break;
+      case 'session.restart': console.log('[handler] session.restart', msg.id); sessions.restart(msg, ws, cfg); break;
       case 'input':           sessions.input(msg); break;
       case 'resize':          sessions.resize(msg); break;
       case 'rename':          sessions.rename(msg); break;

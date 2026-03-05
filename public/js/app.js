@@ -1,6 +1,6 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
@@ -62,14 +62,16 @@ function connect() {
       case 'closed':
         removeTerminal(msg.id);
         break;
+      case 'session.restarted':
+        console.log('[restart] got session.restarted from server', msg);
+        restartComplete(msg.id, msg);
+        break;
       // Telemetry/bridge working/idle
       case 'session.status':
-        console.log('[ws] session.status', msg.id?.slice(0,8), 'working=', msg.working);
         setStatus(msg.id, msg.working);
         break;
       // Bridge preview text (OpenCode plugin)
       case 'session.preview': {
-        console.log('[ws] session.preview', msg.id?.slice(0,8), msg.text?.slice(0,60));
         const pe = state.terms.get(msg.id);
         if (pe && msg.text) {
           pe.lastPreviewText = msg.text;
@@ -254,6 +256,11 @@ sessionList.addEventListener('session-delete', async (e) => {
   const ok = await confirmClose();
   if (!ok) return;
   send({ type: 'close', id });
+});
+
+// Mode toggle theme switch — dispatched from color-mode.js to avoid circular import
+document.addEventListener('termix-theme-switch', (e) => {
+  setSessionTheme(e.detail.id, e.detail.themeId);
 });
 
 document.getElementById('btn-new').addEventListener('click', openCreator);

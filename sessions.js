@@ -7,6 +7,7 @@ const transcript = require('./transcript');
 const telemetry = require('./telemetry-receiver');
 const opencodeBridge = require('./opencode-bridge');
 
+const THEMES = require('./themes');
 const MAX_BUFFER = 200 * 1024;
 const PORT = 4000;
 const PRESETS = JSON.parse(require('fs').readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
@@ -38,13 +39,22 @@ function buildTelemetryEnv(id, cmd) {
   return env;
 }
 
+function isLightTheme(themeId) {
+  const t = THEMES.find(th => th.id === themeId);
+  if (!t) return false;
+  const bg = t.theme.background;
+  const r = parseInt(bg.slice(1, 3), 16), g = parseInt(bg.slice(3, 5), 16), b = parseInt(bg.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+}
+
 function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken, projectId, cols, rows) {
   const telemetryEnv = buildTelemetryEnv(id, cmd);
+  const colorEnv = isLightTheme(themeId) ? { COLORFGBG: '0;15' } : { COLORFGBG: '15;0' };
   let term;
   try {
     term = pty.spawn(parts[0], parts.slice(1), {
       name: 'xterm-256color', cols: cols || 80, rows: rows || 24, cwd,
-      env: { ...process.env, ...telemetryEnv },
+      env: { ...process.env, ...telemetryEnv, ...colorEnv },
     });
   } catch (e) {
     return e;
@@ -77,6 +87,8 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   });
 
   term.onExit(() => {
+    // Skip cleanup if this PTY was replaced by a restart
+    if (sessions.get(id)?.pty !== term) return;
     stats.clear(id); // TEMPORARY
     telemetry.clear(id);
     opencodeBridge.clear(id);
@@ -183,6 +195,52 @@ function close(msg) {
   if (resumable.length !== before) broadcast({ type: 'sessions.resumable', list: resumable });
 }
 
+// Restart a live session's PTY with updated env (e.g. after polarity flip).
+// Uses resume command if available, otherwise re-launches the original command.
+function restart(msg, ws, cfg) {
+  const id = msg.id;
+  console.log('[restart] received', { id, themeId: msg.themeId });
+  const s = sessions.get(id);
+  if (!s) { console.log('[restart] FAIL: session not found'); ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'not found' })); return; }
+  const cmd = cfg.commands.find(c => c.id === s.commandId);
+  if (!cmd) { console.log('[restart] FAIL: command not found, commandId=', s.commandId); ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'command missing' })); return; }
+
+  const themeId = msg.themeId || s.themeId;
+  const canResume = cmd.canResume && cmd.resumeCommand && s.sessionToken;
+  console.log('[restart] canResume=', canResume, 'token=', s.sessionToken?.slice(0,12), 'cmd=', cmd.command);
+
+  let parts;
+  if (canResume) {
+    parts = parseCommand(cmd.resumeCommand.replace('{{sessionId}}', s.sessionToken));
+  } else {
+    parts = parseCommand(cmd.command);
+  }
+  console.log('[restart] parts=', parts);
+
+  const savedToken = s.sessionToken;
+  const { name, cwd, commandId, projectId } = s;
+
+  stats.clear(id);
+  telemetry.clear(id);
+  opencodeBridge.clear(id);
+  transcript.clear(id);
+
+  console.log('[restart] killing old pty');
+  s.pty.kill();
+  sessions.delete(id);
+
+  console.log('[restart] spawning new pty, themeId=', themeId, 'cwd=', cwd);
+  const err = spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken, projectId, msg.cols, msg.rows);
+  if (err) {
+    console.error('[restart] FAIL spawn:', err.message);
+    broadcast({ type: 'session.restarted', id, error: err.message });
+    return;
+  }
+
+  console.log('[restart] SUCCESS, broadcasting session.restarted');
+  broadcast({ type: 'session.restarted', id, resumed: !!canResume });
+}
+
 function list() {
   return [...sessions].map(([id, s]) => ({
     id, name: s.name, themeId: s.themeId, commandId: s.commandId, projectId: s.projectId,
@@ -247,7 +305,7 @@ function shutdown(cfg) {
 
 module.exports = {
   clients, broadcast, getSessions: () => sessions,
-  create, resume, input, resize, rename, setTheme, setProject, close,
+  create, resume, restart, input, resize, rename, setTheme, setProject, close,
   list, getResumable, sendBuffers,
   loadSessions, shutdown,
 };

@@ -8,7 +8,7 @@ const { join } = require('path');
 const BUILT_IN = [
   {
     id: 'default',
-    name: 'Default',
+    name: 'Midnight',
     accent: '#3b82f6',
     theme: {
       background: '#020617',

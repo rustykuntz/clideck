@@ -1,6 +1,7 @@
 # Termix
 
 Termix is a local web UI for running, organizing, and resuming multiple CLI-based coding agent sessions in one place.
+At first glance it feels like a cleaner terminal organizer. The real advantage is telemetry: Termix can tell when each agent is working, idle, or waiting for input.
 
 ## What It Does
 
@@ -8,11 +9,15 @@ Termix is a local web UI for running, organizing, and resuming multiple CLI-base
 - Mirrors terminal output in the browser with xterm.js
 - Lets you launch multiple CLI tools from one dashboard
 - Supports named sessions, command presets, themes, and basic resume metadata
+- Ingests local telemetry events to power live agent status
 - Persists app config locally
 
 ## Current Features
 
 - Smart `+` launcher for configured CLI commands
+- Telemetry-powered status dots (`working`, `idle`, `waiting for input`)
+- Latest-message preview in the session list so you can scan progress fast
+- Telemetry setup prompts and auto-config for supported agents
 - Settings panel for:
   - default working directory
   - command list
@@ -56,9 +61,15 @@ http://localhost:4000
 - `server.js` — HTTP server + WebSocket bootstrap
 - `handlers.js` — WebSocket message routing
 - `sessions.js` — PTY lifecycle + session persistence logic
+- `telemetry-receiver.js` — local OTLP log receiver + session activity detection
 - `config.js` — config load/save + migration
 - `themes.js` — built-in terminal theme presets
 - `public/` — frontend UI
+
+## Why Telemetry Matters
+
+Telemetry is the feature that makes Termix indispensable, not just nice-to-have.
+In the demo/screenshot, the status dots and latest-message preview do most of the UX heavy lifting: you instantly know who is actively working, who is idle, and where attention is needed.
 
 ## Notes
 

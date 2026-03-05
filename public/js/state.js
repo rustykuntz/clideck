@@ -2,7 +2,7 @@ export const state = {
   ws: null,
   terms: new Map(),
   active: null,
-  cfg: { commands: [], defaultPath: '', defaultTheme: 'dracula' },
+  cfg: { commands: [], defaultPath: '', defaultTheme: 'solarized-dark' },
   themes: [],
   presets: [],
   resumable: [],

@@ -1,6 +1,7 @@
 import { state, send } from './state.js';
 import { esc, agentIcon } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
+import { estimateSize } from './terminals.js';
 
 const ADJECTIVES = [
   'Blue', 'Red', 'Green', 'Purple', 'Golden', 'Silver', 'Coral', 'Amber',
@@ -54,7 +55,7 @@ function createFromPreset(preset, sessionName, cwd, projectId) {
     state.cfg.commands.push(cmd);
     send({ type: 'config.update', config: state.cfg });
   }
-  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined });
+  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, ...estimateSize() });
   localStorage.setItem(MRU_KEY, preset.presetId);
 }
 

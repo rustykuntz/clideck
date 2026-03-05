@@ -152,6 +152,36 @@ const THEMES = [
       brightBlue: '#83a598', brightMagenta: '#d3869b', brightCyan: '#8ec07c', brightWhite: '#ebdbb2',
     },
   },
+  {
+    id: 'github-light',
+    name: 'GitHub Light',
+    accent: '#0969da',
+    theme: {
+      background: '#ffffff',
+      foreground: '#1f2328',
+      cursor: '#044289',
+      selectionBackground: '#b6d4fe',
+      black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#4d2d00',
+      blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01',
+      brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
+    },
+  },
+  {
+    id: 'github-light-2',
+    name: 'GitHub Light 2',
+    accent: '#0969da',
+    theme: {
+      background: '#f7f5f3',
+      foreground: '#1f2328',
+      cursor: '#044289',
+      selectionBackground: '#b6d4fe',
+      black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#4d2d00',
+      blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01',
+      brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
+    },
+  },
 ];
 
 module.exports = THEMES;

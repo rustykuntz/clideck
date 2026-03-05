@@ -1,11 +1,12 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, debugBuffer, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
 import { applyTheme } from './profiles.js';
+import { toggleMode, applyMode } from './color-mode.js';
 import './nav.js';
 import { initDrag } from './drag.js';
 
@@ -13,7 +14,7 @@ function connect() {
   state.ws = new WebSocket(`ws://${location.host}`);
 
   state.ws.onopen = () => {
-    for (const [, e] of state.terms) { e.term.dispose(); e.el.remove(); }
+    for (const [, e] of state.terms) { e.ro.disconnect(); e.term.dispose(); e.el.remove(); }
     state.terms.clear();
     document.getElementById('session-list').innerHTML = '';
     state.active = null;
@@ -25,6 +26,7 @@ function connect() {
     switch (msg.type) {
       case 'config':
         state.cfg = msg.config;
+        applyMode(state.cfg.colorMode || 'dark');
         regroupSessions();
         renderSettings();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
@@ -159,7 +161,7 @@ function connect() {
           actionsEl.querySelector('.dismiss-btn').onclick = () => toast.remove();
           actionsEl.querySelector('.restart-btn').onclick = () => {
             send({ type: 'close', id: sid });
-            send({ type: 'create', commandId: cmdId });
+            send({ type: 'create', commandId: cmdId, ...estimateSize() });
             toast.remove();
           };
         } else {
@@ -253,14 +255,6 @@ document.querySelectorAll('.filter-tab').forEach(btn => {
 });
 
 
-new ResizeObserver(() => {
-  if (!state.active) return;
-  const entry = state.terms.get(state.active);
-  if (entry) {
-    entry.fit.fit();
-    send({ type: 'resize', id: state.active, cols: entry.term.cols, rows: entry.term.rows });
-  }
-}).observe(document.getElementById('terminals'));
 
 // Telemetry setup notification — shown once per agent type
 const shownSetup = new Set();
@@ -486,6 +480,8 @@ function openProjectCreator() {
     if (e.key === 'Escape') closeProjectCreator();
   });
 }
+
+document.getElementById('btn-theme-toggle').addEventListener('click', toggleMode);
 
 initDrag();
 connect();

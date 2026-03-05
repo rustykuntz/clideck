@@ -1,7 +1,6 @@
 import { state, send } from './state.js';
 import { esc, debounce, agentIcon } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
-import { themePreviewColors } from './profiles.js';
 
 // ── Category navigation ──
 
@@ -291,10 +290,19 @@ agentList.addEventListener('input', debounce(saveConfig, 500));
 
 // ── Appearance (theme picker) ──
 
-function stripHTML(themeId) {
-  const colors = themePreviewColors(themeId);
-  if (!colors.length) return '';
-  return colors.map(c => `<span class="flex-1 h-3" style="background:${c}"></span>`).join('');
+function themePreviewHTML(themeId) {
+  const t = state.themes.find(th => th.id === themeId)?.theme;
+  if (!t) return '';
+  const s = (color, text) => `<span style="color:${color}">${esc(text)}</span>`;
+  const lines = [
+    `${s(t.green, '~')} ${s(t.blue, 'project')} ${s(t.foreground, '$ ')}${s(t.foreground, 'claude')}`,
+    `${s(t.brightBlack, '● Editing src/app.ts')}`,
+    `${s(t.cyan, 'function')} ${s(t.yellow, 'greet')}${s(t.foreground, '(name: ')}${s(t.green, 'string')}${s(t.foreground, ') {')}`,
+    `${s(t.foreground, '  return ')}${s(t.green, '"Hello, ${name}"')}`,
+    `${s(t.foreground, '}')}`,
+    `${s(t.green, '~')} ${s(t.blue, 'project')} ${s(t.foreground, '$ ')}${s(t.brightBlack, '▊')}`,
+  ];
+  return `<div style="background:${t.background};padding:6px 8px">${lines.join('\n')}</div>`;
 }
 
 let themeMenuCleanup = null;
@@ -308,7 +316,7 @@ function openThemeMenu(triggerEl) {
   const hidden = document.getElementById('cfg-default-theme');
 
   const rect = triggerEl.getBoundingClientRect();
-  const maxH = 280, gap = 4;
+  const maxH = 400, gap = 4;
   const spaceBelow = window.innerHeight - rect.bottom - gap;
   const spaceAbove = rect.top - gap;
   const openAbove = spaceBelow < maxH && spaceAbove > spaceBelow;
@@ -322,13 +330,9 @@ function openThemeMenu(triggerEl) {
   else menu.style.top = (rect.bottom + gap) + 'px';
 
   menu.innerHTML = state.themes.map(t => {
-    const colors = themePreviewColors(t.id);
-    const strip = colors.length
-      ? `<div class="flex mt-1 rounded overflow-hidden">${colors.map(c => `<span class="flex-1 h-2" style="background:${c}"></span>`).join('')}</div>`
-      : '';
-    return `<div class="theme-option px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors ${t.id === hidden.value ? 'bg-slate-700/50' : ''}" data-value="${t.id}">
-      <div class="text-sm text-slate-200">${esc(t.name)}</div>
-      ${strip}
+    return `<div class="theme-option px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors ${t.id === hidden.value ? 'bg-blue-500/15 border-l-2 border-blue-400' : ''}" data-value="${t.id}">
+      <div class="text-sm text-slate-200 mb-1">${esc(t.name)}</div>
+      <div class="text-[10px] font-mono leading-[1.4] whitespace-pre rounded overflow-hidden" style="background:${t.theme.background};padding:4px 6px"><span style="color:${t.theme.green}">~</span> <span style="color:${t.theme.blue}">src</span> <span style="color:${t.theme.foreground}">$ ls</span>\n<span style="color:${t.theme.yellow}">app.ts</span>  <span style="color:${t.theme.cyan}">utils.ts</span>  <span style="color:${t.theme.brightBlack}">README</span></div>
     </div>`;
   }).join('');
 
@@ -339,8 +343,7 @@ function openThemeMenu(triggerEl) {
     if (item) {
       hidden.value = item.dataset.value;
       triggerEl.querySelector('.theme-label').textContent = state.themes.find(t => t.id === item.dataset.value)?.name || 'Default';
-      const strip = document.getElementById('default-theme-strip');
-      if (strip) strip.innerHTML = stripHTML(item.dataset.value);
+      document.getElementById('default-theme-preview').innerHTML = themePreviewHTML(item.dataset.value);
       saveConfig();
     }
     closeThemeMenu();
@@ -365,7 +368,7 @@ function renderThemeSection() {
   const label = selected ? esc(selected.name) : 'Default';
   document.getElementById('cfg-default-theme').value = themeId;
   document.getElementById('default-theme-label').textContent = label;
-  document.getElementById('default-theme-strip').innerHTML = stripHTML(themeId);
+  document.getElementById('default-theme-preview').innerHTML = themePreviewHTML(themeId);
 }
 
 // ── Save ──

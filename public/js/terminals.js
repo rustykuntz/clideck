@@ -1,8 +1,12 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
-import { resolveTheme, resolveAccent, applyTheme, themePreviewColors } from './profiles.js';
+import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
 
 // --- Helpers ---
+
+const RECENT_MS = 15 * 60 * 1000; // 15 minutes
+
+function isRecent(ts) { return Date.now() - ts < RECENT_MS; }
 
 function formatTime(ts) {
   const d = new Date(ts), now = new Date();
@@ -15,10 +19,71 @@ function formatTime(ts) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+function updateTimeEl(el, ts) {
+  el.textContent = formatTime(ts);
+  el.classList.toggle('recent', isRecent(ts));
+}
+
 
 const TERMINAL_SVG = `<svg class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`;
 
-const SPINNER_SVG = `<svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>`;
+const DARK_BALLS = ['#00e5ff', '#5df0d6', '#9b8cff'];
+const LIGHT_BALLS = ['#0891b2', '#059669', '#7c3aed'];
+
+function startBounce(container) {
+  const isDark = !document.documentElement.classList.contains('light');
+  const colors = isDark ? DARK_BALLS : LIGHT_BALLS;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '30');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '5 18 90 28');
+  svg.style.opacity = '0.75';
+  container.innerHTML = '';
+  container.appendChild(svg);
+
+  const floor = 40, gravity = 0.18, restitution = 0.7;
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  const radii = [4.5, 4, 3.5];
+
+  const balls = colors.map((fill, i) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('r', radii[i]);
+    c.setAttribute('fill', fill);
+    svg.appendChild(c);
+    return { el: c, x: 10 + i * rand(14, 22), y: floor - rand(0, 15), vx: rand(0.6, 1.3), vy: -rand(2.5, 5), r: radii[i] };
+  });
+
+  let raf;
+  function step() {
+    balls.forEach(b => {
+      b.vy += gravity;
+      b.x += b.vx;
+      b.y += b.vy;
+      if (b.y > floor) { b.y = floor; b.vy *= -restitution; }
+    });
+    for (let i = 0; i < balls.length; i++) {
+      for (let j = i + 1; j < balls.length; j++) {
+        const a = balls[i], b = balls[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy), min = a.r + b.r;
+        if (dist < min) {
+          const nx = dx / dist, ny = dy / dist;
+          const p = a.vx * nx + a.vy * ny - b.vx * nx - b.vy * ny;
+          a.vx -= p * nx; a.vy -= p * ny;
+          b.vx += p * nx; b.vy += p * ny;
+        }
+      }
+    }
+    balls.forEach(b => {
+      if (b.x > 100) { b.x = rand(5, 15); b.y = floor - rand(0, 10); b.vx = rand(0.6, 1.3); b.vy = -rand(2.5, 5); }
+      b.el.setAttribute('cx', b.x);
+      b.el.setAttribute('cy', b.y);
+    });
+    raf = requestAnimationFrame(step);
+  }
+  step();
+  return () => cancelAnimationFrame(raf);
+}
 
 function iconHtml(commandId) {
   const icon = state.cfg.commands.find(c => c.id === commandId)?.icon || 'terminal';
@@ -134,18 +199,14 @@ function openThemePicker(sessionId, anchorEl) {
 
   const rect = anchorEl.getBoundingClientRect();
   const picker = document.createElement('div');
-  picker.className = 'fixed z-[400] min-w-[220px] max-h-[280px] overflow-y-auto bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1';
+  picker.className = 'fixed z-[400] min-w-[220px] max-h-[400px] overflow-y-auto bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1';
   picker.style.top = (rect.bottom + 4) + 'px';
   picker.style.left = rect.left + 'px';
 
   picker.innerHTML = state.themes.map(t => {
-    const colors = themePreviewColors(t.id);
-    const strip = colors.length
-      ? `<div class="flex mt-1 rounded overflow-hidden">${colors.map(c => `<span class="flex-1 h-2" style="background:${c}"></span>`).join('')}</div>`
-      : '';
-    return `<div class="theme-pick px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors ${t.id === entry.themeId ? 'bg-slate-700/50' : ''}" data-theme="${t.id}">
-      <div class="text-sm text-slate-200">${esc(t.name)}</div>
-      ${strip}
+    return `<div class="theme-pick px-3 py-2 cursor-pointer hover:bg-slate-700 transition-colors ${t.id === entry.themeId ? 'bg-blue-500/15 border-l-2 border-blue-400' : ''}" data-theme="${t.id}">
+      <div class="text-sm text-slate-200 mb-1">${esc(t.name)}</div>
+      <div class="text-[10px] font-mono leading-[1.4] whitespace-pre rounded overflow-hidden" style="background:${t.theme.background};padding:4px 6px"><span style="color:${t.theme.green}">~</span> <span style="color:${t.theme.blue}">src</span> <span style="color:${t.theme.foreground}">$ ls</span>\n<span style="color:${t.theme.yellow}">app.ts</span>  <span style="color:${t.theme.cyan}">utils.ts</span>  <span style="color:${t.theme.brightBlack}">README</span></div>
     </div>`;
   }).join('');
 
@@ -174,6 +235,16 @@ function closeThemePicker() {
   if (pickerCleanup) pickerCleanup();
 }
 
+// --- Terminal size estimation (for PTY spawn) ---
+
+export function estimateSize() {
+  const el = document.getElementById('terminals');
+  // Account for inset-1 padding (4px each side)
+  const w = el.clientWidth - 8, h = el.clientHeight - 8;
+  // Menlo 13px: ~7.8px wide, ~17px tall
+  return { cols: Math.max(Math.floor(w / 7.8), 80), rows: Math.max(Math.floor(h / 17), 24) };
+}
+
 // --- Terminal management ---
 
 export function addTerminal(id, name, themeId, commandId, projectId) {
@@ -181,7 +252,7 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   themeId = themeId || state.cfg.defaultTheme || 'default';
 
   const item = document.createElement('div');
-  item.className = 'group flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-slate-800/50 transition-colors select-none';
+  item.className = 'group flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors select-none';
   item.dataset.id = id;
   item.innerHTML = `
     <div class="session-icon w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0 overflow-hidden pointer-events-none">
@@ -190,10 +261,10 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
     <div class="flex-1 min-w-0 pointer-events-none">
       <div class="flex items-baseline gap-2">
         <span class="name flex-1 font-semibold text-[13px] text-slate-200 truncate pointer-events-auto cursor-default">${esc(name)}</span>
-        <span class="session-time text-[11px] text-slate-500 flex-shrink-0">${formatTime(Date.now())}</span>
+        <span class="session-time recent text-[11px] flex-shrink-0">${formatTime(Date.now())}</span>
       </div>
       <div class="flex items-center gap-1 mt-0.5">
-        <span class="session-status text-emerald-500 flex-shrink-0 leading-none" style="transition:opacity 0.2s">${SPINNER_SVG}</span>
+        <span class="session-status flex-shrink-0 leading-none" style="transition:opacity 0.2s"></span>
         <span class="session-preview flex-1 text-xs text-slate-500 truncate"></span>
         <span class="unread-dot hidden w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
         <button class="menu-btn opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300 flex-shrink-0 transition-opacity pointer-events-auto" title="Menu">
@@ -203,9 +274,12 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
     </div>`;
 
   document.getElementById('session-list').appendChild(item);
+  const statusEl = item.querySelector('.session-status');
+  const stopBounce = startBounce(statusEl);
 
   const el = document.createElement('div');
   el.className = 'term-wrap';
+  el.style.backgroundColor = resolveTheme(themeId).background;
   document.getElementById('terminals').appendChild(el);
 
   const term = new Terminal({
@@ -220,10 +294,13 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   term.onData(data => send({ type: 'input', id, data }));
 
   term.open(el);
-  fit.fit();
-  const ro = new ResizeObserver(() => { if (el.classList.contains('active')) fit.fit(); });
+  const ro = new ResizeObserver(() => {
+    if (!el.offsetWidth) return;
+    fit.fit();
+    send({ type: 'resize', id, cols: term.cols, rows: term.rows });
+  });
   ro.observe(el);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, stopBounce, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
 
@@ -233,6 +310,7 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
 export function removeTerminal(id) {
   const entry = state.terms.get(id);
   if (!entry) return;
+  if (entry.stopBounce) entry.stopBounce();
   entry.ro?.disconnect();
   entry.term.dispose();
   entry.el.remove();
@@ -255,11 +333,11 @@ export function select(id) {
   if (state.active === id) return;
 
   const prev = document.querySelector('.group.active-session');
-  if (prev) prev.classList.remove('active-session', 'bg-slate-800/80');
+  if (prev) prev.classList.remove('active-session');
   document.querySelector('.term-wrap.active')?.classList.remove('active');
 
   const item = document.querySelector(`.group[data-id="${id}"]`);
-  if (item) item.classList.add('active-session', 'bg-slate-800/80');
+  if (item) item.classList.add('active-session');
 
   const entry = state.terms.get(id);
   if (entry) {
@@ -271,13 +349,8 @@ export function select(id) {
       updateUnreadBadge();
       if (state.filter.tab === 'unread') setTab('all');
     }
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      entry.fit.fit();
-      entry.term.scrollToBottom();
-      send({ type: 'resize', id, cols: entry.term.cols, rows: entry.term.rows });
-      // Don't steal focus from an active inline rename
-      if (!document.querySelector('[contenteditable="true"]')) entry.term.focus();
-    }));
+    entry.term.scrollToBottom();
+    if (!document.querySelector('[contenteditable="true"]')) entry.term.focus();
   }
   state.active = id;
 }
@@ -305,7 +378,7 @@ export function updatePreview(id) {
     entry.lastActivityAt = Date.now();
   }
   const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
-  if (timeEl) timeEl.textContent = formatTime(entry.lastActivityAt);
+  if (timeEl) updateTimeEl(timeEl, entry.lastActivityAt);
 }
 
 // Read the terminal buffer bottom-up, return the last line
@@ -370,14 +443,17 @@ function setStatus(id, working) {
   const el = document.querySelector(`.group[data-id="${id}"] .session-status`);
   if (!el) return;
 
+  // Stop previous animation if any
+  if (entry.stopBounce) { entry.stopBounce(); entry.stopBounce = null; }
+
   // Fade out, swap, fade in
   el.style.opacity = '0';
   setTimeout(() => {
     if (working) {
-      el.className = 'session-status text-emerald-500 flex-shrink-0 leading-none';
-      el.innerHTML = SPINNER_SVG;
+      el.className = 'session-status flex-shrink-0 leading-none';
+      entry.stopBounce = startBounce(el);
     } else {
-      el.className = 'session-status text-slate-600 flex-shrink-0 text-[11px] leading-none';
+      el.className = 'session-status dormant flex-shrink-0 text-[11px] leading-none';
       el.innerHTML = '<span>z<sup>z</sup>Z</span>';
     }
     el.style.opacity = '1';
@@ -391,6 +467,7 @@ export function setSessionTheme(id, themeId) {
   if (!entry) return;
   entry.themeId = themeId;
   applyTheme(entry.term, themeId);
+  entry.el.style.backgroundColor = resolveTheme(themeId).background;
   send({ type: 'session.theme', id, themeId });
 }
 
@@ -578,7 +655,7 @@ export function setSessionProject(id, projectId) {
 
 // --- Resumable sessions ---
 
-const PLAY_SVG = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
+const RESUME_SVG = `<svg class="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
 
 function buildResumableRow(s) {
   const cmd = state.cfg.commands.find(c => c.id === s.commandId);
@@ -599,8 +676,8 @@ function buildResumableRow(s) {
       </div>
       <div class="flex items-center gap-1 mt-0.5">
         <span class="flex-1 text-xs text-slate-600 truncate">${esc(label)}${path ? ' · ' + esc(path) : ''}</span>
-        <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all" title="Resume session">
-          ${PLAY_SVG}
+        <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all flex items-center gap-0.5 text-[11px] font-medium" title="Resume session">
+          Resume${RESUME_SVG}
         </button>
       </div>
     </div>`;
@@ -678,13 +755,18 @@ function updateUnreadBadge() {
     badge.textContent = count || '';
     badge.classList.toggle('hidden', count === 0);
   }
+  const rail = document.getElementById('rail-unread');
+  if (rail) {
+    rail.textContent = count || '';
+    rail.classList.toggle('hidden', count === 0);
+  }
 }
 
 // Refresh displayed timestamps every 60s so they age naturally
 setInterval(() => {
   for (const [id, entry] of state.terms) {
     const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
-    if (timeEl) timeEl.textContent = formatTime(entry.lastActivityAt);
+    if (timeEl) updateTimeEl(timeEl, entry.lastActivityAt);
   }
 }, 60000);
 

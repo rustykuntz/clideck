@@ -37,12 +37,12 @@ function buildTelemetryEnv(id, cmd) {
   return env;
 }
 
-function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken, projectId) {
+function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken, projectId, cols, rows) {
   const telemetryEnv = buildTelemetryEnv(id, cmd);
   let term;
   try {
     term = pty.spawn(parts[0], parts.slice(1), {
-      name: 'xterm-256color', cols: 80, rows: 24, cwd,
+      name: 'xterm-256color', cols: cols || 80, rows: rows || 24, cwd,
       env: { ...process.env, ...telemetryEnv },
     });
   } catch (e) {
@@ -95,7 +95,7 @@ function create(msg, ws, cfg) {
   const name = msg.name || cmd.label;
 
   const projectId = msg.projectId || null;
-  const err = spawnSession(id, cmd, parts, cwd, name, themeId, cmd.id, null, projectId);
+  const err = spawnSession(id, cmd, parts, cwd, name, themeId, cmd.id, null, projectId, msg.cols, msg.rows);
   if (err) {
     console.error('Failed to spawn pty:', err.message);
     ws.send(JSON.stringify({ type: 'error', message: err.message }));

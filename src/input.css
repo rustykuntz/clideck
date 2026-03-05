@@ -2,20 +2,254 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Color mode: CSS custom properties ── */
+
+@layer base {
+  :root {
+    /* Dark palette (default) */
+    --color-base: #020617;       /* slate-950 */
+    --color-surface: #0f172a;    /* slate-900 */
+    --color-raised: #1e293b;     /* slate-800 */
+    --color-muted: #334155;      /* slate-700 */
+    --color-border: #475569;     /* slate-600 */
+    --color-subtle: #64748b;     /* slate-500 */
+    --color-dim: #94a3b8;        /* slate-400 */
+    --color-soft: #cbd5e1;       /* slate-300 */
+    --color-text: #e2e8f0;       /* slate-200 */
+    --color-bright: #f8fafc;     /* slate-50 */
+    --color-overlay: rgba(0, 0, 0, 0.6);
+    --color-shadow: rgba(0, 0, 0, 0.5);
+    --color-dialog: #1e293b;
+    --color-stats-bg: rgba(0, 0, 0, 0.95);
+    --color-accent-subtle: rgba(59, 130, 246, 0.15);
+    --color-rail: #1d1f1f;
+    --color-rail-active: #292a2a;
+    --color-sidebar: #161717;
+    --color-sidebar-input: #0f1010;
+    --color-sidebar-border: #2e2f2f;
+    --color-chat-hover: #2e2f2f;
+    --color-chat-active: #2e2f2f;
+    --color-rail-badge-bg: #5cbd6d;
+    --color-rail-badge-text: #0a0a0a;
+  }
+
+  .light {
+    --color-base: #edeef1;
+    --color-surface: #f7f8fa;
+    --color-raised: #ffffff;
+    --color-muted: #e4e6ea;
+    --color-border: #d1d5db;
+    --color-subtle: #8b919a;
+    --color-dim: #5f6672;
+    --color-soft: #3d4450;
+    --color-text: #1a1d24;
+    --color-bright: #0c0e12;
+    --color-overlay: rgba(0, 0, 0, 0.25);
+    --color-shadow: rgba(0, 0, 0, 0.08);
+    --color-dialog: #ffffff;
+    --color-stats-bg: rgba(255, 255, 255, 0.92);
+    --color-accent-subtle: rgba(59, 130, 246, 0.08);
+    --color-rail: #fcfdfd;
+    --color-rail-active: #eae9e7;
+    --color-sidebar: #f9fafa;
+    --color-sidebar-input: #ffffff;
+    --color-sidebar-border: #e0deda;
+    --color-chat-hover: #f6f5f5;
+    --color-chat-active: #f6f5f5;
+    --color-rail-badge-bg: #51a868;
+    --color-rail-badge-text: #ffffff;
+  }
+}
+
+/* ── Surface overrides using CSS vars ──
+   Override Tailwind's generated slate classes so the entire UI
+   follows the active color-mode without changing markup. */
+
+/* Backgrounds */
+.bg-slate-950  { background-color: var(--color-base) !important; }
+.bg-slate-900  { background-color: var(--color-surface) !important; }
+.bg-slate-800  { background-color: var(--color-raised) !important; }
+.bg-slate-700  { background-color: var(--color-muted) !important; }
+
+/* Backgrounds with alpha — need special handling */
+.bg-slate-800\/50  { background-color: color-mix(in srgb, var(--color-raised) 50%, transparent) !important; }
+.bg-slate-800\/30  { background-color: color-mix(in srgb, var(--color-raised) 30%, transparent) !important; }
+.bg-slate-800\/60  { background-color: color-mix(in srgb, var(--color-raised) 60%, transparent) !important; }
+.bg-slate-800\/80  { background-color: color-mix(in srgb, var(--color-raised) 80%, transparent) !important; }
+.bg-slate-900\/70  { background-color: color-mix(in srgb, var(--color-surface) 70%, transparent) !important; }
+.bg-slate-800\/95  { background-color: color-mix(in srgb, var(--color-raised) 95%, transparent) !important; }
+.bg-slate-700\/50  { background-color: color-mix(in srgb, var(--color-muted) 50%, transparent) !important; }
+.bg-slate-700\/60  { background-color: color-mix(in srgb, var(--color-muted) 60%, transparent) !important; }
+
+/* Hover backgrounds */
+.hover\:bg-slate-700:hover   { background-color: var(--color-muted) !important; }
+.hover\:bg-slate-800:hover   { background-color: var(--color-raised) !important; }
+.hover\:bg-slate-800\/50:hover { background-color: color-mix(in srgb, var(--color-raised) 50%, transparent) !important; }
+.hover\:bg-slate-800\/30:hover { background-color: color-mix(in srgb, var(--color-raised) 30%, transparent) !important; }
+.hover\:bg-slate-700\/50:hover { background-color: color-mix(in srgb, var(--color-muted) 50%, transparent) !important; }
+.hover\:bg-slate-700\/70:hover { background-color: color-mix(in srgb, var(--color-muted) 70%, transparent) !important; }
+
+/* Text */
+.text-slate-200 { color: var(--color-text) !important; }
+.text-slate-300 { color: var(--color-soft) !important; }
+.text-slate-400 { color: var(--color-dim) !important; }
+.text-slate-500 { color: var(--color-subtle) !important; }
+.text-slate-600 { color: var(--color-border) !important; }
+
+/* Hover text */
+.hover\:text-slate-200:hover { color: var(--color-text) !important; }
+.hover\:text-slate-300:hover { color: var(--color-soft) !important; }
+.hover\:text-slate-400:hover { color: var(--color-dim) !important; }
+
+/* Borders */
+.border-slate-600    { border-color: var(--color-border) !important; }
+.border-slate-700    { border-color: var(--color-muted) !important; }
+.border-slate-700\/50 { border-color: color-mix(in srgb, var(--color-muted) 50%, transparent) !important; }
+.border-slate-700\/40 { border-color: color-mix(in srgb, var(--color-muted) 40%, transparent) !important; }
+.border-slate-700\/60 { border-color: color-mix(in srgb, var(--color-muted) 60%, transparent) !important; }
+.border-slate-600\/60 { border-color: color-mix(in srgb, var(--color-border) 60%, transparent) !important; }
+
+.hover\:border-slate-500:hover { border-color: var(--color-subtle) !important; }
+.focus\:border-slate-600\/60:focus { border-color: color-mix(in srgb, var(--color-border) 60%, transparent) !important; }
+.focus\:bg-slate-800\/80:focus { background-color: color-mix(in srgb, var(--color-raised) 80%, transparent) !important; }
+
+/* Placeholder text */
+.placeholder-slate-500::placeholder { color: var(--color-subtle) !important; }
+.placeholder-slate-600::placeholder { color: var(--color-border) !important; }
+
+/* Ring */
+.ring-slate-500 { --tw-ring-color: var(--color-subtle) !important; }
+
+/* Overlays & dialogs */
+.bg-black\/60 { background-color: var(--color-overlay) !important; }
+.shadow-black\/50 { --tw-shadow-color: var(--color-shadow) !important; }
+.shadow-black\/40 { --tw-shadow-color: var(--color-shadow) !important; }
+.shadow-black\/60 { --tw-shadow-color: var(--color-shadow) !important; }
+
+/* Disabled states in light mode */
+.disabled\:bg-slate-600:disabled { background-color: var(--color-border) !important; }
+.disabled\:text-slate-400:disabled { color: var(--color-dim) !important; }
+
+/* ── Element-specific tokens ── */
+
+:root {
+  --color-preview: #a2a2a2;
+  --color-time: #7c7d7d;
+  --color-time-recent: #5cbd6d;
+  --color-dormant: #555;
+  --color-proj-meta: #7c7d7d;
+  --color-search-bg: #2e2f2f;
+  --color-search-text: #acacac;
+  --color-session-hover: rgba(255, 255, 255, 0.04);
+  --color-header-icon: #cbd5e1;
+  --color-rail-icon: #a5a6a6;
+}
+
+.light {
+  --color-preview: #626262;
+  --color-time: #666666;
+  --color-time-recent: #51a868;
+  --color-dormant: #aaa;
+  --color-proj-meta: #666666;
+  --color-search-bg: #f6f5f5;
+  --color-search-text: #626262;
+  --color-session-hover: rgba(0, 0, 0, 0.04);
+  --color-header-icon: #3d4450;
+  --color-rail-icon: #636261;
+}
+
+/* Session rows */
+.session-preview { color: var(--color-preview) !important; }
+.session-time { color: var(--color-time) !important; }
+.session-time.recent { color: var(--color-time-recent) !important; }
+
+/* Dormant (idle) indicator */
+.session-status.dormant { color: var(--color-dormant) !important; }
+
+/* Session hover */
+.group[data-id]:hover { background-color: var(--color-session-hover) !important; }
+.resumable-row:hover { background-color: var(--color-session-hover) !important; }
+
+/* Project count & menu icon */
+.project-count { color: var(--color-proj-meta) !important; }
+.project-menu-btn { color: var(--color-proj-meta) !important; }
+
+/* Search field */
+#search-input {
+  background-color: var(--color-search-bg) !important;
+  color: var(--color-search-text) !important;
+}
+#search-input::placeholder { color: var(--color-search-text) !important; opacity: 0.7; }
+/* Search icon — SVG in the same wrapper as the input */
+.relative:has(#search-input) > svg { color: var(--color-search-text) !important; }
+
+
+/* Rail icons */
+.rail-btn:not(.text-slate-200) { color: var(--color-rail-icon) !important; }
+.rail-btn.bg-slate-800 { background-color: var(--color-rail-active) !important; }
+
+/* Header action icons */
+.icon-btn { color: var(--color-header-icon) !important; border-color: var(--color-border) !important; font-weight: 700; }
+.icon-btn svg { stroke-width: 2; }
+
+/* Sidebar / terminal separator */
+:root { --color-separator: #2e2f2f; }
+.light { --color-separator: #d8d3cd; }
+#nav-rail { background-color: var(--color-rail) !important; }
+#sidebar { background-color: var(--color-sidebar) !important; border-right-color: var(--color-separator) !important; }
+#sidebar input[type="text"], #sidebar select { background-color: var(--color-sidebar-input) !important; border-color: var(--color-sidebar-border) !important; }
+.group:hover { background-color: var(--color-chat-hover) !important; }
+.group.active-session { background-color: var(--color-chat-active) !important; }
+
+/* ── Theme toggle button ── */
+
+.theme-toggle {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+
+.theme-toggle svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.theme-toggle .icon-sun {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+
+.theme-toggle .icon-moon {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+.light .theme-toggle .icon-sun {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+.light .theme-toggle .icon-moon {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+
+/* ── Body transition for mode switch ── */
+html { transition: color 0.3s ease, background-color 0.3s ease; }
+
 /* Terminal wrappers — need absolute positioning for stacking */
 .term-wrap {
-  @apply absolute inset-1 hidden overflow-hidden;
+  @apply absolute inset-1 overflow-hidden invisible;
 }
 .term-wrap.active {
-  @apply block;
+  @apply visible;
 }
 
 /* Ensure xterm viewport fills its container */
 .term-wrap .xterm {
   height: 100%;
-}
-.term-wrap .xterm-viewport {
-  overflow-y: auto !important;
 }
 
 /* Drag & drop */

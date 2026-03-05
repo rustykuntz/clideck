@@ -12,7 +12,7 @@ const DEFAULTS = {
     },
   ],
   confirmClose: true,
-  defaultTheme: 'dracula',
+  defaultTheme: 'solarized-dark',
   prompts: [],
   projects: [],
 };
@@ -34,7 +34,7 @@ function migrate(cfg) {
   }
   delete cfg.profiles;
   delete cfg.defaultProfile;
-  if (!cfg.defaultTheme) cfg.defaultTheme = 'dracula';
+  if (!cfg.defaultTheme) cfg.defaultTheme = 'solarized-dark';
   // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
     const preset = matchPreset(cmd);

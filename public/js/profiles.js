@@ -1,13 +1,13 @@
 import { state } from './state.js';
 
-const FALLBACK = { background: '#282a36', foreground: '#f8f8f2' };
+const FALLBACK = { background: '#002b36', foreground: '#839496' };
 
 export function resolveTheme(themeId) {
   return state.themes.find(t => t.id === themeId)?.theme || FALLBACK;
 }
 
 export function resolveAccent(themeId) {
-  return state.themes.find(t => t.id === themeId)?.accent || '#bd93f9';
+  return state.themes.find(t => t.id === themeId)?.accent || '#268bd2';
 }
 
 export function applyTheme(term, themeId) {

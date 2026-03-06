@@ -159,11 +159,13 @@ function resume(msg, ws, cfg) {
     return;
   }
 
+  if (saved.muted) { const s = sessions.get(id); if (s) s.muted = true; }
+
   // Remove from resumable list and notify all clients
   resumable = resumable.filter(s => s.id !== id);
   broadcast({ type: 'sessions.resumable', list: resumable });
 
-  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, projectId: saved.projectId || null, resumed: true });
+  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, projectId: saved.projectId || null, muted: !!saved.muted, resumed: true });
 }
 
 // --- Standard session operations ---
@@ -183,6 +185,12 @@ function rename(msg) {
 function setTheme(id, themeId) {
   const s = sessions.get(id);
   if (s) { s.themeId = themeId; return true; }
+  return false;
+}
+
+function setMute(id, muted) {
+  const s = sessions.get(id);
+  if (s) { s.muted = !!muted; return true; }
   return false;
 }
 
@@ -243,7 +251,7 @@ function restart(msg, ws, cfg) {
 
 function list() {
   return [...sessions].map(([id, s]) => ({
-    id, name: s.name, themeId: s.themeId, commandId: s.commandId, projectId: s.projectId,
+    id, name: s.name, themeId: s.themeId, commandId: s.commandId, projectId: s.projectId, muted: !!s.muted,
   }));
 }
 
@@ -275,7 +283,7 @@ function saveSessions(cfg) {
     })
     .map(([id, s]) => ({
       id, name: s.name, commandId: s.commandId, cwd: s.cwd,
-      themeId: s.themeId, sessionToken: s.sessionToken, projectId: s.projectId,
+      themeId: s.themeId, sessionToken: s.sessionToken, projectId: s.projectId, muted: !!s.muted,
       savedAt: new Date().toISOString(),
     }));
 
@@ -305,7 +313,7 @@ function shutdown(cfg) {
 
 module.exports = {
   clients, broadcast, getSessions: () => sessions,
-  create, resume, restart, input, resize, rename, setTheme, setProject, close,
+  create, resume, restart, input, resize, rename, setTheme, setMute, setProject, close,
   list, getResumable, sendBuffers,
   loadSessions, shutdown,
 };

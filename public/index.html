@@ -147,6 +147,30 @@
           <p id="notify-permission-status" class="text-xs text-slate-500 mt-1.5"></p>
         </div>
         <div class="mb-5">
+          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input type="checkbox" id="cfg-notify-sound" class="accent-blue-500" checked>
+            Play sound when an agent finishes working
+          </label>
+          <p class="text-xs text-slate-500 mt-1.5 ml-6">Audio beep on working-to-idle transitions</p>
+        </div>
+        <div id="notify-sound-row" class="mb-5 ml-6">
+          <label class="block text-xs text-slate-400 mb-1.5">Notification sound</label>
+          <div class="flex items-center gap-2">
+            <select id="cfg-notify-sound-pick" class="flex-1 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors cursor-pointer">
+              <option value="default-beep">Default</option>
+              <option value="soft-beep">Soft</option>
+              <option value="bold-beep-idle">Bold</option>
+              <option value="echo-beep-idle">Echo</option>
+              <option value="musical-beep-idle">Musical</option>
+              <option value="small-bleep-idle">Bleep</option>
+              <option value="space-idle">Space</option>
+            </select>
+            <button id="btn-sound-preview" class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors" title="Preview sound">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="mb-5">
           <label class="block text-xs text-slate-400 mb-1.5 ml-6">Minimum working time before notifying</label>
           <select id="cfg-notify-min-work" class="ml-6 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors cursor-pointer">
             <option value="5">5 seconds</option>

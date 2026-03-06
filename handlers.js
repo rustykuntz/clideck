@@ -105,6 +105,12 @@ function onConnection(ws) {
         break;
       }
 
+      case 'session.mute': {
+        const ok = sessions.setMute(msg.id, msg.muted);
+        if (ok) sessions.broadcast({ type: 'session.mute', id: msg.id, muted: !!msg.muted });
+        break;
+      }
+
       case 'session.setProject': {
         const ok = sessions.setProject(msg.id, msg.projectId);
         if (ok) sessions.broadcast({ type: 'session.setProject', id: msg.id, projectId: msg.projectId });

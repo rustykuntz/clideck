@@ -393,6 +393,11 @@ function renderNotifications() {
       permStatus.textContent = '';
     }
   }
+
+  const soundEnabled = state.cfg.notifySoundEnabled !== false;
+  document.getElementById('cfg-notify-sound').checked = soundEnabled;
+  document.getElementById('notify-sound-row').classList.toggle('hidden', !soundEnabled);
+  document.getElementById('cfg-notify-sound-pick').value = state.cfg.notifySound || 'default-beep';
 }
 
 document.getElementById('cfg-notify-idle').addEventListener('change', (e) => {
@@ -410,6 +415,18 @@ document.getElementById('btn-notify-permission').addEventListener('click', () =>
   if ('Notification' in window) {
     Notification.requestPermission().then(() => renderNotifications());
   }
+});
+
+document.getElementById('cfg-notify-sound').addEventListener('change', (e) => {
+  document.getElementById('notify-sound-row').classList.toggle('hidden', !e.target.checked);
+  saveConfig();
+});
+
+document.getElementById('cfg-notify-sound-pick').addEventListener('change', saveConfig);
+
+document.getElementById('btn-sound-preview').addEventListener('click', () => {
+  const sound = document.getElementById('cfg-notify-sound-pick').value;
+  new Audio(`/fx/${sound}.mp3`).play().catch(() => {});
 });
 
 // ── Save ──
@@ -441,6 +458,8 @@ function saveConfig() {
   state.cfg.confirmClose = document.getElementById('cfg-confirm-close').checked;
   state.cfg.notifyIdle = document.getElementById('cfg-notify-idle').checked;
   state.cfg.notifyMinWork = parseInt(document.getElementById('cfg-notify-min-work').value, 10) || 20;
+  state.cfg.notifySoundEnabled = document.getElementById('cfg-notify-sound').checked;
+  state.cfg.notifySound = document.getElementById('cfg-notify-sound-pick').value;
   // Preserve fields not managed by this form
   // (projects, prompts, etc. live on state.cfg and must not be dropped)
   send({ type: 'config.update', config: state.cfg });

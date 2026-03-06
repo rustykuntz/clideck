@@ -1,0 +1,16 @@
+Termix v1.1 Workplan
+====================
+
+1. Sound Notifications & Per-Session Mute
+   - Notification sound on working-to-idle transitions (default: on)
+   - 7 bundled sounds: Default, Soft, Bold, Echo, Musical, Bleep, Space
+   - Sound picker + preview button in Settings > Notifications
+   - Global toggle: notifySoundEnabled (on by default)
+   - Per-session mute via context menu (mutes sound + browser notifications)
+   - Mute indicator icon in sidebar row
+   - Mute state persisted in sessions.json across restarts
+   - Mute broadcast to all connected clients for multi-tab sync
+   - .mp3 MIME type added to static server
+   Files changed: index.html, settings.js, terminals.js, app.js, state.js,
+                  server.js, sessions.js, handlers.js, config.js
+   Assets added:  public/fx/*.mp3 (7 files)

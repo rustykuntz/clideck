@@ -144,10 +144,17 @@ function openMenu(sessionId, anchorEl) {
     html += `<div class="border-t border-slate-700/50 my-1"></div>`;
   }
 
+  const muted = !!entry?.muted;
   html += `
     <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="rename">
       <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span>
       Rename
+    </button>
+    <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="mute">
+      <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${muted
+        ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>'
+        : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'}</svg></span>
+      ${muted ? 'Unmute' : 'Mute'}
     </button>
     <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="theme">
       <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8"/></svg></span>
@@ -168,6 +175,8 @@ function openMenu(sessionId, anchorEl) {
     const action = btn.dataset.action;
     if (action === 'rename') {
       startRename(sessionId);
+    } else if (action === 'mute') {
+      toggleMute(sessionId);
     } else if (action === 'delete') {
       document.getElementById('session-list').dispatchEvent(
         new CustomEvent('session-delete', { detail: { id: sessionId } })
@@ -256,7 +265,7 @@ export function estimateSize() {
 
 // --- Terminal management ---
 
-export function addTerminal(id, name, themeId, commandId, projectId) {
+export function addTerminal(id, name, themeId, commandId, projectId, muted) {
   if (state.terms.has(id)) return;
   themeId = themeId || state.cfg.defaultTheme || 'default';
 
@@ -321,9 +330,10 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   ro.observe(el);
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
   setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; } }, 500);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
+  if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
 
   regroupSessions();
 }
@@ -435,18 +445,26 @@ function setStatus(id, working) {
   entry.working = working;
 
   // Notify on working → idle transition
-  if (wasWorking && !working) {
+  if (wasWorking && !working && !entry.muted) {
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
     const minWork = state.cfg.notifyMinWork || 20;
-    if (state.cfg.notifyIdle && !document.hasFocus() && workDuration >= minWork
-        && 'Notification' in window && Notification.permission === 'granted') {
-      const sessionName = document.querySelector(`.group[data-id="${id}"] .name`)?.textContent || 'Session';
-      const proj = state.cfg.projects?.find(p => p.id === entry.projectId);
-      const title = proj ? `${proj.name}: ${sessionName}` : sessionName;
-      const preview = entry.lastPreviewText || '';
-      const body = `Is now idle.\n${preview}`;
-      const n = new Notification(title, { body, icon: '/img/termix-logo-icon.png', tag: id });
-      n.onclick = () => { window.focus(); select(id); n.close(); };
+    if (workDuration >= minWork) {
+      // Sound notification
+      if (state.cfg.notifySoundEnabled !== false) {
+        const sound = state.cfg.notifySound || 'default-beep';
+        new Audio(`/fx/${sound}.mp3`).play().catch(() => {});
+      }
+      // Browser notification (only when tab is not focused)
+      if (state.cfg.notifyIdle && !document.hasFocus()
+          && 'Notification' in window && Notification.permission === 'granted') {
+        const sessionName = document.querySelector(`.group[data-id="${id}"] .name`)?.textContent || 'Session';
+        const proj = state.cfg.projects?.find(p => p.id === entry.projectId);
+        const title = proj ? `${proj.name}: ${sessionName}` : sessionName;
+        const preview = entry.lastPreviewText || '';
+        const body = `Is now idle.\n${preview}`;
+        const n = new Notification(title, { body, icon: '/img/termix-logo-icon.png', tag: id });
+        n.onclick = () => { window.focus(); select(id); n.close(); };
+      }
     }
   }
 
@@ -470,6 +488,37 @@ function setStatus(id, working) {
     }
     el.style.opacity = '1';
   }, 200);
+}
+
+// --- Mute ---
+
+const MUTE_SVG = `<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
+
+function toggleMute(id) {
+  const entry = state.terms.get(id);
+  if (!entry) return;
+  entry.muted = !entry.muted;
+  send({ type: 'session.mute', id, muted: entry.muted });
+  updateMuteIndicator(id);
+}
+
+function updateMuteIndicator(id) {
+  const entry = state.terms.get(id);
+  if (!entry) return;
+  const row = document.querySelector(`.group[data-id="${id}"]`);
+  if (!row) return;
+  let icon = row.querySelector('.mute-icon');
+  if (entry.muted) {
+    if (!icon) {
+      icon = document.createElement('span');
+      icon.className = 'mute-icon flex-shrink-0 text-slate-600';
+      icon.innerHTML = MUTE_SVG;
+      const dot = row.querySelector('.unread-dot');
+      dot.parentNode.insertBefore(icon, dot);
+    }
+  } else {
+    icon?.remove();
+  }
 }
 
 // --- Theme ---
@@ -815,4 +864,4 @@ setInterval(() => {
   }
 }, 60000);
 
-export { openMenu, closeMenu, setStatus, PROJECT_COLORS };
+export { openMenu, closeMenu, setStatus, updateMuteIndicator, PROJECT_COLORS };

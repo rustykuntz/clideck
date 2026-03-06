@@ -1,6 +1,6 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
@@ -44,11 +44,11 @@ function connect() {
         renderResumable();
         break;
       case 'sessions':
-        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId));
+        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted));
         if (msg.list.length) select(msg.list[0].id);
         break;
       case 'created':
-        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId);
+        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted);
         select(msg.id);
         applyFilter();
         break;
@@ -137,6 +137,11 @@ function connect() {
       case 'session.setProject': {
         const entry = state.terms.get(msg.id);
         if (entry) { entry.projectId = msg.projectId; regroupSessions(); }
+        break;
+      }
+      case 'session.mute': {
+        const entry = state.terms.get(msg.id);
+        if (entry) { entry.muted = !!msg.muted; updateMuteIndicator(msg.id); }
         break;
       }
       case 'session.needsSetup': {

@@ -444,8 +444,8 @@ function setStatus(id, working) {
   const wasWorking = entry.working;
   entry.working = working;
 
-  // Notify on working → idle transition
-  if (wasWorking && !working && !entry.muted) {
+  // Notify on working → idle transition (skip if this session is in focus)
+  if (wasWorking && !working && !entry.muted && !(document.hasFocus() && state.active === id)) {
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
     const minWork = state.cfg.notifyMinWork || 20;
     if (workDuration >= minWork) {

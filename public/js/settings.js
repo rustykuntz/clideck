@@ -152,7 +152,7 @@ function renderAgentList() {
           On
         </label>
         ${isBuiltIn ? '' : '<button class="agent-del text-slate-500 hover:text-red-400 px-1 text-lg transition-colors" title="Remove">&times;</button>'}
-      </div>`;
+      </div>
       <div class="mb-3">
         <label class="block text-xs text-slate-500 mb-1">Command</label>
         <input type="text" value="${esc(c.command)}" class="agent-command w-full px-2 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors font-mono" placeholder="e.g. claude, codex, gemini">

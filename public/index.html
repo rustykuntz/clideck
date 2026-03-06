@@ -97,8 +97,6 @@
   <!-- Main -->
   <main id="main" class="flex-1 flex relative">
     <div id="terminals" class="absolute inset-0" style="pointer-events:none"></div>
-    <!-- TEMPORARY: stats overlay -->
-    <div id="stats-overlay" class="absolute top-2 right-3 z-[100] text-[11px] font-mono text-green-400 px-3 py-2 rounded shadow-lg pointer-events-none" style="background:var(--color-stats-bg)"></div>
     <div id="empty" class="absolute inset-0 flex flex-col items-center justify-center select-none">
       <img src="/img/termix-logo-terminal-panel.png" alt="Termix" class="w-44 opacity-60 mb-5" draggable="false">
       <p class="text-slate-500 text-[13px] leading-relaxed text-center">Press <kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-mono">+</kbd> to start a new session<br>or resume a previous one from the sidebar</p>
@@ -172,11 +170,6 @@
           </button>
           <div id="default-theme-preview" class="mt-2 rounded-md overflow-hidden text-[11px] font-mono leading-[1.45] whitespace-pre"></div>
         </div>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 mt-8">Monitoring</h3>
-        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-          <input type="checkbox" id="cfg-stats-overlay" class="accent-blue-500">
-          Show process stats overlay (CPU, memory, network)
-        </label>
       </div>
 
     </div>

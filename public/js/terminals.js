@@ -427,35 +427,6 @@ function readLastAgentLine(term, commandId) {
   return '';
 }
 
-// TEMPORARY: debug — dump last N lines of buffer with their stats
-export function debugBuffer(term) {
-  const buf = term.buffer.active;
-  const lines = [];
-  const startY = Math.max(0, buf.baseY + buf.cursorY - 15);
-  for (let y = startY; y <= buf.baseY + buf.cursorY; y++) {
-    const line = buf.getLine(y);
-    if (!line) continue;
-    let text = '', total = 0, strong = 0, modes = new Set();
-    for (let x = 0; x < line.length; x++) {
-      const cell = line.getCell(x);
-      if (!cell) continue;
-      const ch = cell.getChars();
-      text += ch || ' ';
-      if (!ch || ch === ' ') continue;
-      total++;
-      const mode = cell.getFgColorMode();
-      const dim = cell.isDim();
-      modes.add(`m${mode}${dim ? 'd' : ''}`);
-      if (mode === 0 && !dim) strong++;
-    }
-    text = text.trimEnd();
-    if (!text) continue;
-    const pct = total ? Math.round(strong / total * 100) : 0;
-    lines.push(`y${y} [${pct}% strong] [${[...modes].join(',')}] "${text.slice(0, 50)}"`);
-  }
-  return lines.join('\n');
-}
-
 function setStatus(id, working) {
   const entry = state.terms.get(id);
   if (!entry || entry.working === working) return;

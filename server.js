@@ -75,18 +75,34 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on('connection', onConnection);
 
-// TEMPORARY: stats overlay
-const stats = require('./stats');
-stats.start(sessions.getSessions(), sessions.broadcast);
+const activity = require('./activity');
+activity.start(sessions.getSessions(), sessions.broadcast);
 
 // Graceful shutdown: persist sessions before exit
 const { getConfig } = require('./handlers');
 function onShutdown() {
-  stats.stop();
+  activity.stop();
   sessions.shutdown(getConfig());
   process.exit(0);
 }
 process.on('SIGINT', onShutdown);
 process.on('SIGTERM', onShutdown);
 
-server.listen(PORT, '127.0.0.1', () => console.log(`Terminal UI → http://localhost:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => {
+  const v = require('./package.json').version;
+  const url = `http://localhost:${PORT}`;
+  console.log(`
+\x1b[38;5;141m  ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸\x1b[0m
+
+\x1b[38;5;141m  ████████╗\x1b[38;5;105m███████╗\x1b[38;5;69m██████╗ \x1b[38;5;33m███╗   ███╗\x1b[38;5;38m██╗\x1b[38;5;44m██╗  ██╗\x1b[0m
+\x1b[38;5;141m  ╚══██╔══╝\x1b[38;5;105m██╔════╝\x1b[38;5;69m██╔══██╗\x1b[38;5;33m████╗ ████║\x1b[38;5;38m██║\x1b[38;5;44m╚██╗██╔╝\x1b[0m
+\x1b[38;5;141m     ██║   \x1b[38;5;105m█████╗  \x1b[38;5;69m██████╔╝\x1b[38;5;33m██╔████╔██║\x1b[38;5;38m██║\x1b[38;5;44m ╚███╔╝ \x1b[0m
+\x1b[38;5;141m     ██║   \x1b[38;5;105m██╔══╝  \x1b[38;5;69m██╔══██╗\x1b[38;5;33m██║╚██╔╝██║\x1b[38;5;38m██║\x1b[38;5;44m ██╔██╗ \x1b[0m
+\x1b[38;5;141m     ██║   \x1b[38;5;105m███████╗\x1b[38;5;69m██║  ██║\x1b[38;5;33m██║ ╚═╝ ██║\x1b[38;5;38m██║\x1b[38;5;44m██╔╝ ██╗\x1b[0m
+\x1b[38;5;141m     ╚═╝   \x1b[38;5;105m╚══════╝\x1b[38;5;69m╚═╝  ╚═╝\x1b[38;5;33m╚═╝     ╚═╝\x1b[38;5;38m╚═╝\x1b[38;5;44m╚═╝  ╚═╝\x1b[0m
+
+\x1b[38;5;141m  ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸\x1b[0m
+
+\x1b[38;5;245m  v${v}                    ${url}\x1b[0m
+`);
+});

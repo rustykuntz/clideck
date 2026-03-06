@@ -2,7 +2,7 @@ const pty = require('node-pty');
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
 const { parseCommand, resolveValidDir } = require('./utils');
-const stats = require('./stats'); // TEMPORARY
+const activity = require('./activity');
 const transcript = require('./transcript');
 const telemetry = require('./telemetry-receiver');
 const opencodeBridge = require('./opencode-bridge');
@@ -81,7 +81,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
       const match = session.chunks.join('').match(sessionIdRe);
       if (match) session.sessionToken = match[1];
     }
-    stats.trackOut(id, data); // TEMPORARY
+    activity.trackOut(id, data);
     transcript.trackOutput(id, data);
     broadcast({ type: 'output', id, data });
   });
@@ -89,7 +89,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   term.onExit(() => {
     // Skip cleanup if this PTY was replaced by a restart
     if (sessions.get(id)?.pty !== term) return;
-    stats.clear(id); // TEMPORARY
+    activity.clear(id);
     telemetry.clear(id);
     opencodeBridge.clear(id);
     transcript.clear(id);
@@ -169,7 +169,7 @@ function resume(msg, ws, cfg) {
 // --- Standard session operations ---
 
 function input(msg) {
-  stats.trackIn(msg.id, msg.data.length); // TEMPORARY
+  activity.trackIn(msg.id, msg.data.length);
   transcript.trackInput(msg.id, msg.data);
   sessions.get(msg.id)?.pty.write(msg.data);
 }
@@ -220,7 +220,7 @@ function restart(msg, ws, cfg) {
   const savedToken = s.sessionToken;
   const { name, cwd, commandId, projectId } = s;
 
-  stats.clear(id);
+  activity.clear(id);
   telemetry.clear(id);
   opencodeBridge.clear(id);
   transcript.clear(id);

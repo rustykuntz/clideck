@@ -29,8 +29,6 @@ document.getElementById('settings-nav').addEventListener('click', (e) => {
 export function renderSettings() {
   document.getElementById('cfg-default-path').value = state.cfg.defaultPath || '';
   document.getElementById('cfg-confirm-close').checked = state.cfg.confirmClose !== false;
-  document.getElementById('cfg-stats-overlay').checked = !!state.cfg.statsOverlay;
-  document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
   renderAgentList();
   renderThemeSection();
   renderNotifications();
@@ -441,8 +439,6 @@ function saveConfig() {
   state.cfg.defaultTheme = document.getElementById('cfg-default-theme').value;
   state.cfg.defaultPath = document.getElementById('cfg-default-path').value.trim();
   state.cfg.confirmClose = document.getElementById('cfg-confirm-close').checked;
-  state.cfg.statsOverlay = document.getElementById('cfg-stats-overlay').checked;
-  document.getElementById('stats-overlay').classList.toggle('hidden', !state.cfg.statsOverlay);
   state.cfg.notifyIdle = document.getElementById('cfg-notify-idle').checked;
   state.cfg.notifyMinWork = parseInt(document.getElementById('cfg-notify-min-work').value, 10) || 20;
   // Preserve fields not managed by this form
@@ -453,8 +449,6 @@ function saveConfig() {
 // ── Events: General ──
 document.getElementById('cfg-default-path').addEventListener('input', debounce(saveConfig, 500));
 document.getElementById('cfg-confirm-close').addEventListener('change', saveConfig);
-document.getElementById('cfg-stats-overlay').addEventListener('change', saveConfig);
-
 // ── Events: Appearance ──
 document.getElementById('default-theme-trigger').addEventListener('click', (e) => {
   openThemeMenu(e.currentTarget);

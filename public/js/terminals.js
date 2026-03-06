@@ -447,7 +447,7 @@ function setStatus(id, working) {
   // Notify on working → idle transition
   if (wasWorking && !working && !entry.muted) {
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
-    const minWork = state.cfg.notifyMinWork || 20;
+    const minWork = state.cfg.notifyMinWork || 10;
     if (workDuration >= minWork) {
       // Sound: plays unless this session is the one you're looking at
       if (state.cfg.notifySoundEnabled !== false && state.active !== id) {

@@ -14,7 +14,7 @@ const DEFAULTS = {
   ],
   confirmClose: true,
   notifySoundEnabled: true,
-  notifySound: 'default-beep',
+  notifySound: 'soft-beep',
   defaultTheme: 'catppuccin-mocha',
   prompts: [],
   projects: [],

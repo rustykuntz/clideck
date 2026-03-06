@@ -18,9 +18,9 @@ require('./opencode-bridge').init(sessions.broadcast, sessions.getSessions);
 const PORT = 4000;
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 const ALIASES = {
-  '/xterm.css':    join(__dirname, 'node_modules/xterm/css/xterm.css'),
-  '/xterm.js':     join(__dirname, 'node_modules/xterm/lib/xterm.js'),
-  '/addon-fit.js': join(__dirname, 'node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'),
+  '/xterm.css':    join(__dirname, 'node_modules/@xterm/xterm/css/xterm.css'),
+  '/xterm.js':     join(__dirname, 'node_modules/@xterm/xterm/lib/xterm.js'),
+  '/addon-fit.js': join(__dirname, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'),
 };
 
 const PUBLIC_ROOT = join(__dirname, 'public');

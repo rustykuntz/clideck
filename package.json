@@ -1,6 +1,6 @@
 {
   "name": "termix-cli",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
   "main": "server.js",
   "bin": {
@@ -33,10 +33,10 @@
   },
   "homepage": "https://termix-a68d5bb0.mintlify.app/",
   "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "node-pty": "^1.1.0",
-    "ws": "^8.19.0",
-    "xterm": "^5.3.0",
-    "xterm-addon-fit": "^0.8.0"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.19"

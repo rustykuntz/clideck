@@ -375,7 +375,7 @@ function renderThemeSection() {
 function renderNotifications() {
   const enabled = !!state.cfg.notifyIdle;
   document.getElementById('cfg-notify-idle').checked = enabled;
-  document.getElementById('cfg-notify-min-work').value = state.cfg.notifyMinWork || 20;
+  document.getElementById('cfg-notify-min-work').value = state.cfg.notifyMinWork || 10;
 
   const permRow = document.getElementById('notify-permission-row');
   const permStatus = document.getElementById('notify-permission-status');

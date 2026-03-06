@@ -7,14 +7,14 @@ Termix is a local terminal dashboard that lets you run, monitor, and manage mult
 ## Quick Start
 
 ```bash
-npx termix-cli
-```
-
-Or install globally to get the `termix` command:
-
-```bash
 npm install -g termix-cli
 termix
+```
+
+Or run directly without installing:
+
+```bash
+npx termix-cli
 ```
 
 Open [http://localhost:4000](http://localhost:4000). Click **+**, pick an agent, start working.

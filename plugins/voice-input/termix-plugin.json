@@ -1,0 +1,49 @@
+{
+  "id": "voice-input",
+  "name": "Voice Input",
+  "version": "1.0.0",
+  "settings": [
+    {
+      "key": "enabled",
+      "label": "Enabled",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "backend",
+      "label": "ASR Backend",
+      "type": "select",
+      "default": "openai",
+      "options": ["openai", "local"],
+      "description": "OpenAI Whisper (remote) or local MLX model (macOS)"
+    },
+    {
+      "key": "openaiApiKey",
+      "label": "OpenAI API Key",
+      "type": "text",
+      "default": "",
+      "description": "Required for OpenAI backend"
+    },
+    {
+      "key": "language",
+      "label": "Language",
+      "type": "select",
+      "default": "auto",
+      "options": ["auto", "en", "es", "fr", "de", "it", "pt", "nl", "ja", "ko", "zh", "ar", "hi", "ru", "pl", "tr", "sv", "da", "fi", "no", "he", "uk", "el", "cs", "ro", "hu", "th", "vi", "id"]
+    },
+    {
+      "key": "hotkey",
+      "label": "Record Key",
+      "type": "text",
+      "default": "F4",
+      "description": "Key to start/stop recording (e.g. F4, F8)"
+    },
+    {
+      "key": "replacementsFile",
+      "label": "Replacements File",
+      "type": "text",
+      "default": "",
+      "description": "Path to text replacements file (wrong => correct per line)"
+    }
+  ]
+}

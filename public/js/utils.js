@@ -1,3 +1,9 @@
+export function binName(command) {
+  const m = command.match(/^(['"])(.*?)\1/);
+  const exec = m ? m[2] : command;
+  return exec.split(/[\\/]/).pop().split(/\s/)[0].replace(/\.(exe|cmd)$/i, '');
+}
+
 export function esc(s) {
   return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }

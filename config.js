@@ -1,14 +1,16 @@
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
+const os = require('os');
 const { DATA_DIR } = require('./paths');
+const { defaultShell, binName } = require('./utils');
 
 const CONFIG_PATH = join(DATA_DIR, 'config.json');
 
 const DEFAULTS = {
-  defaultPath: join(process.env.HOME || '/tmp', 'Documents'),
+  defaultPath: join(os.homedir(), 'Documents'),
   commands: [
     {
-      id: '1', label: 'Shell', icon: 'terminal', command: '/bin/zsh', enabled: true,
+      id: '1', label: 'Shell', icon: 'terminal', command: defaultShell, enabled: true,
       defaultPath: '', isAgent: false, canResume: false, resumeCommand: null, sessionIdPattern: null,
     },
   ],
@@ -16,6 +18,7 @@ const DEFAULTS = {
   notifySoundEnabled: true,
   notifySound: 'soft-beep',
   defaultTheme: 'catppuccin-mocha',
+  defaultShell,
   prompts: [],
   projects: [],
 };
@@ -23,10 +26,11 @@ const DEFAULTS = {
 function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 
 const PRESETS = JSON.parse(readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
+for (const p of PRESETS) if (p.presetId === 'shell') p.command = defaultShell;
 
 function matchPreset(cmd) {
-  const bin = cmd.command.split('/').pop().split(' ')[0];
-  return PRESETS.find(p => p.command.split('/').pop() === bin);
+  const bin = binName(cmd.command);
+  return PRESETS.find(p => binName(p.command) === bin);
 }
 
 function migrate(cfg) {

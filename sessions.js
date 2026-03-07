@@ -1,7 +1,7 @@
 const pty = require('node-pty');
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
-const { parseCommand, resolveValidDir } = require('./utils');
+const { parseCommand, resolveValidDir, defaultShell, binName } = require('./utils');
 const activity = require('./activity');
 const transcript = require('./transcript');
 const telemetry = require('./telemetry-receiver');
@@ -11,6 +11,7 @@ const THEMES = require('./themes');
 const MAX_BUFFER = 200 * 1024;
 const PORT = 4000;
 const PRESETS = JSON.parse(require('fs').readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
+for (const p of PRESETS) if (p.presetId === 'shell') p.command = defaultShell;
 const { DATA_DIR } = require('./paths');
 const SAVED_PATH = join(DATA_DIR, 'sessions.json');
 const sessions = new Map();
@@ -27,8 +28,8 @@ function broadcast(msg) {
 // --- Spawn a PTY and wire up a session ---
 
 function buildTelemetryEnv(id, cmd) {
-  const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = PRESETS.find(p => p.command.split('/').pop().split(' ')[0] === bin);
+  const bin = binName(cmd.command);
+  const preset = PRESETS.find(p => binName(p.command) === bin);
   if (!preset?.telemetryEnv || !cmd.telemetryEnabled) return {};
   const env = {};
   for (const [k, v] of Object.entries(preset.telemetryEnv)) {
@@ -66,8 +67,8 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   sessions.set(id, session);
 
   // Watch for telemetry — if config isn't set up, frontend will prompt
-  const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = PRESETS.find(p => p.command.split('/').pop().split(' ')[0] === bin);
+  const bin = binName(cmd.command);
+  const preset = PRESETS.find(p => binName(p.command) === bin);
   if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id, bin);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
@@ -107,7 +108,7 @@ function create(msg, ws, cfg) {
   const id = crypto.randomUUID();
   const cmd = cfg.commands.find(c => c.id === msg.commandId)
     || cfg.commands[0]
-    || { label: 'Shell', command: '/bin/zsh' };
+    || { label: 'Shell', command: defaultShell };
   const parts = parseCommand(cmd.command);
   const cwd = resolveValidDir(msg.cwd || cmd.defaultPath || cfg.defaultPath);
   const themeId = msg.themeId || cfg.defaultTheme || 'default';

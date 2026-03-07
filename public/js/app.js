@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc } from './utils.js';
+import { esc, binName } from './utils.js';
 import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
@@ -279,8 +279,8 @@ function showTelemetrySetup(commandId, sessionId) {
   if (!cmd) return;
   // Skip if telemetry is already configured via settings
   if (cmd.telemetryEnabled && cmd.telemetryStatus?.ok) return;
-  const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = state.presets.find(p => p.command.split('/').pop().split(' ')[0] === bin);
+  const bin = binName(cmd.command);
+  const preset = state.presets.find(p => binName(p.command) === bin);
   if (!preset?.telemetrySetup || shownSetup.has(preset.presetId)) return;
   shownSetup.add(preset.presetId);
 
@@ -451,7 +451,7 @@ function openProjectCreator() {
   const autoFillName = () => {
     const path = pathInput.value.trim();
     if (!path) return;
-    const lastFolder = path.replace(/\/+$/, '').split('/').pop();
+    const lastFolder = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
     if (lastFolder && !nameInput.dataset.userEdited) {
       nameInput.value = lastFolder;
     }
@@ -462,7 +462,7 @@ function openProjectCreator() {
 
   const doCreate = () => {
     const path = pathInput.value.trim();
-    const lastFolder = path ? path.replace(/\/+$/, '').split('/').pop() : '';
+    const lastFolder = path ? path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() : '';
     const name = nameInput.value.trim() || lastFolder;
     if (!name) { nameInput.focus(); return; }
     const projects = state.cfg.projects || [];

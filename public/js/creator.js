@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc, agentIcon } from './utils.js';
+import { esc, agentIcon, binName } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
 import { estimateSize } from './terminals.js';
 
@@ -23,7 +23,7 @@ function randomName() {
 function sortedPresets() {
   const all = [...state.presets].filter(p => {
     const cmd = state.cfg.commands.find(c =>
-      c.command.split('/').pop().split(' ')[0] === p.command.split('/').pop().split(' ')[0]
+      binName(c.command) === binName(p.command)
     );
     return !cmd || cmd.enabled !== false;
   });
@@ -40,7 +40,7 @@ function sortedPresets() {
 function createFromPreset(preset, sessionName, cwd, projectId) {
   // Find existing command matching this preset
   let cmd = state.cfg.commands.find(c =>
-    c.command.split('/').pop().split(' ')[0] === preset.command.split('/').pop().split(' ')[0]
+    binName(c.command) === binName(preset.command)
   );
   // Auto-create the command if it doesn't exist yet
   if (!cmd) {

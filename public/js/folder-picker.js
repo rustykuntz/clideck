@@ -1,6 +1,20 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
 
+function isRoot(p) { return p === '/' || /^[A-Za-z]:\\$/.test(p); }
+function parentOf(p) {
+  const up = p.replace(/[\\/][^\\/]+[\\/]?$/, '');
+  if (!up) {
+    const drive = p.match(/^([A-Za-z]:)/);
+    return drive ? drive[1] + '\\' : '/';
+  }
+  return /^[A-Za-z]:$/.test(up) ? up + '\\' : up;
+}
+function joinChild(base, name) {
+  const sep = base.includes('\\') ? '\\' : '/';
+  return base.endsWith(sep) ? base + name : base + sep + name;
+}
+
 const overlay = document.getElementById('folder-picker');
 const pathBar = document.getElementById('fp-path');
 const listing = document.getElementById('fp-listing');
@@ -41,15 +55,15 @@ export function handleDirsResponse(msg) {
   currentPath = msg.path;
   selectBtn.disabled = false;
   let html = '';
-  if (currentPath !== '/') {
-    const parent = currentPath.replace(/\/[^/]+\/?$/, '') || '/';
+  if (!isRoot(currentPath)) {
+    const parent = parentOf(currentPath);
     html += `<div class="fp-item px-4 py-1.5 cursor-pointer hover:bg-slate-700 text-sm text-slate-400 transition-colors" data-path="${esc(parent)}">..</div>`;
   }
   if (msg.entries.length === 0 && !html) {
     html = '<div class="p-4 text-center text-slate-500 text-sm">Empty directory</div>';
   }
   html += msg.entries.map(name =>
-    `<div class="fp-item px-4 py-1.5 cursor-pointer hover:bg-slate-700 text-sm text-slate-200 transition-colors" data-path="${esc(currentPath === '/' ? '/' + name : currentPath + '/' + name)}">${esc(name)}</div>`
+    `<div class="fp-item px-4 py-1.5 cursor-pointer hover:bg-slate-700 text-sm text-slate-200 transition-colors" data-path="${esc(joinChild(currentPath, name))}">${esc(name)}</div>`
   ).join('');
   listing.innerHTML = html;
 }

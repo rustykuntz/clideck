@@ -38,6 +38,10 @@ Open [http://localhost:4000](http://localhost:4000). Click **+**, launch agents,
 - **15 themes** — dark and light, plus custom theme support
 - **Zero interference** — real PTY terminals, nothing between you and the agent
 
+## Platform Support
+
+Tested on **macOS** and **Windows**. Linux may work but is untested.
+
 ## How It Works
 
 Each agent runs in a real terminal. Termix receives lightweight telemetry signals (OpenTelemetry) from the agents locally — this is how it knows what's happening without reading your prompts or the agent's responses. All data stays on your machine.

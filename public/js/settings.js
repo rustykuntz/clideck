@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc, debounce, agentIcon } from './utils.js';
+import { esc, debounce, agentIcon, binName } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
 
 // ── Category navigation ──
@@ -95,8 +95,8 @@ function openIconPicker(triggerEl, cardIdx) {
 }
 
 function telemetryPreset(cmd) {
-  const bin = cmd.command.split('/').pop().split(' ')[0];
-  return (state.presets || []).find(p => p.command.split('/').pop() === bin);
+  const bin = binName(cmd.command);
+  return (state.presets || []).find(p => binName(p.command) === bin);
 }
 
 function telemetrySection(c) {
@@ -442,7 +442,7 @@ function saveConfig() {
       id: existing.id || crypto.randomUUID(),
       label: card.querySelector('.agent-name').value.trim() || 'Untitled',
       icon: existing.icon || 'terminal',
-      command: card.querySelector('.agent-command').value.trim() || '/bin/zsh',
+      command: card.querySelector('.agent-command').value.trim() || state.cfg.defaultShell || '/bin/zsh',
       enabled: card.querySelector('.agent-enabled').checked,
       defaultPath: existing.defaultPath || '',
       isAgent: card.querySelector('.agent-is-agent').checked,

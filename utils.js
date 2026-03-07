@@ -28,14 +28,14 @@ function parseCommand(str) {
     }
   }
   if (current) parts.push(current);
-  return parts.length ? parts : ['/bin/zsh'];
+  return parts.length ? parts : [defaultShell];
 }
 
 function resolveValidDir(dir) {
   try {
     if (dir && statSync(dir).isDirectory()) return dir;
   } catch {}
-  return process.env.HOME || '/tmp';
+  return require('os').homedir();
 }
 
 function listDirs(path) {
@@ -49,4 +49,12 @@ function listDirs(path) {
   }
 }
 
-module.exports = { ensurePtyHelper, parseCommand, resolveValidDir, listDirs };
+const defaultShell = process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : '/bin/zsh';
+
+function binName(command) {
+  const m = command.match(/^(['"])(.*?)\1/);
+  const exec = m ? m[2] : command;
+  return exec.split(/[\\/]/).pop().split(/\s/)[0].replace(/\.(exe|cmd)$/i, '');
+}
+
+module.exports = { ensurePtyHelper, parseCommand, resolveValidDir, listDirs, defaultShell, binName };

@@ -4,8 +4,9 @@ const os = require('os');
 const config = require('./config');
 const sessions = require('./sessions');
 const themes = require('./themes');
-const presets = require('./agent-presets.json');
-const { listDirs } = require('./utils');
+const presets = JSON.parse(readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
+const { listDirs, binName, defaultShell } = require('./utils');
+for (const p of presets) if (p.presetId === 'shell') p.command = defaultShell;
 const transcript = require('./transcript');
 
 let cfg = config.load();
@@ -57,14 +58,13 @@ function onConnection(ws) {
         const liveSessions = sessions.list();
         const hasLive = liveSessions.some(s => {
           const cmd = cfg.commands.find(c => c.id === s.commandId);
-          return cmd && cmd.command.split('/').pop().split(' ')[0] === preset.command.split('/').pop();
+          return cmd && binName(cmd.command) === binName(preset.command);
         });
         if (!hasLive) break;
         const result = applyTelemetryConfig(preset);
         // Persist telemetry state in config
         for (const cmd of cfg.commands) {
-          const bin = cmd.command.split('/').pop().split(' ')[0];
-          if (bin === preset.command.split('/').pop()) {
+          if (binName(cmd.command) === binName(preset.command)) {
             cmd.telemetryEnabled = result.success;
             cmd.telemetryStatus = result.success ? { ok: true } : { ok: false, error: result.message };
           }
@@ -92,8 +92,7 @@ function onConnection(ws) {
         }
         // Update all matching commands in config
         for (const cmd of cfg.commands) {
-          const bin = cmd.command.split('/').pop().split(' ')[0];
-          if (bin === preset.command.split('/').pop()) {
+          if (binName(cmd.command) === binName(preset.command)) {
             cmd.telemetryEnabled = enable && result.success;
             cmd.telemetryStatus = enable
               ? (result.success ? { ok: true } : { ok: false, error: result.message })

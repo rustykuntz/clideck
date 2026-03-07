@@ -261,3 +261,45 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
 .project-chevron.collapsed svg {
   transform: rotate(-90deg);
 }
+
+/* Sidebar scrollbar */
+.tmx-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.tmx-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.tmx-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tmx-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.tmx-scroll:hover,
+.tmx-scroll.is-scrolling {
+  scrollbar-color: color-mix(in srgb, var(--color-muted) 78%, transparent) color-mix(in srgb, var(--color-sidebar) 70%, transparent);
+}
+
+.tmx-scroll:hover::-webkit-scrollbar-track,
+.tmx-scroll.is-scrolling::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--color-sidebar) 70%, transparent);
+}
+
+.tmx-scroll:hover::-webkit-scrollbar-thumb,
+.tmx-scroll.is-scrolling::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-muted) 78%, transparent);
+  border-color: color-mix(in srgb, var(--color-sidebar) 70%, transparent);
+}
+
+.tmx-scroll:hover::-webkit-scrollbar-thumb:hover,
+.tmx-scroll.is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-subtle) 85%, transparent);
+}

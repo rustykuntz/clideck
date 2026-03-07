@@ -650,5 +650,17 @@ async function loadPlugins(list) {
   }
 }
 
+function initSessionScrollbarVisibility() {
+  const el = document.getElementById('session-list');
+  if (!el) return;
+  let t;
+  el.addEventListener('scroll', () => {
+    el.classList.add('is-scrolling');
+    clearTimeout(t);
+    t = setTimeout(() => el.classList.remove('is-scrolling'), 220);
+  }, { passive: true });
+}
+
 initDrag();
+initSessionScrollbarVisibility();
 connect();

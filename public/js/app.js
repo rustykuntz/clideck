@@ -7,6 +7,7 @@ import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
 import { applyTheme } from './profiles.js';
 import { toggleMode, applyMode } from './color-mode.js';
+import { showToast } from './toast.js';
 import './nav.js';
 import { initDrag } from './drag.js';
 
@@ -278,29 +279,9 @@ document.addEventListener('termix-theme-switch', (e) => {
 });
 
 function showModeToast() {
-  document.getElementById('mode-toast')?.remove();
-  const toast = document.createElement('div');
-  toast.id = 'mode-toast';
-  toast.className = 'fixed bottom-5 right-5 z-[500] w-[360px] bg-slate-800/95 backdrop-blur-sm border border-slate-700/60 rounded-xl shadow-2xl shadow-black/60';
-  toast.style.opacity = '0';
-  toast.style.transform = 'translateY(12px)';
-  toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-  toast.innerHTML = `
-    <div class="flex items-start gap-2.5 px-4 py-3.5">
-      <svg class="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
-      <p class="flex-1 text-xs text-slate-300 leading-relaxed">If a terminal looks off, right-click the session and choose <strong class="text-slate-200">Refresh session</strong>.</p>
-      <button class="dismiss-btn flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
-    </div>`;
-  toast.querySelector('.dismiss-btn').onclick = () => toast.remove();
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(12px)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  showToast('If a terminal looks off, right-click the session and choose <strong class="text-slate-200">Refresh session</strong>.', {
+    type: 'warn', duration: 4000, id: 'mode', html: true,
+  });
 }
 
 document.getElementById('btn-new').addEventListener('click', openCreator);
@@ -630,7 +611,7 @@ function renderPluginsPanel(list) {
     if (el.type === 'checkbox') el.addEventListener('change', () => onChange(el.checked));
     else if (el.tagName === 'SELECT') el.addEventListener('change', () => onChange(el.value));
     else if (el.type === 'number') el.addEventListener('change', () => onChange(Number(el.value)));
-    else el.addEventListener('change', () => onChange(el.value));
+    else el.addEventListener('input', () => onChange(el.value));
   });
 }
 
@@ -711,6 +692,7 @@ async function loadPlugins(list) {
           addToolbarButton(opts) { return addPluginToolbarButton(plugin.id, opts); },
           getActiveSessionId() { return state.active; },
           writeToSession(id, text) { send({ type: 'input', id, data: text }); },
+          toast(message, opts) { return showToast(message, opts); },
         });
       }
     } catch (e) { console.error(`[plugin:${plugin.id}] client load failed:`, e); }

@@ -1,6 +1,6 @@
 {
   "name": "termix-cli",
-  "version": "1.16.0",
+  "version": "1.18.0",
   "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
   "main": "server.js",
   "bin": {
@@ -24,7 +24,7 @@
     "multiplexer",
     "xterm"
   ],
-  "author": "",
+  "author": "Or Kuntzman",
   "license": "MIT",
   "type": "commonjs",
   "repository": {

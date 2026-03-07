@@ -11,6 +11,58 @@ module.exports = {
     let replacements = [];
     let replMtime = null;
 
+    // --- Python virtual environment ---
+
+    const pyDir = join(api.pluginDir, 'python');
+    const venvDir = join(pyDir, '.venv');
+    const venvPy = process.platform === 'win32'
+      ? join(venvDir, 'Scripts', 'python.exe')
+      : join(venvDir, 'bin', 'python3');
+
+    function localDeps() {
+      if (process.platform === 'darwin') return ['numpy', 'mlx', 'tiktoken', 'huggingface_hub'];
+      return ['numpy', 'faster-whisper'];
+    }
+
+    function checkImport() {
+      return process.platform === 'darwin'
+        ? 'import numpy, mlx, tiktoken, huggingface_hub'
+        : 'import numpy, faster_whisper';
+    }
+
+    function run(cmd, args) {
+      return new Promise((resolve, reject) => {
+        const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let err = '';
+        p.stderr.on('data', d => { err += d; });
+        p.on('close', code => code === 0 ? resolve() : reject(new Error(err.trim() || `exit ${code}`)));
+      });
+    }
+
+    function findPython() {
+      const candidates = process.platform === 'win32' ? ['python', 'python3'] : ['python3', 'python'];
+      for (const cmd of candidates) {
+        try { require('child_process').execFileSync(cmd, ['--version'], { stdio: 'ignore' }); return cmd; } catch {}
+      }
+      throw new Error('Python not found. Install Python 3 and ensure it is in your PATH.');
+    }
+
+    async function ensureEnv() {
+      if (!existsSync(venvDir)) {
+        api.sendToFrontend('status', { setup: 'Creating Python environment…' });
+        api.log('creating venv');
+        await run(findPython(), ['-m', 'venv', venvDir]);
+      }
+      try {
+        await run(venvPy, ['-c', checkImport()]);
+      } catch {
+        const deps = localDeps();
+        api.sendToFrontend('status', { setup: `Installing dependencies (${deps.join(', ')})…` });
+        api.log(`pip install: ${deps.join(', ')}`);
+        await run(venvPy, ['-m', 'pip', 'install', '--quiet', ...deps]);
+      }
+    }
+
     // --- Text replacements (same format as global_asr) ---
 
     function loadReplacements() {
@@ -73,9 +125,9 @@ module.exports = {
       const script = join(api.pluginDir, 'python', 'worker.py');
       if (!existsSync(script)) { api.log('worker.py not found'); return; }
 
-      worker = spawn('python3', ['-u', script], {
+      worker = spawn(venvPy, ['-u', script], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: join(api.pluginDir, 'python'),
+        cwd: pyDir,
       });
 
       let buf = '';
@@ -237,7 +289,7 @@ module.exports = {
       const enabled = api.getSetting('enabled');
       const backend = api.getSetting('backend');
       if (enabled && backend === 'local') {
-        if (!worker) { spawnWorker(); warmup(); }
+        if (!worker) startLocal();
       } else {
         killWorker();
       }
@@ -256,11 +308,33 @@ module.exports = {
       }
     }
 
+    function wantsLocal() {
+      return api.getSetting('enabled') && api.getSetting('backend') === 'local';
+    }
+
+    let setupLock = null;
+    async function startLocal() {
+      if (setupLock) return setupLock;
+      setupLock = (async () => {
+        try {
+          await ensureEnv();
+          if (!wantsLocal()) return;
+          spawnWorker();
+          warmup();
+        } catch (e) {
+          api.log(`env setup failed: ${e.message}`);
+          api.sendToFrontend('error', { error: `Python setup failed: ${e.message}` });
+        } finally {
+          setupLock = null;
+        }
+      })();
+      return setupLock;
+    }
+
     // --- Init ---
 
     if (api.getSetting('enabled') && api.getSetting('backend') === 'local') {
-      spawnWorker();
-      warmup();
+      startLocal();
     }
 
     api.onShutdown(() => killWorker());

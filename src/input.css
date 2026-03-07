@@ -289,6 +289,10 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
   to { transform: rotate(360deg); }
 }
 
+/* Toast shadow — stronger in light mode */
+.tmx-toast { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+.light .tmx-toast { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05); }
+
 /* Drag & drop */
 .drop-highlight {
   @apply bg-blue-500/10 ring-1 ring-blue-500/30 rounded;

@@ -4,40 +4,10 @@ let activeToast = null;
 let btnEl = null;
 let _api = null;
 
-// --- Toast (matches global_asr overlay style) ---
-
-function showToast(message, color, persistent) {
-  dismissToast(activeToast);
-  const toast = document.createElement('div');
-  toast.className = 'voice-input-toast';
-  const bg = color === 'red' ? 'rgba(239,68,68,0.9)' : 'rgba(16,185,129,0.9)';
-  Object.assign(toast.style, {
-    position: 'fixed', bottom: '20px', right: '20px', zIndex: '9999',
-    padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
-    color: '#fff', background: bg, backdropFilter: 'blur(8px)',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-    opacity: '0', transform: 'translateY(8px)',
-    transition: 'opacity 0.2s ease, transform 0.2s ease',
-    fontFamily: 'system-ui, sans-serif',
-  });
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
-  if (!persistent) {
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(8px)';
-      setTimeout(() => toast.remove(), 200);
-    }, 2000);
-  }
-  return toast;
-}
-
-function dismissToast(toast) {
-  if (!toast || !toast.parentNode) return;
-  toast.style.opacity = '0';
-  toast.style.transform = 'translateY(8px)';
-  setTimeout(() => toast.remove(), 200);
+function toast(message, type, persistent) {
+  if (activeToast) activeToast.dismiss();
+  activeToast = _api.toast(message, { type, duration: persistent ? 0 : 2000, id: 'voice-input' });
+  return activeToast;
 }
 
 // --- Audio: decode to 16kHz mono Float32 PCM (no ffmpeg needed) ---
@@ -84,7 +54,7 @@ function updateButton() {
 async function startRecording() {
   if (!_api || recordingState) return;
   const sessionId = _api.getActiveSessionId();
-  if (!sessionId) { activeToast = showToast('No active terminal', 'red'); return; }
+  if (!sessionId) { toast('No active terminal', 'error'); return; }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -102,20 +72,20 @@ async function startRecording() {
       const state = recordingState;
       recordingState = null;
       updateButton();
-      dismissToast(activeToast);
+      if (activeToast) activeToast.dismiss();
 
       if (!state || state.cancelled) {
-        activeToast = showToast('CANCELLED', 'red');
+        toast('CANCELLED', 'error');
         return;
       }
 
       const duration = (Date.now() - state.startTime) / 1000;
       if (duration < 0.4) {
-        activeToast = showToast('Too short', 'red');
+        toast('Too short', 'error');
         return;
       }
 
-      activeToast = showToast('Transcribing...', 'green', true);
+      toast('Transcribing...', 'info', true);
 
       try {
         const blob = new Blob(chunks, { type: mr.mimeType });
@@ -123,17 +93,16 @@ async function startRecording() {
         const b64 = float32ToBase64(pcm);
         _api.send('transcribe', { audio: b64, sessionId: state.sessionId });
       } catch (e) {
-        dismissToast(activeToast);
-        activeToast = showToast('Audio decode failed', 'red');
+        toast('Audio decode failed', 'error');
       }
     };
 
     mr.start(100);
     recordingState = { startTime: Date.now(), mediaRecorder: mr, stream, cancelled: false, sessionId };
     updateButton();
-    activeToast = showToast('REC \u25cf', 'red', true);
+    toast('REC \u25cf', 'error', true);
   } catch (e) {
-    activeToast = showToast('Mic: ' + e.message, 'red');
+    toast('Mic: ' + e.message, 'error');
   }
 }
 
@@ -151,7 +120,8 @@ function cancelRecording() {
 
 function onKeyDown(e) {
   if (!settings.enabled) return;
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+  const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+  if (inInput && !e.key.startsWith('F')) return;
 
   if (e.key === 'Escape' && recordingState) {
     e.preventDefault();
@@ -181,18 +151,22 @@ export function init(api) {
     if (btnEl) btnEl.style.display = settings.enabled ? '' : 'none';
   });
 
+  api.onMessage('status', msg => {
+    if (msg.setup) toast(msg.setup, 'info', true);
+    else if (msg.workerReady) toast('Voice Input ready', 'success');
+  });
+
   api.onMessage('result', msg => {
-    dismissToast(activeToast);
-    activeToast = null;
+    if (activeToast) { activeToast.dismiss(); activeToast = null; }
     if (msg.skipped || !msg.text) return;
     const sid = msg.sessionId || _api.getActiveSessionId();
     if (!sid) return;
     api.writeToSession(sid, msg.text + ' ');
+    document.querySelector('.term-wrap.active textarea')?.focus();
   });
 
   api.onMessage('error', msg => {
-    dismissToast(activeToast);
-    activeToast = showToast(msg.error || 'Error', 'red');
+    toast(msg.error || 'Error', 'error');
   });
 
   api.send('getSettings');
@@ -201,11 +175,12 @@ export function init(api) {
     title: 'Voice Input (F4)',
     icon: '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>',
     onClick() {
-      if (!settings.enabled) { activeToast = showToast('Voice Input is disabled', 'red'); return; }
+      if (!settings.enabled) { toast('Voice Input is disabled', 'error'); return; }
       if (!recordingState) startRecording();
       else stopRecording();
     },
   });
 
+  btnEl.addEventListener('mousedown', e => e.preventDefault());
   if (!settings.enabled && btnEl) btnEl.style.display = 'none';
 }

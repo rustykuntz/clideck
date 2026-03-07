@@ -9,6 +9,7 @@ export function initDrag() {
   const list = document.getElementById('session-list');
 
   list.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
     const row = e.target.closest('.group[data-id]');
     if (!row || e.target.closest('.menu-btn') || e.target.closest('button')) return;
 

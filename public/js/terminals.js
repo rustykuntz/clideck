@@ -345,11 +345,12 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted) {
       fitted = true;
       for (const chunk of pending) term.write(chunk);
       pending = null;
+      updatePreview(id);
     }
   });
   ro.observe(el);
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
-  setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; } }, 500);
+  setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; updatePreview(id); } }, 500);
   state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';

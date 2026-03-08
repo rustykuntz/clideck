@@ -1,6 +1,6 @@
 {
   "name": "termix-cli",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
   "main": "server.js",
   "bin": {

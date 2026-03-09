@@ -162,16 +162,21 @@ function showDropdown() {
   dropdown.className = 'prompt-autocomplete';
   renderDropdownContent(matches);
 
-  // Position fixed, anchored to the right edge of the sidebar, clamped to viewport
+  // Position: append hidden, measure, bottom-anchor to viewport
   const sidebar = document.getElementById('sidebar');
-  const sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : 60;
-  const dropdownWidth = 340;
-  let left = sidebarRight + 32;
-  // Clamp: ensure dropdown fits within viewport
-  if (left + dropdownWidth > window.innerWidth - 8) left = window.innerWidth - dropdownWidth - 8;
-  if (left < 8) left = 8;
-  dropdown.style.left = left + 'px';
+  const sidebarRect = sidebar ? sidebar.getBoundingClientRect() : { right: 60 };
+  const gap = 8;
+  dropdown.style.visibility = 'hidden';
   document.body.appendChild(dropdown);
+  const h = dropdown.offsetHeight;
+  let left = sidebarRect.right + 32;
+  let top = window.innerHeight - h - gap;
+  if (left + 340 > window.innerWidth - gap) left = window.innerWidth - 340 - gap;
+  if (left < gap) left = gap;
+  if (top < gap) top = gap;
+  dropdown.style.left = left + 'px';
+  dropdown.style.top = top + 'px';
+  dropdown.style.visibility = '';
 
   // Only activate input capture after dropdown is successfully mounted
   active = true;

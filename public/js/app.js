@@ -386,6 +386,18 @@ function showTelemetrySetup(commandId, sessionId) {
 
 // --- Project context menu ---
 let projectMenuCleanup = null;
+
+function resumeDormantSessions(ids, label) {
+  const uniqueIds = [...new Set(ids)].filter(Boolean);
+  if (!uniqueIds.length) return;
+  showToast(`Starting ${uniqueIds.length} dormant session${uniqueIds.length > 1 ? 's' : ''}${label ? ` from ${label}` : ''}…`, { duration: 3000 });
+  uniqueIds.forEach((id, index) => {
+    setTimeout(() => {
+      if (state.resumable.some(s => s.id === id)) send({ type: 'session.resume', id });
+    }, index * 1000);
+  });
+}
+
 function openProjectMenu(projectId, anchorEl) {
   if (projectMenuCleanup) projectMenuCleanup();
   const proj = (state.cfg.projects || []).find(p => p.id === projectId);
@@ -407,6 +419,10 @@ function openProjectMenu(projectId, anchorEl) {
     <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="rename">
       <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
       Rename
+    </button>
+    <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm ${hasDormant ? 'text-slate-300 hover:bg-slate-700 cursor-pointer' : 'text-slate-600 cursor-default'} transition-colors text-left" data-action="start-dormant" ${hasDormant ? '' : 'disabled'}>
+      <svg class="w-4 h-4 flex-shrink-0 ${hasDormant ? 'text-slate-400' : 'text-slate-600'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="7 5 19 12 7 19 7 5"/></svg>
+      Start all dormant sessions
     </button>
     <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm ${hasDormant ? 'text-slate-300 hover:bg-slate-700 cursor-pointer' : 'text-slate-600 cursor-default'} transition-colors text-left" data-action="clear-dormant" ${hasDormant ? '' : 'disabled'}>
       <svg class="w-4 h-4 flex-shrink-0 ${hasDormant ? 'text-slate-400' : 'text-slate-600'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
@@ -432,6 +448,13 @@ function openProjectMenu(projectId, anchorEl) {
     if (projectMenuCleanup) projectMenuCleanup();
     if (btn.dataset.action === 'rename') {
       startProjectRename(projectId);
+      return;
+    }
+    if (btn.dataset.action === 'start-dormant') {
+      const ids = [...document.querySelectorAll(`.project-group[data-project-id="${projectId}"] .project-sessions [data-resumable-id]`)]
+        .map(el => el.dataset.resumableId);
+      if (!ids.length) return;
+      resumeDormantSessions(ids, `"${proj?.name || 'project'}"`);
       return;
     }
     if (btn.dataset.action === 'clear-dormant') {

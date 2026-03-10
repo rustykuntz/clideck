@@ -15,10 +15,26 @@ export function debounce(fn, ms) {
 
 const TERMINAL_SVG = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`;
 
+const ICON_VARIANTS = {
+  '/img/claude-code.png': { all: '/img/claude-all.png' },
+  '/img/codex.png': { dark: '/img/codex-dark.png', light: '/img/codex-light.png' },
+  '/img/gemini.png': { all: '/img/gemini-all.png' },
+  '/img/opencode.png': { all: '/img/opencode-all.png' },
+};
+
+export function resolveIconPath(icon) {
+  if (!icon || !icon.startsWith('/')) return icon;
+  const canonical = icon.replace(/-(light|dark|all)(?=\.[a-z]+$)/, '');
+  const variants = ICON_VARIANTS[canonical];
+  if (!variants) return icon;
+  const isLight = document.documentElement.classList.contains('light');
+  return (isLight ? variants.light : variants.dark) || variants.all || icon;
+}
+
 export function agentIcon(icon, px = 32) {
   const s = `width:${px}px;height:${px}px`;
   if (icon && icon.startsWith('/')) {
-    return `<img src="${esc(icon)}" style="${s}" class="rounded object-cover flex-shrink-0" alt="">`;
+    return `<img src="${esc(resolveIconPath(icon))}" style="${s}" class="rounded object-cover flex-shrink-0" alt="">`;
   }
   if (icon === 'terminal') {
     return `<div style="${s}" class="rounded bg-slate-700 flex items-center justify-center text-slate-400 flex-shrink-0">${TERMINAL_SVG}</div>`;

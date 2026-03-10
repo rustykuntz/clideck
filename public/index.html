@@ -11,11 +11,38 @@
       --color-project-header-bg: #191c21;
       --color-unread-pill-bg: rgba(59, 130, 246, 0.15);
       --color-filter-unread-bg: transparent;
+      --color-list-row-hover: color-mix(in srgb, var(--color-chat-hover) 55%, transparent);
+      --color-list-row-active: var(--color-chat-active);
+      --color-session-icon-bg: #242626;
     }
     .light {
       --color-project-header-bg: #f6f5f5;
       --color-unread-pill-bg: #f6f5f5;
       --color-filter-unread-bg: #f6f5f5;
+      --color-session-icon-bg: #f7f5f3;
+    }
+    .session-row,
+    .resumable-row {
+      margin: 2px 8px;
+      border-radius: 10px;
+      transition: background-color 0.18s ease;
+    }
+    .session-row:hover,
+    .resumable-row:hover {
+      background: var(--color-list-row-hover) !important;
+    }
+    .session-row.active-session {
+      background: var(--color-list-row-active) !important;
+    }
+    .project-group {
+      margin: 8px 0 4px;
+    }
+    .project-group:first-child {
+      margin-top: 4px;
+    }
+    .project-header {
+      margin: 0 8px 4px;
+      border-radius: 10px;
     }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">

@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc } from './utils.js';
+import { esc, resolveIconPath } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
 import { attachToTerminal } from './hotkeys.js';
 import { closeDropdown } from './prompts.js';
@@ -97,7 +97,7 @@ function startBounce(container) {
 function iconHtml(commandId) {
   const icon = state.cfg.commands.find(c => c.id === commandId)?.icon || 'terminal';
   if (icon.startsWith('/'))
-    return `<img src="${esc(icon)}" class="w-5 h-5 object-contain" draggable="false">`;
+    return `<img src="${esc(resolveIconPath(icon))}" class="w-5 h-5 object-contain" draggable="false">`;
   return TERMINAL_SVG;
 }
 
@@ -290,10 +290,10 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   themeId = themeId || state.cfg.defaultTheme || 'default';
 
   const item = document.createElement('div');
-  item.className = 'group flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors select-none';
+  item.className = 'group session-row flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors select-none';
   item.dataset.id = id;
   item.innerHTML = `
-    <div class="session-icon w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0 overflow-hidden pointer-events-none">
+    <div class="session-icon w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden pointer-events-none" style="background:var(--color-session-icon-bg)">
       ${iconHtml(commandId)}
     </div>
     <div class="flex-1 min-w-0 pointer-events-none">
@@ -797,7 +797,7 @@ function buildResumableRow(s) {
   row.className = 'group resumable-row flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-slate-800/30 transition-colors';
   row.dataset.resumableId = s.id;
   row.innerHTML = `
-    <div class="w-8 h-8 rounded-full bg-slate-800/50 flex items-center justify-center flex-shrink-0 overflow-hidden opacity-40">
+    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden opacity-40" style="background:var(--color-session-icon-bg)">
       ${iconHtml(s.commandId)}
     </div>
     <div class="flex-1 min-w-0">
@@ -807,7 +807,7 @@ function buildResumableRow(s) {
       </div>
       <div class="flex items-center gap-1 mt-0.5">
         <span class="flex-1 text-xs text-slate-600 truncate">${s.lastPreview ? esc(s.lastPreview) : esc(label) + (path ? ' · ' + esc(path) : '')}</span>
-        <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all flex items-center gap-0.5 text-[11px] font-medium" title="Resume session">
+        <button class="resume-btn opacity-60 group-hover:opacity-100 text-slate-500 hover:text-emerald-400 flex-shrink-0 transition-all flex items-center gap-0.5 text-[11px] font-medium" title="Resume session">
           Resume${RESUME_SVG}
         </button>
       </div>

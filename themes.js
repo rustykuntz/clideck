@@ -234,7 +234,7 @@ const BUILT_IN = [
   },
 ];
 
-// Load user custom themes from ~/.termix/custom-themes.json
+// Load user custom themes from ~/.clideck/custom-themes.json
 function loadCustom() {
   const { DATA_DIR } = require('./paths');
   const p = join(DATA_DIR, 'custom-themes.json');

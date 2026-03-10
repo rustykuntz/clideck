@@ -16,8 +16,9 @@ if (existsSync(BUNDLED_DIR)) {
       console.log(`[plugin] seeded ${entry.name}`);
     } else {
       try {
-        const bundledManifest = JSON.parse(readFileSync(join(BUNDLED_DIR, entry.name, 'termix-plugin.json'), 'utf8'));
-        const installedManifest = JSON.parse(readFileSync(join(target, 'termix-plugin.json'), 'utf8'));
+        const bundledManifest = JSON.parse(readFileSync(join(BUNDLED_DIR, entry.name, 'clideck-plugin.json'), 'utf8'));
+        const installedManifestFile = existsSync(join(target, 'clideck-plugin.json')) ? join(target, 'clideck-plugin.json') : join(target, 'termix-plugin.json');
+        const installedManifest = JSON.parse(readFileSync(installedManifestFile, 'utf8'));
         if (bundledManifest.version !== installedManifest.version) {
           cpSync(join(BUNDLED_DIR, entry.name), target, { recursive: true });
           console.log(`[plugin] updated ${entry.name} ${installedManifest.version} → ${bundledManifest.version}`);
@@ -64,7 +65,7 @@ function init(broadcast, getSessions, getConfig, saveConfig) {
     if (!existsSync(entryFile)) continue;
 
     let manifest = { id: entry.name, name: entry.name, version: '0.0.0' };
-    const manifestFile = join(dir, 'termix-plugin.json');
+    const manifestFile = existsSync(join(dir, 'clideck-plugin.json')) ? join(dir, 'clideck-plugin.json') : join(dir, 'termix-plugin.json');
     if (existsSync(manifestFile)) {
       try { manifest = { ...manifest, ...JSON.parse(readFileSync(manifestFile, 'utf8')) }; }
       catch (e) { console.error(`[plugin:${entry.name}] bad manifest: ${e.message}`); continue; }

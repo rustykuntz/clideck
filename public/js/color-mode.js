@@ -39,7 +39,7 @@ export function toggleMode() {
     if (shouldSwitch) {
       // Use setSessionTheme via app.js to avoid circular import
       // setSessionTheme handles polarity detection and restart banner
-      document.dispatchEvent(new CustomEvent('termix-theme-switch', { detail: { id, themeId: newDefault } }));
+      document.dispatchEvent(new CustomEvent('clideck-theme-switch', { detail: { id, themeId: newDefault } }));
     }
   }
 

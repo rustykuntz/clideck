@@ -2,8 +2,8 @@
 // CLI agents export telemetry events here; we capture agent session IDs
 // (for resume) and detect whether telemetry is configured (setup prompts).
 
-const activity = new Map(); // termixId → has received events
-const pendingSetup = new Map(); // termixId → timer (waiting for first event)
+const activity = new Map(); // sessionId → has received events
+const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -30,13 +30,13 @@ function handleLogs(req, res) {
 
   for (const rl of body.resourceLogs) {
     const resAttrs = parseAttrs(rl.resource?.attributes);
-    const termixId = resAttrs['termix.session_id'];
+    const sessionId = resAttrs['clideck.session_id'];
 
     // DEBUG: log all incoming telemetry with resource attributes
     const serviceName = resAttrs['service.name'] || 'unknown';
-    let resolvedId = termixId;
+    let resolvedId = sessionId;
 
-    // Fallback: if agent doesn't include termix.session_id (e.g. Gemini ignores
+    // Fallback: if agent doesn't include clideck.session_id (e.g. Gemini ignores
     // OTEL_RESOURCE_ATTRIBUTES), match by finding a pending session for this agent
     if (!resolvedId) {
       for (const [id, pending] of pendingSetup) {
@@ -46,7 +46,7 @@ function handleLogs(req, res) {
         if (!activity.has(id) && pending.bin && serviceName.includes(pending.bin)) { resolvedId = id; break; }
       }
       if (resolvedId) {
-        console.log(`Telemetry: matched ${serviceName} to session ${resolvedId.slice(0, 8)} (no termix.session_id — fallback match)`);
+        console.log(`Telemetry: matched ${serviceName} to session ${resolvedId.slice(0, 8)} (no clideck.session_id — fallback match)`);
       } else {
         continue;
       }
@@ -95,23 +95,23 @@ function handleLogs(req, res) {
 }
 
 // Watch a newly spawned session — if no telemetry arrives, notify frontend
-function watchSession(termixId, bin) {
-  if (pendingSetup.has(termixId)) return;
+function watchSession(sessionId, bin) {
+  if (pendingSetup.has(sessionId)) return;
   const timer = setTimeout(() => {
-    pendingSetup.delete(termixId);
+    pendingSetup.delete(sessionId);
     // Don't fire if telemetry arrived between timer start and now
-    if (!activity.has(termixId)) {
-      broadcastFn?.({ type: 'session.needsSetup', id: termixId });
+    if (!activity.has(sessionId)) {
+      broadcastFn?.({ type: 'session.needsSetup', id: sessionId });
     }
   }, 10000);
-  pendingSetup.set(termixId, { timer, bin });
+  pendingSetup.set(sessionId, { timer, bin });
 }
 
-function cancelPendingSetup(termixId) {
-  const pending = pendingSetup.get(termixId);
+function cancelPendingSetup(sessionId) {
+  const pending = pendingSetup.get(sessionId);
   if (pending) {
     clearTimeout(pending.timer);
-    pendingSetup.delete(termixId);
+    pendingSetup.delete(sessionId);
   }
 }
 

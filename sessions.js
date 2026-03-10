@@ -41,7 +41,7 @@ function buildTelemetryEnv(id, cmd) {
   }
   // Tag events with our session ID so the receiver can map them
   const existing = process.env.OTEL_RESOURCE_ATTRIBUTES || '';
-  env.OTEL_RESOURCE_ATTRIBUTES = (existing ? existing + ',' : '') + `termix.session_id=${id}`;
+  env.OTEL_RESOURCE_ATTRIBUTES = (existing ? existing + ',' : '') + `clideck.session_id=${id}`;
   return env;
 }
 

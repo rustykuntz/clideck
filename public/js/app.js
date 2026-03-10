@@ -278,7 +278,7 @@ sessionList.addEventListener('session-delete', async (e) => {
 
 // Mode toggle theme switch — dispatched from color-mode.js to avoid circular import
 let modeToastQueued = false;
-document.addEventListener('termix-theme-switch', (e) => {
+document.addEventListener('clideck-theme-switch', (e) => {
   setSessionTheme(e.detail.id, e.detail.themeId, { showBanner: false });
   if (!modeToastQueued) {
     modeToastQueued = true;
@@ -619,12 +619,12 @@ function addPluginToolbarButton(pluginId, opts) {
 }
 
 function getPluginExpanded() {
-  try { return JSON.parse(localStorage.getItem('termix.pluginsExpanded') || '{}'); } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem('clideck.pluginsExpanded') || '{}'); } catch { return {}; }
 }
 function setPluginExpanded(id, open) {
   const map = getPluginExpanded();
   if (open) map[id] = true; else delete map[id];
-  localStorage.setItem('termix.pluginsExpanded', JSON.stringify(map));
+  localStorage.setItem('clideck.pluginsExpanded', JSON.stringify(map));
 }
 
 function renderPluginsPanel(list) {
@@ -632,7 +632,7 @@ function renderPluginsPanel(list) {
   if (!list.length) {
     container.innerHTML = `<div class="flex flex-col items-center justify-center h-full px-6 text-center">
       <p class="text-sm text-slate-400 mb-1">No plugins installed</p>
-      <p class="text-xs text-slate-600 leading-relaxed">Plugins live in <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">~/.termix/plugins/</code><br>Each one is a folder with a <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">termix-plugin.json</code> and <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">index.js</code></p>
+      <p class="text-xs text-slate-600 leading-relaxed">Plugins live in <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">~/.clideck/plugins/</code><br>Each one is a folder with a <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">clideck-plugin.json</code> and <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">index.js</code></p>
     </div>`;
     return;
   }

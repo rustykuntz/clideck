@@ -73,8 +73,8 @@
     "sessionIdPattern": "(ses_[a-zA-Z0-9]{10,})",
     "outputMarker": "\u2502",
     "bridge": "opencode",
-    "pluginPath": "~/.config/opencode/plugins/termix-bridge.js",
-    "pluginSetup": "Install the Termix bridge plugin to enable real-time status and resume.\n\ncp opencode-plugin/termix-bridge.js ~/.config/opencode/plugins/",
+    "pluginPath": "~/.config/opencode/plugins/clideck-bridge.js",
+    "pluginSetup": "Install the CliDeck bridge plugin to enable real-time status and resume.\n\ncp opencode-plugin/clideck-bridge.js ~/.config/opencode/plugins/",
     "telemetryAutoSetup": {
       "label": "Install plugin"
     }

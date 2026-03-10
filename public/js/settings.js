@@ -107,7 +107,7 @@ function integrationSection(c) {
   if (!preset.telemetryEnv && !isBridge) return '';
 
   const enabled = isClaude || !!c.telemetryEnabled;
-  const title = 'Termix integration';
+  const title = 'CliDeck integration';
   const subtitle = '(live status &amp; resume)';
 
   if (isClaude) {

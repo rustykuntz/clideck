@@ -1,8 +1,8 @@
-// OpenCode bridge — receives events from the Termix OpenCode plugin
+// OpenCode bridge — receives events from the CliDeck OpenCode plugin
 // via HTTP POST to /opencode-events.
-// Routes events to the correct Termix session by OpenCode session ID.
+// Routes events to the correct CliDeck session by OpenCode session ID.
 
-// termixId → { opencodeSessionId, cwd }
+// sessionId → { opencodeSessionId, cwd }
 const watchers = new Map();
 
 let broadcastFn = null;
@@ -13,24 +13,24 @@ function init(broadcast, getSessions) {
   sessionsFn = getSessions;
 }
 
-function watchSession(termixId, cwd) {
-  if (watchers.has(termixId)) return;
-  watchers.set(termixId, { opencodeSessionId: null, cwd });
+function watchSession(sessionId, cwd) {
+  if (watchers.has(sessionId)) return;
+  watchers.set(sessionId, { opencodeSessionId: null, cwd });
 }
 
 function findByOcId(ocSid) {
-  for (const [termixId, w] of watchers) {
-    if (w.opencodeSessionId === ocSid) return termixId;
+  for (const [sessionId, w] of watchers) {
+    if (w.opencodeSessionId === ocSid) return sessionId;
   }
   return null;
 }
 
 function findUnclaimed(directory) {
   let fallback = null;
-  for (const [termixId, w] of watchers) {
+  for (const [sessionId, w] of watchers) {
     if (w.opencodeSessionId) continue;
-    if (directory && w.cwd && directory.startsWith(w.cwd)) return termixId;
-    if (!fallback) fallback = termixId;
+    if (directory && w.cwd && directory.startsWith(w.cwd)) return sessionId;
+    if (!fallback) fallback = sessionId;
   }
   return fallback;
 }
@@ -54,18 +54,18 @@ function extractDirectory(p) {
   return p.info?.directory || p.directory || p.info?.path?.cwd || p.path?.cwd || null;
 }
 
-function claim(termixId, ocSid) {
-  const w = watchers.get(termixId);
+function claim(sessionId, ocSid) {
+  const w = watchers.get(sessionId);
   if (!w) return;
   w.opencodeSessionId = ocSid;
-  const sess = sessionsFn?.()?.get(termixId);
+  const sess = sessionsFn?.()?.get(sessionId);
   if (sess && !sess.sessionToken) sess.sessionToken = ocSid;
 }
 
 function unclaimedIds() {
   const ids = [];
-  for (const [termixId, w] of watchers) {
-    if (!w.opencodeSessionId) ids.push(termixId);
+  for (const [sessionId, w] of watchers) {
+    if (!w.opencodeSessionId) ids.push(sessionId);
   }
   return ids;
 }
@@ -74,36 +74,36 @@ function handleEvent(payload) {
   if (!payload || !payload.event) return;
 
   const ocSid = extractOcSid(payload);
-  let termixId = ocSid ? findByOcId(ocSid) : null;
+  let sessionId = ocSid ? findByOcId(ocSid) : null;
 
   // Claim unclaimed watcher on session.created or session.updated
-  if (!termixId && ocSid && (payload.event === 'session.created' || payload.event === 'session.updated')) {
-    termixId = findUnclaimed(extractDirectory(payload));
-    if (termixId) claim(termixId, ocSid);
+  if (!sessionId && ocSid && (payload.event === 'session.created' || payload.event === 'session.updated')) {
+    sessionId = findUnclaimed(extractDirectory(payload));
+    if (sessionId) claim(sessionId, ocSid);
   }
 
   // Fallback: if there's exactly one unclaimed OpenCode watcher, attach first seen session ID.
   // This recovers when session.created/session.updated isn't delivered in-order.
-  if (!termixId && ocSid) {
+  if (!sessionId && ocSid) {
     const unclaimed = unclaimedIds();
     if (unclaimed.length === 1) {
-      termixId = unclaimed[0];
-      claim(termixId, ocSid);
+      sessionId = unclaimed[0];
+      claim(sessionId, ocSid);
     }
   }
 
-  if (!termixId) return;
+  if (!sessionId) return;
 
   // session.status → busy/idle
   if (payload.event === 'session.status') {
     const t = payload.status?.type;
-    if (t === 'busy') broadcastFn?.({ type: 'session.status', id: termixId, working: true });
-    else if (t === 'idle') broadcastFn?.({ type: 'session.status', id: termixId, working: false });
+    if (t === 'busy') broadcastFn?.({ type: 'session.status', id: sessionId, working: true });
+    else if (t === 'idle') broadcastFn?.({ type: 'session.status', id: sessionId, working: false });
   }
 
   // session.idle
   if (payload.event === 'session.idle') {
-    broadcastFn?.({ type: 'session.status', id: termixId, working: false });
+    broadcastFn?.({ type: 'session.status', id: sessionId, working: false });
   }
 
   // message.part.updated with type=text → preview
@@ -114,7 +114,7 @@ function handleEvent(payload) {
       : (typeof payload.delta === 'string' ? payload.delta : '');
     const isTextual = part.type === 'text' || part.type === 'reasoning' || !!text;
     if (isTextual && text) {
-      broadcastFn?.({ type: 'session.preview', id: termixId, text: text.slice(0, 200) });
+      broadcastFn?.({ type: 'session.preview', id: sessionId, text: text.slice(0, 200) });
     }
   }
 
@@ -126,14 +126,14 @@ function handleEvent(payload) {
         typeof p?.text === 'string' && (p.type === 'text' || p.type === 'reasoning')
       );
       if (latest?.text) {
-        broadcastFn?.({ type: 'session.preview', id: termixId, text: latest.text.slice(0, 200) });
+        broadcastFn?.({ type: 'session.preview', id: sessionId, text: latest.text.slice(0, 200) });
       }
     }
   }
 
   // session.updated → capture title, ensure token
   if (payload.event === 'session.updated') {
-    const sess = sessionsFn?.()?.get(termixId);
+    const sess = sessionsFn?.()?.get(sessionId);
     if (sess) {
       if (!sess.sessionToken) sess.sessionToken = ocSid;
       if (payload.info?.title) sess.title = payload.info.title;
@@ -141,8 +141,8 @@ function handleEvent(payload) {
   }
 }
 
-function clear(termixId) {
-  watchers.delete(termixId);
+function clear(sessionId) {
+  watchers.delete(sessionId);
 }
 
 module.exports = { init, watchSession, handleEvent, clear };

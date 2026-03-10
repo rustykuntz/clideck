@@ -35,7 +35,8 @@ function detectTelemetryConfig(c) {
         detected = !!s.telemetry?.enabled && (s.telemetry?.otlpEndpoint || '').includes(`localhost:${port}`);
       } catch {}
     } else if (preset.presetId === 'opencode') {
-      detected = existsSync(join(home, '.config', 'opencode', 'plugins', 'termix-bridge.js'));
+      const ocPlugins = join(home, '.config', 'opencode', 'plugins');
+      detected = existsSync(join(ocPlugins, 'clideck-bridge.js')) || existsSync(join(ocPlugins, 'termix-bridge.js'));
     } else { continue; }
     if (detected !== !!cmd.telemetryEnabled) {
       cmd.telemetryEnabled = detected;
@@ -239,9 +240,12 @@ function applyTelemetryConfig(preset) {
 
     if (preset.presetId === 'opencode') {
       const pluginDir = join(home, '.config', 'opencode', 'plugins');
-      const src = join(__dirname, 'opencode-plugin', 'termix-bridge.js');
+      const src = join(__dirname, 'opencode-plugin', 'clideck-bridge.js');
       mkdirSync(pluginDir, { recursive: true });
-      copyFileSync(src, join(pluginDir, 'termix-bridge.js'));
+      copyFileSync(src, join(pluginDir, 'clideck-bridge.js'));
+      // Remove old termix-bridge.js if present
+      const old = join(pluginDir, 'termix-bridge.js');
+      if (existsSync(old)) try { unlinkSync(old); } catch {}
       return { success: true, message: 'Installed bridge plugin to ~/.config/opencode/plugins/' };
     }
 
@@ -276,8 +280,9 @@ function removeTelemetryConfig(preset) {
     }
 
     if (preset.presetId === 'opencode') {
-      const dest = join(home, '.config', 'opencode', 'plugins', 'termix-bridge.js');
-      try { unlinkSync(dest); } catch {}
+      const dir = join(home, '.config', 'opencode', 'plugins');
+      try { unlinkSync(join(dir, 'clideck-bridge.js')); } catch {}
+      try { unlinkSync(join(dir, 'termix-bridge.js')); } catch {}
       return { success: true, message: 'Removed bridge plugin' };
     }
 

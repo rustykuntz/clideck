@@ -488,13 +488,13 @@ function setStatus(id, working) {
       if (state.cfg.notifySoundEnabled !== false && state.active !== id) {
         new Audio(`/fx/${(state.cfg.notifySound || 'default-beep')}.mp3`).play().catch(() => {});
       }
-      // Browser notification: plays when the Termix tab is not focused
+      // Browser notification: plays when the CliDeck tab is not focused
       if (state.cfg.notifyIdle && !document.hasFocus()
           && 'Notification' in window && Notification.permission === 'granted') {
         const sessionName = document.querySelector(`.group[data-id="${id}"] .name`)?.textContent || 'Session';
         const proj = state.cfg.projects?.find(p => p.id === entry.projectId);
         const title = proj ? `${proj.name}: ${sessionName}` : sessionName;
-        const n = new Notification(title, { body: `Is now idle.\n${entry.lastPreviewText || ''}`, icon: '/img/termix-logo-icon.png', tag: id });
+        const n = new Notification(title, { body: `Is now idle.\n${entry.lastPreviewText || ''}`, icon: '/img/clideck-logo-icon.png', tag: id });
         n.onclick = () => { window.focus(); select(id); n.close(); };
       }
     }

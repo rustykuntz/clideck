@@ -1,10 +1,10 @@
 {
-  "name": "termix-cli",
-  "version": "1.22.1",
+  "name": "clideck",
+  "version": "1.22.2",
   "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
   "main": "server.js",
   "bin": {
-    "termix": "bin/termix.js"
+    "clideck": "bin/clideck.js"
   },
   "scripts": {
     "start": "node server.js",
@@ -29,9 +29,9 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rustykuntz/termix.git"
+    "url": "git+https://github.com/rustykuntz/clideck.git"
   },
-  "homepage": "https://termix-a68d5bb0.mintlify.app/",
+  "homepage": "https://clideck.dev/",
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

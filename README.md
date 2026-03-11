@@ -2,11 +2,14 @@
 
 One screen for all your AI coding agents.
 
+[Documentation](https://docs.clideck.dev/) | [Video Demo](https://youtu.be/hICrtjGAeDk) | [Website](https://clideck.dev/)
+
 ![CliDeck dashboard](assets/clideck-themes.jpg)
 
-You're running Claude Code, Codex, and Gemini CLI in separate terminals. You switch between them constantly, forget which one finished, and lose sessions when you close the lid. CliDeck puts them all on one screen with live status, so you always know what's happening.
+You're running Claude Code, Codex, Gemini CLI, and OpenCode in separate terminals. You switch between them constantly, forget which one finished, and lose sessions when you close the lid. CliDeck puts them all on one screen with live status, so you always know what's happening.
 
 CliDeck is a local dashboard that runs all your CLI agents in one browser tab. It tracks which agents are working, which are idle, and notifies you when they need attention. Everything runs on your machine — nothing leaves localhost.
+Switch between agents as easily as switching between chats.
 
 ## Quick Start
 

@@ -9,7 +9,7 @@ import { applyTheme } from './profiles.js';
 import { toggleMode, applyMode } from './color-mode.js';
 import { showToast } from './toast.js';
 import './nav.js';
-import { initDrag } from './drag.js';
+import { initDrag, wasDragging } from './drag.js';
 import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
 
@@ -253,9 +253,9 @@ sessionList.addEventListener('click', (e) => {
   closeCreator();
   closeProjectCreator();
 
-  // Project header click — toggle collapse
+  // Project header click — toggle collapse (skip if just finished a drag)
   const projHeader = e.target.closest('.project-header');
-  if (projHeader && !e.target.closest('.project-menu-btn')) {
+  if (projHeader && !e.target.closest('.project-menu-btn') && !wasDragging()) {
     toggleProjectCollapse(projHeader.dataset.projectId);
     return;
   }

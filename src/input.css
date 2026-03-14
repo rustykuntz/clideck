@@ -297,6 +297,10 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
 .drop-highlight {
   @apply bg-blue-500/10 ring-1 ring-blue-500/30 rounded;
 }
+.project-drop-line {
+  height: 2px;
+  @apply bg-blue-500 rounded-full mx-2 my-0.5;
+}
 
 /* Project chevron rotation — down by default, right when collapsed */
 .project-chevron.collapsed svg {

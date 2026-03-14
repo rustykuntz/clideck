@@ -338,6 +338,21 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.loadAddon(fit);
   term.onData(data => send({ type: 'input', id, data }));
 
+  // [RENDER-STATUS] agent working/idle detection via onRender + onWriteParsed
+  let _lastTyping = 0, _renderWorking = false, _renderTimer = null, _hasRender = false, _hasParsed = false;
+  term.onData(() => { _lastTyping = Date.now(); });
+  function _statusTick() {
+    if (Date.now() - _lastTyping < 500) return;
+    const cmd = state.cfg.commands.find(c => c.id === commandId);
+    if (cmd?.bridge) return;
+    if (_hasRender && _hasParsed && !_renderWorking) {
+      _renderWorking = true;
+      send({ type: 'session.statusReport', id, working: true }); setStatus(id, true);
+    }
+  }
+  term.onWriteParsed(() => { _hasParsed = true; _statusTick(); });
+  term.onRender(() => { _hasRender = true; _statusTick(); clearTimeout(_renderTimer); _renderTimer = setTimeout(() => { _renderWorking = false; _hasRender = false; _hasParsed = false; send({ type: 'session.statusReport', id, working: false }); setStatus(id, false); }, 2000); });
+
   term.open(el);
   attachToTerminal(term);
   let fitted = false, pending = [];

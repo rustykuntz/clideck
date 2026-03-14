@@ -91,11 +91,17 @@ function flush(id) {
 // xterm buffer as rendered by the browser. No diffing, no JSONL — just the
 // clean screen content. Mobile reads this for "last agent message".
 function storeBuffer(id, lines) {
-  const isChrome = t => !t || /^[─━═\u2500-\u257f]+$/.test(t) || /^[❯>$%#]\s*$/.test(t) || t === 'esc to interrupt' || t === '? for shortcuts';
+  const isChrome = t => !t
+    || /^[─━═\u2500-\u257f]+$/.test(t)                    // box-drawing horizontal lines
+    || /^[▀▄█▌▐░▒▓╭╮╰╯│╔╗╚╝║]+$/.test(t)                 // block elements, box corners, vertical bars
+    || (/[█▀▄▌▐░▒▓]/.test(t) && /^[█▀▄▌▐░▒▓\s]+$/.test(t)) // ASCII art (blocks + whitespace, e.g. logos)
+    || /^[❯>$%#]\s*$/.test(t)                              // bare prompt markers
+    || /^(esc to interrupt|\? for shortcuts)$/i.test(t);   // Claude Code chrome
   const filtered = lines.filter(l => !isChrome(l.trim()));
   while (filtered.length && !filtered[filtered.length - 1].trim()) filtered.pop();
   const screenPath = join(DIR, `${id}.screen`);
   if (filtered.length) writeFileSync(screenPath, filtered.join('\n'));
+  else try { unlinkSync(screenPath); } catch {}
 }
 
 // Read the clean screen snapshot for a session (if available).
@@ -111,7 +117,7 @@ const agentParsers = {
     const turns = [];
     let current = null;
     for (const line of lines) {
-      const m = line.match(/^(?:[│ ]\s*)?([❯›]|[⏺•])\s(.*)$/);
+      const m = line.match(/^(?:[│ ]\s*)?([❯›]|[⏺•●])\s(.*)$/);
       if (m) {
         if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
         current = { role: m[1] === '❯' || m[1] === '›' ? 'user' : 'agent', text: m[2] };
@@ -146,9 +152,20 @@ const agentParsers = {
     return turns.length >= 2 ? turns : null;
   },
   'gemini-cli': (lines) => {
+    const geminiChrome = t => {
+      const s = t.trim();
+      return /^shift\+tab to accept/i.test(s)
+        || /^(Type your message|@path\/to\/)/i.test(s)
+        || /^(\/\w+ |no sandbox|\/model )/i.test(s)
+        || /^[~\/\\].*\(main[*]?\)\s*$/i.test(s)
+        || /^(Logged in with|Plan:|Tips for getting started)/i.test(s)
+        || /^\d+\.\s+(Ask questions|Be specific|Create GEMINI)/i.test(s)
+        || /^ℹ\s/.test(s);
+    };
     const turns = [];
     let current = null;
     for (const line of lines) {
+      if (geminiChrome(line)) continue;
       const isUser = line.startsWith(' > ');
       const isAgent = line.startsWith('✦ ');
       if (isUser || isAgent) {
@@ -212,7 +229,10 @@ function getScreenTurns(id, agent) {
   if (!screen) return null;
   const lines = screen.split('\n');
   const parser = agentParsers[agent];
-  return parser ? parser(lines) : anchorParse(id, lines);
+  const turns = parser ? parser(lines) : anchorParse(id, lines);
+  // Drop trailing user turn — it's the empty prompt or unanswered input
+  if (turns?.length && turns[turns.length - 1].role === 'user') turns.pop();
+  return turns?.length >= 2 ? turns : null;
 }
 
 function getLastTurns(id, n) {

@@ -90,6 +90,7 @@ function connect() {
         }
         break;
       }
+      /* [OLD-STATUS] I/O burst heuristic — replaced by onRender detection in terminals.js
       case 'stats': {
         for (const [sid, st] of Object.entries(msg.stats)) {
           const entry = state.terms.get(sid);
@@ -101,12 +102,9 @@ function connect() {
           const userTyping = (st.rawRateIn || 0) > 0 && (st.rawRateIn || 0) < 50;
           entry.prevBurst = st.burstMs || 0;
 
-          // Working: burst increasing + net >= 800B + no typing
           const isWorking = burstUp && net >= 800 && !userTyping;
-          // Idle: burst not increasing + net < 800B
           const isIdle = !burstUp && net < 800;
 
-          // Sustain for ~1.5s (2 ticks)
           if (isWorking) entry.workTicks = (entry.workTicks || 0) + 1;
           else entry.workTicks = 0;
           if (isIdle) entry.idleTicks = (entry.idleTicks || 0) + 1;
@@ -122,6 +120,7 @@ function connect() {
         }
         break;
       }
+      [OLD-STATUS] */
       case 'transcript.cache':
         state.transcriptCache = msg.cache;
         for (const [id, text] of Object.entries(msg.cache)) {

@@ -28,6 +28,31 @@ for (const p of presets) {
   }
 }
 
+// Check for clideck-remote updates (cached, once per hour)
+let remoteUpdateCache = null;
+let remoteUpdateCheckedAt = 0;
+const REMOTE_UPDATE_INTERVAL = 3600000;
+
+function checkRemoteUpdate(ws) {
+  const now = Date.now();
+  if (remoteUpdateCache && now - remoteUpdateCheckedAt < REMOTE_UPDATE_INTERVAL) {
+    if (remoteUpdateCache.available) ws.send(JSON.stringify({ type: 'remote.update', ...remoteUpdateCache }));
+    return;
+  }
+  const shellOpt = process.platform === 'win32';
+  require('child_process').execFile('npm', ['list', '-g', 'clideck-remote', '--json', '--depth=0'], { shell: shellOpt, timeout: 10000 }, (err, stdout) => {
+    let installed;
+    try { installed = JSON.parse(stdout).dependencies['clideck-remote'].version; } catch { return; }
+    require('child_process').execFile('npm', ['view', 'clideck-remote', 'version'], { shell: shellOpt, timeout: 10000 }, (err2, stdout2) => {
+      if (err2) return;
+      const latest = stdout2.trim();
+      remoteUpdateCache = { installed, latest, available: latest !== installed };
+      remoteUpdateCheckedAt = now;
+      if (remoteUpdateCache.available) ws.send(JSON.stringify({ type: 'remote.update', ...remoteUpdateCache }));
+    });
+  });
+}
+
 // Check which agent binaries are available on PATH
 const whichCmd = process.platform === 'win32' ? 'where' : 'which';
 function checkAvailability() {
@@ -253,6 +278,7 @@ function onConnection(ws) {
           try { ws.send(JSON.stringify({ type: 'remote.status', installed: true, ...JSON.parse(stdout) })); }
           catch { ws.send(JSON.stringify({ type: 'remote.status', installed: true })); }
         });
+        checkRemoteUpdate(ws);
         break;
       }
 
@@ -289,7 +315,10 @@ function onConnection(ws) {
         });
         proc.stdout.on('data', d => ws.send(JSON.stringify({ type: 'remote.install.progress', text: d.toString() })));
         proc.stderr.on('data', d => ws.send(JSON.stringify({ type: 'remote.install.progress', text: d.toString() })));
-        proc.on('close', code => ws.send(JSON.stringify({ type: 'remote.install.done', success: code === 0 })));
+        proc.on('close', code => {
+          remoteUpdateCache = null;
+          ws.send(JSON.stringify({ type: 'remote.install.done', success: code === 0 }));
+        });
         break;
       }
 

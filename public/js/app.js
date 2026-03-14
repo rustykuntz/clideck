@@ -224,6 +224,9 @@ function connect() {
       case 'remote.install.done':
         handleInstallDone(msg.success);
         break;
+      case 'remote.update':
+        showRemoteUpdateToast(msg);
+        break;
       default:
         if (msg.type?.startsWith('plugin.')) dispatchPluginMessage(msg);
         break;
@@ -1115,6 +1118,55 @@ function handleInstallDone(success) {
     log.textContent += '\n— Install failed. Check permissions or run manually:\n  npm install -g clideck-remote\n';
     log.scrollTop = log.scrollHeight;
   }
+}
+
+let remoteUpdateShown = false;
+
+function showRemoteUpdateToast(msg) {
+  if (remoteUpdateShown) return;
+  remoteUpdateShown = true;
+
+  const toast = document.createElement('div');
+  toast.className = 'fixed bottom-5 right-5 z-[500] w-[360px] bg-slate-800/95 backdrop-blur-sm border border-slate-700/60 rounded-xl shadow-2xl shadow-black/60';
+  toast.style.cssText = 'opacity:0;transform:translateY(12px);transition:opacity 0.3s ease,transform 0.3s ease';
+
+  toast.innerHTML = `
+    <div class="flex items-center gap-2.5 px-4 pt-3.5 pb-1">
+      <svg class="w-5 h-5 flex-shrink-0 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      <span class="text-[13px] font-semibold text-slate-200">CliDeck Remote Update</span>
+      <button class="dismiss-btn ml-auto w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <p class="px-4 pt-1 pb-2.5 text-xs text-slate-400 leading-relaxed">
+      Version <span class="text-slate-300">${esc(msg.latest)}</span> is available (installed: ${esc(msg.installed)}).
+    </p>
+    <div class="px-4 pb-3.5 flex items-center gap-2">
+      <button class="update-btn flex-1 px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">Update</button>
+      <button class="dismiss-btn px-3 py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">Later</button>
+    </div>`;
+
+  const dismiss = () => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(12px)';
+    setTimeout(() => toast.remove(), 300);
+  };
+
+  toast.querySelectorAll('.dismiss-btn').forEach(b => {
+    b.onclick = () => { dismiss(); setTimeout(() => { remoteUpdateShown = false; }, 600000); };
+  });
+
+  toast.querySelector('.update-btn').onclick = () => {
+    dismiss();
+    remoteUpdateShown = false;
+    document.getElementById('remote-install-log').textContent = '';
+    setRemotePane('installing');
+    openRemoteModal();
+    send({ type: 'remote.install' });
+  };
+
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
 }
 
 // Button click

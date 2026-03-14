@@ -3,6 +3,41 @@ const { readFileSync, existsSync } = require('fs');
 const { join, extname, resolve } = require('path');
 const { WebSocketServer } = require('ws');
 const { ensurePtyHelper } = require('./utils');
+
+// --- Self-update check (runs before server starts) ---
+const currentVersion = require('./package.json').version;
+const { execFile, execSync } = require('child_process');
+const shellOpt = process.platform === 'win32';
+
+function checkSelfUpdate() {
+  return new Promise(ok => {
+    // Skip in non-interactive or local dev contexts
+    if (!process.stdin.isTTY || !process.stdout.isTTY) return ok();
+    if (!__dirname.includes(join('node_modules', 'clideck'))) return ok();
+    execFile('npm', ['view', 'clideck', 'version'], { shell: shellOpt, timeout: 10000 }, (err, stdout) => {
+      if (err) return ok();
+      const latest = stdout.trim();
+      if (!latest || latest === currentVersion) return ok();
+      const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+      rl.question(`\n\x1b[38;5;105m  Update available:\x1b[0m \x1b[38;5;245m${currentVersion}\x1b[0m → \x1b[38;5;44m${latest}\x1b[0m\n\n  \x1b[38;5;252mUpdate now? [Y/n]\x1b[0m `, answer => {
+        rl.close();
+        if (answer.trim().toLowerCase() === 'n') return ok();
+        console.log('\n  \x1b[38;5;245mUpdating...\x1b[0m\n');
+        try {
+          execSync('npm install -g clideck', { stdio: 'inherit', shell: true });
+          console.log('\n  \x1b[38;5;44mUpdated to v' + latest + '.\x1b[0m Restart with: \x1b[38;5;252mclideck\x1b[0m\n');
+          process.exit(0);
+        } catch {
+          console.log('\n  \x1b[38;5;196mUpdate failed.\x1b[0m Continuing with v' + currentVersion + '.\n');
+          ok();
+        }
+      });
+    });
+  });
+}
+
+checkSelfUpdate().then(() => {
+
 const { onConnection } = require('./handlers');
 const sessions = require('./sessions');
 
@@ -124,3 +159,5 @@ server.listen(PORT, '127.0.0.1', () => {
 \x1b[38;5;245m  ▸ Stop with \x1b[38;5;252mCtrl+C\x1b[38;5;245m · Restart anytime with \x1b[38;5;252mclideck\x1b[0m
 `);
 });
+
+}); // checkSelfUpdate

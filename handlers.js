@@ -248,7 +248,7 @@ function onConnection(ws) {
         let installed = false;
         try { execFileSync(whichCmd, ['clideck-remote'], { stdio: 'ignore' }); installed = true; } catch {}
         if (!installed) { ws.send(JSON.stringify({ type: 'remote.status', installed: false })); break; }
-        require('child_process').execFile('clideck-remote', ['status', '--json'], { timeout: 5000 }, (err, stdout) => {
+        require('child_process').execFile('clideck-remote', ['status', '--json'], { timeout: 5000, shell: process.platform === 'win32' }, (err, stdout) => {
           if (err) { ws.send(JSON.stringify({ type: 'remote.status', installed: true })); return; }
           try { ws.send(JSON.stringify({ type: 'remote.status', installed: true, ...JSON.parse(stdout) })); }
           catch { ws.send(JSON.stringify({ type: 'remote.status', installed: true })); }
@@ -257,7 +257,7 @@ function onConnection(ws) {
       }
 
       case 'remote.pair': {
-        require('child_process').execFile('clideck-remote', ['pair', '--json'], { timeout: 15000 }, (err, stdout) => {
+        require('child_process').execFile('clideck-remote', ['pair', '--json'], { timeout: 15000, shell: process.platform === 'win32' }, (err, stdout) => {
           if (err) { ws.send(JSON.stringify({ type: 'remote.error', error: err.message })); return; }
           try { ws.send(JSON.stringify({ type: 'remote.paired', ...JSON.parse(stdout) })); }
           catch { ws.send(JSON.stringify({ type: 'remote.error', error: 'Invalid response from clideck-remote' })); }
@@ -266,7 +266,7 @@ function onConnection(ws) {
       }
 
       case 'remote.unpair': {
-        require('child_process').execFile('clideck-remote', ['unpair', '--json'], { timeout: 5000 }, (err) => {
+        require('child_process').execFile('clideck-remote', ['unpair', '--json'], { timeout: 5000, shell: process.platform === 'win32' }, (err) => {
           if (err) {
             ws.send(JSON.stringify({ type: 'remote.error', error: err.message }));
           } else {

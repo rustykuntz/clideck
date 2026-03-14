@@ -1014,21 +1014,6 @@ function updateRemoteButton() {
   }
 }
 
-function updatePlanDisplay(plan) {
-  const isPro = plan === 'pro';
-  const badge = isPro ? 'Pro' : 'Free';
-  const badgeClass = isPro
-    ? 'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-emerald-900/50 text-emerald-400'
-    : 'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-slate-700 text-slate-400';
-  for (const el of document.querySelectorAll('#remote-plan-badge, #remote-plan-badge2')) {
-    el.textContent = badge;
-    el.className = badgeClass;
-  }
-  for (const el of document.querySelectorAll('#remote-upgrade, #remote-upgrade2')) {
-    el.classList.toggle('hidden', isPro);
-  }
-}
-
 function handleRemoteStatus(msg) {
   remoteInstalled = !!msg.installed;
   state.remoteVersion = msg.version || (msg.installed ? null : 'not installed');
@@ -1043,7 +1028,7 @@ function handleRemoteStatus(msg) {
     remoteState = 'paired';
     if (!remoteStatusPoll) startRemotePoll();
     if (wasFresh) {
-      updatePlanDisplay(msg.plan || 'free');
+
       setRemotePane('active');
       setRemoteLock(true);
       startRemoteStats(msg.pairedAt);
@@ -1061,7 +1046,6 @@ function handleRemoteStatus(msg) {
     const qrImg = document.getElementById('remote-qr-img');
     if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
     else qrImg.classList.add('hidden');
-    updatePlanDisplay(msg.plan || 'free');
     startRemotePoll();
     if (remoteModalOpen) setRemotePane('qr');
   } else {
@@ -1079,7 +1063,6 @@ function handleRemotePaired(msg) {
   const qrImg = document.getElementById('remote-qr-img');
   if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
   else qrImg.classList.add('hidden');
-  updatePlanDisplay(msg.plan || 'free');
   setRemotePane('qr');
   updateRemoteButton();
   startRemotePoll();

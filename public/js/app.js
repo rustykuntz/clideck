@@ -1,7 +1,7 @@
 import { state, send } from './state.js';
 import { esc, binName } from './utils.js';
 import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu } from './terminals.js';
-import { renderSettings } from './settings.js';
+import { renderSettings, updateVersionFooter } from './settings.js';
 import { openCreator, closeCreator, refreshCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
@@ -1031,6 +1031,8 @@ function updatePlanDisplay(plan) {
 
 function handleRemoteStatus(msg) {
   remoteInstalled = !!msg.installed;
+  state.remoteVersion = msg.version || (msg.installed ? null : 'not installed');
+  updateVersionFooter();
   const wasPaired = remoteState === 'paired';
   if (!msg.installed) {
     remoteState = 'idle';

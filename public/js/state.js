@@ -8,6 +8,7 @@ export const state = {
   resumable: [],
   filter: { query: '', tab: 'all' },
   transcriptCache: {},
+  remoteVersion: null,
 };
 
 export function send(msg) {

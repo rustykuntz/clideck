@@ -101,8 +101,10 @@ function detectTelemetryConfig(c) {
   return changed;
 }
 
+const appVersion = require('./package.json').version;
+
 function configForClient() {
-  return { ...cfg, pluginsDir: plugins.PLUGINS_DIR };
+  return { ...cfg, pluginsDir: plugins.PLUGINS_DIR, version: appVersion };
 }
 
 function onConnection(ws) {
@@ -150,6 +152,7 @@ function onConnection(ws) {
 
       case 'config.update':
         delete msg.config.pluginsDir;
+        delete msg.config.version;
         cfg = { ...cfg, ...msg.config };
         detectTelemetryConfig(cfg);
         config.save(cfg);

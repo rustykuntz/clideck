@@ -25,8 +25,10 @@ function checkSelfUpdate() {
         console.log('\n  \x1b[38;5;245mUpdating...\x1b[0m\n');
         try {
           execSync('npm install -g clideck', { stdio: 'inherit', shell: true });
-          console.log('\n  \x1b[38;5;44mUpdated to v' + latest + '.\x1b[0m Restart with: \x1b[38;5;252mclideck\x1b[0m\n');
-          process.exit(0);
+          console.log('\n  \x1b[38;5;44mUpdated to v' + latest + '. Restarting...\x1b[0m\n');
+          const { spawn } = require('child_process');
+          spawn(process.argv[0], process.argv.slice(1), { stdio: 'inherit', shell: shellOpt }).on('close', code => process.exit(code));
+          return;
         } catch {
           console.log('\n  \x1b[38;5;196mUpdate failed.\x1b[0m Continuing with v' + currentVersion + '.\n');
           ok();

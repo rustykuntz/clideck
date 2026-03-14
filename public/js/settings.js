@@ -8,8 +8,8 @@ function switchCategory(catId) {
   document.querySelectorAll('.settings-cat').forEach(btn => {
     const match = btn.dataset.cat === catId;
     btn.classList.toggle('text-slate-200', match);
-    btn.classList.toggle('bg-slate-800/60', match);
     btn.classList.toggle('active-cat', match);
+    btn.style.background = match ? '#2a323f' : '';
     btn.classList.toggle('text-slate-500', !match);
     btn.classList.toggle('hover:text-slate-300', !match);
     btn.classList.toggle('hover:bg-slate-800/30', !match);
@@ -32,6 +32,14 @@ export function renderSettings() {
   renderAgentList();
   renderThemeSection();
   renderNotifications();
+  updateVersionFooter();
+}
+
+export function updateVersionFooter() {
+  const el = document.getElementById('version-clideck');
+  if (el) el.textContent = state.cfg.version || '';
+  const remoteEl = document.getElementById('version-remote');
+  if (remoteEl) remoteEl.textContent = state.remoteVersion || '';
 }
 
 // ── CLI Agents ──

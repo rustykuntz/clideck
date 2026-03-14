@@ -138,7 +138,8 @@ function create(msg, ws, cfg) {
   }
 
   const createdPresetId = PRESETS.find(p => binName(p.command) === binName(cmd.command))?.presetId || 'shell';
-  broadcast({ type: 'created', id, name, themeId, commandId: cmd.id, presetId: createdPresetId, projectId });
+  const installId = msg.installId || undefined;
+  broadcast({ type: 'created', id, name, themeId, commandId: cmd.id, presetId: createdPresetId, projectId, installId });
 
   // Immediate setup notification if config not detected
   const bin = binName(cmd.command);

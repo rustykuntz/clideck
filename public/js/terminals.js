@@ -318,7 +318,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   const statusEl = item.querySelector('.session-status');
   const cmd = state.cfg.commands.find(c => c.id === commandId);
   const hasBridge = !!cmd?.bridge;
-  const stopBounce = hasBridge ? null : startBounce(statusEl);
+  const stopBounce = null;
 
   const el = document.createElement('div');
   el.className = 'term-wrap';
@@ -338,20 +338,29 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.loadAddon(fit);
   term.onData(data => send({ type: 'input', id, data }));
 
-  // [RENDER-STATUS] agent working/idle detection via onRender + onWriteParsed
-  let _lastTyping = 0, _renderWorking = false, _renderTimer = null, _hasRender = false, _hasParsed = false;
-  term.onData(() => { _lastTyping = Date.now(); });
-  function _statusTick() {
-    if (Date.now() - _lastTyping < 500) return;
-    const cmd = state.cfg.commands.find(c => c.id === commandId);
-    if (cmd?.bridge) return;
-    if (_hasRender && _hasParsed && !_renderWorking) {
-      _renderWorking = true;
-      send({ type: 'session.statusReport', id, working: true }); setStatus(id, true);
-    }
+  // [SCREEN-CAPTURE] extract terminal buffer when BOTH idle AND render-silent (2s)
+  // Decoupled from status: telemetry knows when agent is done, onRender knows when terminal is done
+  let _screenTimer = null, _renderSilent = false;
+  function _tryScreenCapture() {
+    const entry = state.terms.get(id);
+    if (!entry?.pendingScreenCapture || !_renderSilent || !entry.term) return;
+    entry.pendingScreenCapture = false;
+    const buf = entry.term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
+    send({ type: 'terminal.buffer', id, lines });
   }
-  term.onWriteParsed(() => { _hasParsed = true; _statusTick(); });
-  term.onRender(() => { _hasRender = true; _statusTick(); clearTimeout(_renderTimer); _renderTimer = setTimeout(() => { _renderWorking = false; _hasRender = false; _hasParsed = false; send({ type: 'session.statusReport', id, working: false }); setStatus(id, false); }, 2000); });
+  term.onRender(() => {
+    _renderSilent = false;
+    clearTimeout(_screenTimer);
+    _screenTimer = setTimeout(() => { _renderSilent = true; _tryScreenCapture(); }, 2000);
+  });
+  let _idleTimer = null, _workTimer = null, _lastTyping = 0;
+  term.onData(() => { _lastTyping = Date.now(); });
+  term.onWriteParsed(() => { if (Date.now() - _lastTyping < 500) return; const entry = state.terms.get(id); if (entry) entry.lastRenderAt = Date.now(); if (!_workTimer) _workTimer = setTimeout(() => { _workTimer = null; setStatus(id, true); }, 1000); clearTimeout(_idleTimer); _idleTimer = setTimeout(() => { clearTimeout(_workTimer); _workTimer = null; setStatus(id, false); send({ type: 'session.statusReport', id, working: false }); }, 1500); });
+
+  // Expose capture function so setStatus can trigger it when idle arrives after render silence
+  setTimeout(() => { const e = state.terms.get(id); if (e) e.tryScreenCapture = _tryScreenCapture; }, 0);
 
   term.open(el);
   attachToTerminal(term);
@@ -383,7 +392,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
   setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; updatePreview(id); } }, 500);
   const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
-  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, themeId, commandId, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
   if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
@@ -529,16 +538,9 @@ function setStatus(id, working) {
     }
   }
 
-  // Extract terminal buffer on working→idle for clean transcript
-  if (wasWorking && !working && entry.term) {
-    const buf = entry.term.buffer.active;
-    const lines = [];
-    for (let i = 0; i < buf.length; i++) {
-      const line = buf.getLine(i);
-      if (line) lines.push(line.translateToString(true));
-    }
-    send({ type: 'terminal.buffer', id, lines });
-  }
+  // Mark idle so the onRender silence watcher can capture .screen
+  // Also try immediately — renders may already be silent
+  if (wasWorking && !working) { entry.pendingScreenCapture = true; entry.tryScreenCapture?.(); }
 
   if (working) entry.workStartedAt = Date.now();
 

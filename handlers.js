@@ -130,6 +130,7 @@ function onConnection(ws) {
       case 'input':                sessions.input(msg); break;
       case 'session.statusReport':
         if (sessions.getSessions().has(msg.id)) {
+          sessions.broadcast({ type: 'session.status', id: msg.id, working: !!msg.working });
           plugins.notifyStatus(msg.id, !!msg.working);
         }
         break;
@@ -306,8 +307,7 @@ function onConnection(ws) {
       }
 
       case 'remote.getHistory': {
-        const turns = transcript.getScreenTurns(msg.id, sessions.getSessions().get(msg.id)?.presetId)
-          || transcript.getLastTurns(msg.id, msg.limit || 50);
+        const turns = transcript.getScreenTurns(msg.id, sessions.getSessions().get(msg.id)?.presetId);
         ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: turns || [] }));
         break;
       }

@@ -47,12 +47,26 @@ function store(id, role, text) {
 }
 
 function trackInput(id, data) {
-  if (!inputBuf[id]) inputBuf[id] = { text: '', esc: false };
+  if (!inputBuf[id]) inputBuf[id] = { text: '', esc: false, osc: false };
   const buf = inputBuf[id];
   for (const ch of data) {
+    // OSC sequence: ESC ] ... (terminated by BEL or ESC \)
+    if (buf.osc) {
+      if (ch === '\x07') { buf.osc = false; continue; }                    // BEL terminator
+      if (ch === '\\' && buf.escPending) { buf.osc = false; buf.escPending = false; continue; } // ESC \ terminator
+      buf.escPending = (ch === '\x1b');
+      continue;
+    }
     if (ch === '\x1b') { buf.esc = true; continue; }
     if (buf.esc) {
-      if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '~') buf.esc = false;
+      buf.esc = false;
+      if (ch === ']') { buf.osc = true; continue; }                        // Start OSC
+      if (ch === '[') { buf.csi = true; continue; }                        // Start CSI
+      continue;                                                            // Simple ESC + char
+    }
+    // CSI sequence: ESC [ ... (terminated by letter or ~)
+    if (buf.csi) {
+      if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '~') buf.csi = false;
       continue;
     }
     if (ch === '\r' || ch === '\n') {

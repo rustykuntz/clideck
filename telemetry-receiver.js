@@ -68,6 +68,16 @@ function handleLogs(req, res) {
       for (const lr of sl.logRecords || []) {
         const attrs = parseAttrs(lr.attributes);
 
+        const eventName = attrs['event.name'];
+        if (eventName) console.log(`[telemetry] ${resolvedId?.slice(0,8)} ${eventName}`);
+
+        // Telemetry: only used for working=true (user prompt). Idle is handled by frontend write-silence.
+        const startEvents = new Set(['user_prompt', 'gemini_cli.user_prompt', 'codex.user_prompt']);
+
+        if (startEvents.has(eventName)) {
+          broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+
         const agentSessionId = attrs['session.id'] || attrs['conversation.id'];
         if (agentSessionId && sess) {
           // Prefer interactive session ID (Gemini sends non-interactive init events first)

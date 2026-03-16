@@ -282,6 +282,7 @@ function list() {
     id, name: s.name, themeId: s.themeId, commandId: s.commandId, presetId: s.presetId || 'shell', projectId: s.projectId, muted: !!s.muted,
     // Last preview text for sidebar display on reconnect
     lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
+    menu: s._menuKey ? JSON.parse(s._menuKey) : undefined,
   }));
 }
 

@@ -15,3 +15,6 @@ npm-debug.log*
 # cli agents
 .claude
 .clideck
+
+# Work planning
+workplan.txt

@@ -302,4 +302,28 @@ function clear(id) {
   try { unlinkSync(join(DIR, `${id}.screen`)); } catch {}
 }
 
-module.exports = { init, trackInput, trackOutput, storeBuffer, getScreen, getScreenTurns, getLastTurns, getCache, clear, setPrefix };
+// Detect interactive menus from raw screen lines. Returns [{value, label, selected}] or null.
+// Finds the footer line, then walks upward collecting only the contiguous menu block.
+const MENU_MARKERS = { 'claude-code': /[❯›]/, codex: /[›❯]/, 'gemini-cli': /●/ };
+const MENU_CHOICE_RE = /^\s*(?:[│❯›●•]\s+)*(\d+)\.\s+(.+)$/;
+function detectMenu(lines, presetId) {
+  const marker = MENU_MARKERS[presetId];
+  if (!marker) return null;
+  let footerIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/\besc\b|\(esc\)/i.test(lines[i])) { footerIdx = MENU_CHOICE_RE.test(lines[i]) ? i + 1 : i; break; }
+  }
+  if (footerIdx < 0) return null;
+  const choices = [];
+  for (let i = footerIdx - 1; i >= 0; i--) {
+    if (!lines[i].trim() || /^[│\s]+$/.test(lines[i])) continue;
+    const m = lines[i].match(MENU_CHOICE_RE);
+    if (!m) break;
+    if (choices.length && +m[1] >= +choices[0].value) break;
+    choices.unshift({ value: m[1], label: m[2].trim(), selected: marker.test(lines[i]) });
+  }
+  if (!choices.some(c => c.selected)) return null;
+  return choices.length ? choices : null;
+}
+
+module.exports = { init, trackInput, trackOutput, storeBuffer, getScreen, getScreenTurns, getLastTurns, getCache, clear, setPrefix, detectMenu };

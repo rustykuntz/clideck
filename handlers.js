@@ -134,10 +134,21 @@ function onConnection(ws) {
           plugins.notifyStatus(msg.id, !!msg.working);
         }
         break;
-      case 'terminal.buffer':
+      case 'terminal.buffer': {
         require('./transcript').storeBuffer(msg.id, msg.lines);
         sessions.broadcast({ type: 'screen.updated', id: msg.id });
+        const sess = sessions.getSessions().get(msg.id);
+        if (sess) {
+          const choices = require('./transcript').detectMenu(msg.lines, sess.presetId);
+          const key = choices ? JSON.stringify(choices) : '';
+          if (key !== (sess._menuKey || '')) {
+            sess._menuKey = key;
+            sessions.broadcast({ type: 'session.menu', id: msg.id, choices: choices || [] });
+            if (choices) sessions.broadcast({ type: 'session.status', id: msg.id, working: false, source: 'menu' });
+          }
+        }
         break;
+      }
       case 'resize':               sessions.resize(msg); break;
       case 'rename':          sessions.rename(msg); break;
       case 'close':           sessions.close(msg, cfg); break;

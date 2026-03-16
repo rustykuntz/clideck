@@ -1,6 +1,6 @@
 {
   "name": "clideck",
-  "version": "1.25.6",
+  "version": "1.25.8",
   "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
   "main": "server.js",
   "bin": {

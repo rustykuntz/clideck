@@ -56,6 +56,8 @@ function isActive(id) {
   return s ? (Date.now() - s.lastOutAt < 2000) : false;
 }
 
+function lastOutputAt(id) { return stream[id]?.lastOutAt || 0; }
+
 function clear(id) { delete net[id]; delete stream[id]; }
 
-module.exports = { start, stop, trackIn, trackOut, isActive, clear };
+module.exports = { start, stop, trackIn, trackOut, isActive, lastOutputAt, clear };

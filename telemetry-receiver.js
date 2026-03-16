@@ -2,8 +2,10 @@
 // CLI agents export telemetry events here; we capture agent session IDs
 // (for resume) and detect whether telemetry is configured (setup prompts).
 
+const ioActivity = require('./activity');
 const activity = new Map(); // sessionId → has received events
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
+const pendingIdle = new Map(); // sessionId → timer (api_request → confirm idle after output silence)
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -69,6 +71,8 @@ function handleLogs(req, res) {
         const attrs = parseAttrs(lr.attributes);
 
         const eventName = attrs['event.name'];
+        // Debug telemetry logs — uncomment as needed, do not delete
+        // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
         // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName}`);
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
@@ -77,11 +81,12 @@ function handleLogs(req, res) {
         if (startEvents.has(eventName)) {
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
-        // Claude: telemetry-only status. user_prompt/any event → working, api_request → idle.
+        // Claude: telemetry-only status. api_request → pending idle (confirm after 1s output silence, expire after 6s).
         if (serviceName === 'claude-code' && eventName) {
           if (eventName === 'api_request') {
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry' });
+            startPendingIdle(resolvedId);
           } else if (eventName !== 'user_prompt') {
+            cancelPendingIdle(resolvedId);
             broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
           }
         }
@@ -142,8 +147,29 @@ function cancelPendingSetup(sessionId) {
   }
 }
 
+// Pending idle: api_request starts a check loop. Confirm idle after 1s of output silence. Expire after 6s.
+function startPendingIdle(id) {
+  cancelPendingIdle(id);
+  const started = Date.now();
+  const check = setInterval(() => {
+    const elapsed = Date.now() - started;
+    if (elapsed > 6000) { cancelPendingIdle(id); return; }
+    if (Date.now() - Math.max(started, ioActivity.lastOutputAt(id)) >= 1000) {
+      cancelPendingIdle(id);
+      broadcastFn?.({ type: 'session.status', id, working: false, source: 'telemetry' });
+    }
+  }, 250);
+  pendingIdle.set(id, check);
+}
+
+function cancelPendingIdle(id) {
+  const timer = pendingIdle.get(id);
+  if (timer) { clearInterval(timer); pendingIdle.delete(id); }
+}
+
 function clear(id) {
   activity.delete(id);
+  cancelPendingIdle(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }

@@ -104,14 +104,29 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
 
   term.onExit(() => {
     // Skip cleanup if this PTY was replaced by a restart
-    if (sessions.get(id)?.pty !== term) return;
+    const s = sessions.get(id);
+    if (s?.pty !== term) return;
     activity.clear(id);
     telemetry.clear(id);
     opencodeBridge.clear(id);
-    transcript.clear(id);
     plugins.clearStatus(id);
+    // If resumable and token captured, move to resumable list (keep transcript for search)
+    if (cmd.canResume && cmd.resumeCommand && s.sessionToken) {
+      resumable.push({
+        id, name: s.name, commandId: s.commandId, presetId: s.presetId || 'shell', cwd: s.cwd,
+        themeId: s.themeId, sessionToken: s.sessionToken, projectId: s.projectId, muted: !!s.muted,
+        lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
+        savedAt: new Date().toISOString(),
+      });
+      console.log(`Session ${id.slice(0, 8)}: moved to resumable on exit (token: ${s.sessionToken.slice(0, 12)}…)`);
+    } else {
+      transcript.clear(id);
+    }
     sessions.delete(id);
     broadcast({ type: 'closed', id });
+    if (cmd.canResume && s.sessionToken) {
+      broadcast({ type: 'sessions.resumable', list: getResumable() });
+    }
   });
 
   return null;

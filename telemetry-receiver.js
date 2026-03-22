@@ -79,6 +79,7 @@ function handleLogs(req, res) {
         // Telemetry-based status
         const startEvents = new Set(['user_prompt', 'gemini_cli.user_prompt', 'codex.user_prompt']);
         if (startEvents.has(eventName)) {
+          cancelPendingIdle(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
         // Claude: telemetry-only status. api_request → pending idle (confirm after 1s output silence, expire after 6s).
@@ -90,20 +91,22 @@ function handleLogs(req, res) {
             broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
           }
         }
-        // Codex: telemetry-only status. codex.user_prompt/any event → working, codex.sse_event → idle.
+        // Codex: codex.sse_event → pending idle (2s PTY silence), other events → working.
         if (serviceName === 'codex_cli_rs' && eventName) {
           if (eventName === 'codex.sse_event') {
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry' });
+            startPendingIdle(resolvedId);
           } else if (eventName !== 'codex.user_prompt') {
+            cancelPendingIdle(resolvedId);
             broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
           }
         }
-        // Gemini: telemetry-only status. Whitelisted events → working, api_response (role=main) → idle.
+        // Gemini: api_response (role=main) → pending idle (2s PTY silence), whitelisted events → working.
         if (serviceName === 'gemini-cli' && eventName) {
           if (eventName === 'gemini_cli.api_response' && attrs['role'] === 'main') {
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry' });
+            startPendingIdle(resolvedId);
           } else if (eventName === 'gemini_cli.api_request' || eventName === 'gemini_cli.model_routing'
             || (eventName === 'gemini_cli.api_response' && attrs['role'] !== 'main')) {
+            cancelPendingIdle(resolvedId);
             broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
           }
         }
@@ -147,14 +150,12 @@ function cancelPendingSetup(sessionId) {
   }
 }
 
-// Pending idle: api_request starts a check loop. Confirm idle after 1s of output silence. Expire after 6s.
+// Pending idle: starts a check loop. Confirm idle after 2s of PTY output silence.
 function startPendingIdle(id) {
   cancelPendingIdle(id);
   const started = Date.now();
   const check = setInterval(() => {
-    const elapsed = Date.now() - started;
-    if (elapsed > 6000) { cancelPendingIdle(id); return; }
-    if (Date.now() - Math.max(started, ioActivity.lastOutputAt(id)) >= 1000) {
+    if (Date.now() - Math.max(started, ioActivity.lastOutputAt(id)) >= 2000) {
       cancelPendingIdle(id);
       broadcastFn?.({ type: 'session.status', id, working: false, source: 'telemetry' });
     }

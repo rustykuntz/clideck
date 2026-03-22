@@ -1,6 +1,7 @@
 const http = require('http');
 const { readFileSync, existsSync } = require('fs');
 const { join, extname, resolve } = require('path');
+const os = require('os');
 const { WebSocketServer } = require('ws');
 const { ensurePtyHelper } = require('./utils');
 
@@ -8,6 +9,59 @@ const { ensurePtyHelper } = require('./utils');
 const currentVersion = require('./package.json').version;
 const { execFile, execSync } = require('child_process');
 const shellOpt = process.platform === 'win32';
+const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_PORT = 4000;
+
+function readCliOption(name) {
+  const args = process.argv.slice(2);
+  const flag = `--${name}`;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === flag) {
+      const value = args[i + 1];
+      if (value && !value.startsWith('--')) return value;
+      return null;
+    }
+    if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+  }
+  return null;
+}
+
+function resolveHost() {
+  const host = readCliOption('host') || process.env.CLIDECK_HOST || DEFAULT_HOST;
+  return host.trim() || DEFAULT_HOST;
+}
+
+function isWildcardHost(host) {
+  return host === '0.0.0.0' || host === '::';
+}
+
+function formatUrl(host, port) {
+  if (host.includes(':') && !host.startsWith('[')) return `http://[${host}]:${port}`;
+  return `http://${host}:${port}`;
+}
+
+function getLanAddress() {
+  const nets = os.networkInterfaces();
+  for (const entries of Object.values(nets)) {
+    for (const net of entries || []) {
+      if (net.family === 'IPv4' && !net.internal) return net.address;
+    }
+  }
+  return null;
+}
+
+function getReadyUrls(host, port) {
+  if (host === '127.0.0.1' || host === '::1') return { localUrl: `http://localhost:${port}` };
+  if (isWildcardHost(host)) {
+    const lanAddress = getLanAddress();
+    return {
+      localUrl: `http://localhost:${port}`,
+      lanUrl: lanAddress ? formatUrl(lanAddress, port) : null,
+    };
+  }
+  return { localUrl: formatUrl(host, port) };
+}
 
 function checkSelfUpdate() {
   return new Promise(ok => {
@@ -55,7 +109,8 @@ require('./opencode-bridge').init(sessions.broadcast, sessions.getSessions);
 const config = require('./config');
 plugins.init(sessions.broadcast, sessions.getSessions, () => require('./handlers').getConfig(), (cfg) => config.save(cfg));
 
-const PORT = 4000;
+const PORT = DEFAULT_PORT;
+const HOST = resolveHost();
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 const ALIASES = {
   '/xterm.css':    join(__dirname, 'node_modules/@xterm/xterm/css/xterm.css'),
@@ -140,9 +195,14 @@ function onShutdown() {
 process.on('SIGINT', onShutdown);
 process.on('SIGTERM', onShutdown);
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   const v = require('./package.json').version;
-  const url = `http://localhost:${PORT}`;
+  const { localUrl, lanUrl } = getReadyUrls(HOST, PORT);
+  const accessLine = lanUrl ? `\x1b[38;5;252m  ▸ Local \x1b[38;5;44m${localUrl}\x1b[0m\n\x1b[38;5;252m  ▸ LAN   \x1b[38;5;44m${lanUrl}\x1b[0m`
+    : `\x1b[38;5;252m  ▸ Ready at \x1b[38;5;44m${localUrl}\x1b[0m`;
+  const bindLine = HOST !== DEFAULT_HOST
+    ? `\n\x1b[38;5;245m  ▸ Listening on \x1b[38;5;252m${HOST}\x1b[0m`
+    : '';
   console.log(`
 \x1b[38;5;105m  ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸\x1b[0m
 
@@ -157,7 +217,7 @@ server.listen(PORT, '127.0.0.1', () => {
 
 \x1b[38;5;245m  v${v}\x1b[0m
 
-\x1b[38;5;252m  ▸ Ready at \x1b[38;5;44m${url}\x1b[0m
+\x1b[0m${accessLine}${bindLine}
 \x1b[38;5;245m  ▸ Stop with \x1b[38;5;252mCtrl+C\x1b[38;5;245m · Restart anytime with \x1b[38;5;252mclideck\x1b[0m
 `);
 });

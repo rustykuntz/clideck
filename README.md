@@ -31,6 +31,26 @@ npm install -g clideck
 clideck
 ```
 
+### LAN Access
+
+CliDeck listens on `127.0.0.1` by default.
+
+To expose it to other devices on your local network, opt in explicitly:
+
+```bash
+clideck --host 0.0.0.0
+```
+
+Or:
+
+```bash
+CLIDECK_HOST=0.0.0.0 clideck
+```
+
+Then open `http://<your-mac-ip>:4000` from another device on the same network.
+
+Only do this on trusted networks. Binding to `0.0.0.0` makes the UI reachable by other devices that can connect to your machine.
+
 ## What You Get
 
 - **Live working/idle status** — see which agent is thinking and which is waiting for you, without checking each terminal

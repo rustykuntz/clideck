@@ -1,7 +1,7 @@
 import { state, send } from './state.js';
 import { esc, resolveIconPath } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
-import { attachToTerminal } from './hotkeys.js';
+import { attachToTerminal, registerHotkey } from './hotkeys.js';
 import { closeDropdown } from './prompts.js';
 function isLightBg(themeId) {
   const bg = resolveTheme(themeId)?.background;
@@ -428,6 +428,8 @@ export function removeTerminal(id) {
 export function select(id) {
   if (state.active === id) return;
   closeDropdown();
+  closePillLog();
+  document.querySelectorAll('.pill-row.active-session').forEach(r => r.classList.remove('active-session'));
 
   const prev = document.querySelector('.group.active-session');
   if (prev) prev.classList.remove('active-session');
@@ -729,8 +731,9 @@ export function regroupSessions() {
     const row = document.querySelector(`.group[data-id="${id}"]`);
     if (row) { row.remove(); rows.set(id, row); }
   }
-  // Remove old project headers, resumable rows, and resumable section
+  // Remove old project headers, resumable rows, pill rows, and resumable section
   list.querySelectorAll('.project-group').forEach(el => el.remove());
+  list.querySelectorAll('.pill-row').forEach(el => el.remove());
   list.querySelectorAll('[data-resumable-id]').forEach(el => el.remove());
   document.getElementById('resumable-section')?.remove();
 
@@ -747,6 +750,7 @@ export function regroupSessions() {
         <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${projectColor(proj)}"></span>
         <span class="project-name flex-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 truncate">${esc(proj.name)}</span>
         <span class="project-count text-[10px] text-slate-600">0</span>
+        <span class="project-plugin-actions"></span>
         <button class="project-menu-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-400 flex-shrink-0 transition-opacity p-0.5" title="Project menu">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20"><circle cx="10" cy="4" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="16" r="1.5" fill="currentColor"/></svg>
         </button>
@@ -770,6 +774,17 @@ export function regroupSessions() {
 
   const firstGroup = list.querySelector('.project-group');
   for (const row of ungrouped) list.insertBefore(row, firstGroup);
+
+  // Place pill rows at top of their project groups, or ungrouped at top
+  const ungroupedPills = [];
+  for (const [, pill] of state.pills) {
+    if (pill.projectId) {
+      const container = list.querySelector(`.project-group[data-project-id="${pill.projectId}"] .project-sessions`);
+      if (container) { container.insertBefore(buildPillRow(pill), container.firstChild); continue; }
+    }
+    ungroupedPills.push(pill);
+  }
+  for (const pill of ungroupedPills) list.insertBefore(buildPillRow(pill), firstGroup);
 
   // Place resumable sessions into their project groups or ungrouped section
   const ungroupedResumable = [];
@@ -804,6 +819,7 @@ export function regroupSessions() {
   }
 
   applyFilter();
+  list.dispatchEvent(new Event('projects-rendered'));
 }
 
 export function toggleProjectCollapse(projectId) {
@@ -947,4 +963,205 @@ setInterval(() => {
   }
 }, 60000);
 
+// Refresh pill elapsed times every second
+setInterval(() => {
+  for (const [, pill] of state.pills) {
+    if (!pill.startedAt) continue;
+    const el = document.querySelector(`.pill-row[data-pill-id="${pill.id}"] .pill-elapsed`);
+    if (el) el.textContent = formatElapsed(pill.startedAt);
+  }
+}, 1000);
+
+// --- Session pills (plugin virtual rows) ---
+
+export function addPill(pill) {
+  state.pills.set(pill.id, { ...pill, logs: [] });
+  regroupSessions();
+}
+
+export function updatePill(pill) {
+  const p = state.pills.get(pill.id);
+  if (!p) return;
+  Object.assign(p, pill);
+  const row = document.querySelector(`.pill-row[data-pill-id="${pill.id}"]`);
+  if (!row) return;
+  const statusEl = row.querySelector('.pill-status');
+  if (statusEl) {
+    statusEl.textContent = pill.statusText || (pill.working ? '' : 'idle');
+    statusEl.className = `pill-status text-xs truncate ${pill.working ? 'text-emerald-400' : 'text-slate-600'}`;
+  }
+  const animEl = row.querySelector('.pill-anim');
+  if (animEl) {
+    if (pill.working) {
+      if (!animEl.children.length) { animEl._stop = startBounce(animEl); }
+    } else {
+      if (animEl._stop) { animEl._stop(); animEl._stop = null; }
+      animEl.innerHTML = '<span class="text-[11px] text-slate-600 dormant">z<sup>z</sup>Z</span>';
+    }
+  }
+}
+
+export function removePill(id) {
+  state.pills.delete(id);
+  document.querySelector(`.pill-row[data-pill-id="${id}"]`)?.remove();
+  // If this pill's log panel is open, close it
+  if (state.activePill === id) closePillLog();
+  regroupSessions();
+}
+
+export function appendPillLog(id, entry) {
+  const p = state.pills.get(id);
+  if (!p) return;
+  p.logs.push(entry);
+  if (p.logs.length > 200) p.logs.splice(0, p.logs.length - 200);
+  // If log panel is open for this pill, append line
+  if (state.activePill === id) appendLogLine(entry);
+}
+
+function pillColors() {
+  const light = document.documentElement.classList.contains('light');
+  return { bg: light ? '#e0fcd7' : '#2a4a30', accent: light ? '#4a8c3f' : '#54ab63' };
+}
+
+const PILL_CLOCK_SVG = `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
+const PILL_BOT_SVG = `<svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m-3 4h6m-8 0a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H7z"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/></svg>`;
+
+function formatElapsed(startedAt) {
+  const sec = Math.floor((Date.now() - startedAt) / 1000);
+  if (sec < 0) return '0s';
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (d >= 2) return `${d}d ${h}h`;
+  if (m >= 91) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function buildPillRow(pill) {
+  const { bg, accent } = pillColors();
+  const row = document.createElement('div');
+  row.className = 'pill-row group flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors select-none';
+  row.dataset.pillId = pill.id;
+  const elapsed = pill.startedAt ? formatElapsed(pill.startedAt) : '';
+  row.innerHTML = `
+    <div class="session-icon w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden pointer-events-none" style="background:${bg}">
+      <div class="relative w-full h-full flex items-center justify-center">
+        <div class="absolute" style="top:2px;left:3px;color:${accent}">${PILL_CLOCK_SVG}</div>
+        <div class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full flex items-center justify-center border border-slate-900" style="background:${accent};color:#fff">${PILL_BOT_SVG}</div>
+      </div>
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-baseline gap-2">
+        <span class="flex-1 font-semibold text-[13px] text-slate-300 truncate">${esc(pill.title)}</span>
+        <span class="pill-elapsed text-[11px] text-slate-600 flex-shrink-0">${elapsed}</span>
+      </div>
+      <div class="flex items-center gap-1.5 mt-0.5">
+        <span class="pill-anim flex-shrink-0 leading-none"></span>
+        <span class="pill-status text-xs truncate ${pill.working ? 'text-emerald-400' : 'text-slate-600'}">${pill.statusText || (pill.working ? '' : 'idle')}</span>
+      </div>
+    </div>`;
+
+  // Init animation state
+  const animEl = row.querySelector('.pill-anim');
+  if (pill.working) {
+    animEl._stop = startBounce(animEl);
+  } else {
+    animEl.innerHTML = '<span class="text-[11px] text-slate-600 dormant">z<sup>z</sup>Z</span>';
+  }
+
+  row.addEventListener('click', () => selectPill(pill.id));
+  return row;
+}
+
+function selectPill(id) {
+  // Deselect any active terminal
+  const prev = document.querySelector('.group.active-session');
+  if (prev) prev.classList.remove('active-session');
+  document.querySelector('.term-wrap.active')?.classList.remove('active');
+
+  // Highlight pill row
+  document.querySelectorAll('.pill-row').forEach(r => r.classList.remove('active-session'));
+  document.querySelector(`.pill-row[data-pill-id="${id}"]`)?.classList.add('active-session');
+
+  state.active = null;
+  openPillLog(id);
+}
+
+function openPillLog(id) {
+  const pill = state.pills.get(id);
+  if (!pill) return;
+  state.activePill = id;
+
+  // Request full logs from server
+  send({ type: 'pill.getLogs', id });
+
+  // Create or show log panel
+  let panel = document.getElementById('pill-log-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'pill-log-panel';
+    panel.className = 'term-wrap active';
+    panel.innerHTML = `
+      <div class="flex flex-col h-full bg-slate-900 rounded-lg overflow-hidden">
+        <div class="pill-log-header flex items-center gap-2 px-4 py-2 border-b border-slate-700/50">
+          <span class="pill-log-title font-semibold text-sm text-slate-300"></span>
+          <span class="flex-1"></span>
+          <button class="pill-log-clear text-[11px] text-slate-600 hover:text-slate-400 transition-colors">Clear</button>
+        </div>
+        <div class="pill-log-body flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed tmx-scroll"></div>
+      </div>`;
+    document.getElementById('terminals').appendChild(panel);
+    panel.querySelector('.pill-log-clear').addEventListener('click', () => {
+      panel.querySelector('.pill-log-body').innerHTML = '';
+    });
+  } else {
+    panel.classList.add('active');
+  }
+
+  panel.querySelector('.pill-log-title').textContent = pill.title;
+  const body = panel.querySelector('.pill-log-body');
+  body.innerHTML = '';
+  for (const entry of pill.logs) appendLogLine(entry);
+
+  // Hide empty state
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('terminals').style.pointerEvents = '';
+}
+
+export function setPillLogs(id, logs) {
+  const pill = state.pills.get(id);
+  if (!pill) return;
+  pill.logs = logs;
+  if (state.activePill !== id) return;
+  const body = document.querySelector('#pill-log-panel .pill-log-body');
+  if (!body) return;
+  body.innerHTML = '';
+  for (const entry of logs) appendLogLine(entry);
+}
+
+function appendLogLine(entry) {
+  const body = document.querySelector('#pill-log-panel .pill-log-body');
+  if (!body) return;
+  const line = document.createElement('div');
+  line.className = 'flex gap-3 py-0.5';
+  const time = new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  line.innerHTML = `<span class="text-slate-600 flex-shrink-0">${time}</span><span class="text-slate-400">${esc(entry.text)}</span>`;
+  body.appendChild(line);
+  body.scrollTop = body.scrollHeight;
+}
+
+export function closePillLog() {
+  state.activePill = null;
+  const panel = document.getElementById('pill-log-panel');
+  if (panel) panel.classList.remove('active');
+}
+
 export { openMenu, closeMenu, setStatus, updateMuteIndicator, positionMenu, PROJECT_COLORS };
+
+// Clear active terminal scrollback — Cmd+K (macOS), Ctrl+Shift+K (Windows/Linux)
+const clearTerminal = () => {
+  const entry = state.active && state.terms.get(state.active);
+  if (entry) entry.term.clear();
+};
+registerHotkey('core', 'Cmd+K', clearTerminal);
+registerHotkey('core', 'Ctrl+Shift+K', clearTerminal);

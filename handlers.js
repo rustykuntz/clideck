@@ -117,6 +117,7 @@ function onConnection(ws) {
   ws.send(JSON.stringify({ type: 'sessions.resumable', list: sessions.getResumable(cfg) }));
   ws.send(JSON.stringify({ type: 'transcript.cache', cache: transcript.getCache() }));
   ws.send(JSON.stringify({ type: 'plugins', list: plugins.getInfo() }));
+  ws.send(JSON.stringify({ type: 'pills', list: plugins.getPills() }));
   sessions.sendBuffers(ws);
 
   ws.on('message', (raw) => {
@@ -130,8 +131,7 @@ function onConnection(ws) {
       case 'input':                sessions.input(msg); break;
       case 'session.statusReport':
         if (sessions.getSessions().has(msg.id)) {
-          sessions.broadcast({ type: 'session.status', id: msg.id, working: !!msg.working });
-          plugins.notifyStatus(msg.id, !!msg.working);
+          sessions.broadcast({ type: 'session.status', id: msg.id, working: !!msg.working, source: 'client' });
         }
         break;
       case 'terminal.buffer': {
@@ -140,11 +140,18 @@ function onConnection(ws) {
         const sess = sessions.getSessions().get(msg.id);
         if (sess) {
           const choices = require('./transcript').detectMenu(msg.lines, sess.presetId);
+          // Auto-approve: send Enter immediately when menu detected
+          if (choices && plugins.shouldAutoApproveMenu(msg.id)) {
+            sessions.input({ id: msg.id, data: '\r' });
+          }
           const key = choices ? JSON.stringify(choices) : '';
           if (key !== (sess._menuKey || '')) {
             sess._menuKey = key;
             sessions.broadcast({ type: 'session.menu', id: msg.id, choices: choices || [] });
-            if (choices) sessions.broadcast({ type: 'session.status', id: msg.id, working: false, source: 'menu' });
+            if (choices) {
+              plugins.notifyMenu(msg.id, choices);
+              sessions.broadcast({ type: 'session.status', id: msg.id, working: false, source: 'menu' });
+            }
           }
         }
         break;
@@ -283,6 +290,10 @@ function onConnection(ws) {
         }
         break;
       }
+
+      case 'pill.getLogs':
+        ws.send(JSON.stringify({ type: 'pill.logs', id: msg.id, logs: plugins.getPillLogs(msg.id) }));
+        break;
 
       case 'remote.status': {
         let installed = false;

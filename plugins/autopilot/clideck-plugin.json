@@ -1,0 +1,52 @@
+{
+  "id": "autopilot",
+  "name": "Autopilot",
+  "version": "0.14.4",
+  "author": "CliDeck",
+  "description": "Multi-agent orchestration — routes output between agents automatically",
+  "settings": [
+    {
+      "key": "enabled",
+      "label": "Enabled",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "provider",
+      "label": "Provider",
+      "type": "select",
+      "default": "anthropic",
+      "options": [
+        { "value": "anthropic", "label": "Anthropic" },
+        { "value": "openai", "label": "OpenAI" },
+        { "value": "google", "label": "Google AI" },
+        { "value": "groq", "label": "Groq" },
+        { "value": "openrouter", "label": "OpenRouter" },
+        { "value": "xai", "label": "xAI" },
+        { "value": "mistral", "label": "Mistral" },
+        { "value": "cerebras", "label": "Cerebras" }
+      ]
+    },
+    {
+      "key": "model",
+      "label": "Model",
+      "type": "dynamic-select",
+      "default": "claude-haiku-4-5"
+    },
+    {
+      "key": "apiKey",
+      "label": "API Key",
+      "type": "text",
+      "default": "",
+      "placeholder": "Falls back to env var (ANTHROPIC_API_KEY, etc.)",
+      "description": "Leave empty to use the standard environment variable for the selected provider"
+    },
+    {
+      "key": "debugging",
+      "label": "Debugging",
+      "type": "toggle",
+      "default": false,
+      "description": "Save each router LLM turn (system prompt, KB history, agent outputs) to ~/.clideck/autopilot/logs/ for inspection"
+    }
+  ]
+}

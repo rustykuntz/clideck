@@ -169,6 +169,7 @@
 /* Session hover */
 .group[data-id]:hover { background-color: var(--color-session-hover) !important; }
 .resumable-row:hover { background-color: var(--color-session-hover) !important; }
+.pill-row:hover { background-color: var(--color-session-hover) !important; }
 
 /* Project count & menu icon */
 .project-count { color: var(--color-proj-meta) !important; }

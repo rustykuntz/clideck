@@ -139,7 +139,7 @@ function openEditor(idx) {
     <input id="pe-name" type="text" maxlength="60" placeholder="Prompt name" value="${esc(existing?.name || '')}"
       class="w-full px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors mb-2">
     <textarea id="pe-text" rows="4" placeholder="Prompt text to paste into terminal"
-      class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-mono mb-2">${esc(existing?.text || '')}</textarea>
+      class="w-full max-w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500 transition-colors resize-y leading-relaxed font-mono mb-2" style="min-height:5lh">${esc(existing?.text || '')}</textarea>
     <div class="flex items-center gap-2">
       <button id="pe-save" class="px-4 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors">${existing ? 'Save' : 'Add'}</button>
       <button id="pe-cancel" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors">Cancel</button>

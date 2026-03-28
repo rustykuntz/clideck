@@ -20,12 +20,25 @@ function getContainer() {
 }
 
 /**
- * @param {string} message  — plain text or HTML (if html option is true)
- * @param {{ type?: string, duration?: number, id?: string, html?: boolean }} opts
+ * Minimal markdown: **bold**, `code`, - bullet lists, line breaks.
+ */
+function miniMarkdown(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-slate-200 font-semibold">$1</strong>')
+    .replace(/`(.+?)`/g, '<code class="px-1 py-0.5 rounded bg-slate-700/60 text-slate-300 text-[11px]">$1</code>')
+    .replace(/^[-•]\s+(.+)$/gm, '<li class="ml-3">$1</li>')
+    .replace(/(<li.*<\/li>\n?)+/g, '<ul class="list-disc pl-2 space-y-0.5">$&</ul>')
+    .replace(/\n/g, '<br>');
+}
+
+/**
+ * @param {string} message  — plain text, markdown (if markdown option), or raw HTML (if html option)
+ * @param {{ type?: string, duration?: number, id?: string, html?: boolean, markdown?: boolean, title?: string }} opts
  * @returns {{ dismiss(): void }}
  */
 export function showToast(message, opts = {}) {
-  const { type = 'info', duration = 3000, id, html = false } = opts;
+  const { type = 'info', duration = 3000, id, html = false, markdown = false, title } = opts;
+  const sticky = duration === 0;
 
   if (id) document.getElementById(`tmx-toast-${id}`)?.remove();
 
@@ -33,14 +46,20 @@ export function showToast(message, opts = {}) {
   if (id) el.id = `tmx-toast-${id}`;
   el.className = 'w-[360px] bg-slate-800/95 backdrop-blur-sm border border-slate-700/60 rounded-xl tmx-toast';
   el.style.cssText = 'opacity:0;transform:translateY(12px);transition:opacity 0.3s ease,transform 0.3s ease';
+
+  const body = markdown ? miniMarkdown(message) : html ? message : esc(message);
+  const titleHtml = title ? `<div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">${esc(title)}</div>` : '';
+  const closeX = `<button class="toast-close flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>`;
+  const dismissBtn = `<div class="flex justify-end px-4 pb-3"><button class="toast-close px-3 py-1 rounded-md text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 border border-slate-700/50 transition-colors">Dismiss</button></div>`;
+
   el.innerHTML = `
     <div class="flex items-start gap-2.5 px-4 py-3.5">
       <svg class="w-5 h-5 flex-shrink-0 ${ICON_COLORS[type] || ICON_COLORS.info} mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">${ICONS[type] || ICONS.info}</svg>
-      <p class="flex-1 text-xs text-slate-300 leading-relaxed">${html ? message : esc(message)}</p>
-      <button class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
-    </div>`;
+      <div class="flex-1 min-w-0 text-xs text-slate-300 leading-relaxed">${titleHtml}${body}</div>
+      ${sticky ? '' : closeX}
+    </div>${sticky ? dismissBtn : ''}`;
 
   const dismiss = () => {
     el.style.opacity = '0';
@@ -48,7 +67,7 @@ export function showToast(message, opts = {}) {
     setTimeout(() => el.remove(), 300);
   };
 
-  el.querySelector('button').onclick = dismiss;
+  el.querySelectorAll('.toast-close').forEach(b => b.onclick = dismiss);
   getContainer().appendChild(el);
   requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
   if (duration > 0) setTimeout(dismiss, duration);

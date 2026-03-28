@@ -1,6 +1,6 @@
 import { state, send } from './state.js';
 import { esc, binName } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu, addPill, updatePill, removePill, appendPillLog, setPillLogs, closePillLog } from './terminals.js';
 import { renderSettings, updateVersionFooter } from './settings.js';
 import { openCreator, closeCreator, refreshCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
@@ -12,6 +12,7 @@ import './nav.js';
 import { initDrag, wasDragging } from './drag.js';
 import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
+import { renderRoles } from './roles.js';
 
 function connect() {
   state.ws = new WebSocket(`ws://${location.host}`);
@@ -19,7 +20,10 @@ function connect() {
   state.ws.onopen = () => {
     for (const [, e] of state.terms) { e.ro.disconnect(); e.term.dispose(); e.el.remove(); }
     state.terms.clear();
+    state.pills.clear();
+    state.activePill = null;
     document.getElementById('session-list').innerHTML = '';
+    document.getElementById('pill-log-panel')?.remove();
     state.active = null;
     document.getElementById('empty').style.display = 'flex';
     send({ type: 'remote.status' });
@@ -34,6 +38,7 @@ function connect() {
         regroupSessions();
         renderSettings();
         renderPrompts();
+        renderRoles();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
         break;
       case 'themes':
@@ -202,6 +207,25 @@ function connect() {
       case 'plugins':
         loadPlugins(msg.list);
         break;
+      case 'pills':
+        state.pills.clear();
+        for (const p of msg.list) addPill(p);
+        break;
+      case 'pill.added':
+        addPill(msg.pill);
+        break;
+      case 'pill.updated':
+        updatePill(msg.pill);
+        break;
+      case 'pill.removed':
+        removePill(msg.id);
+        break;
+      case 'pill.log':
+        appendPillLog(msg.id, msg.entry);
+        break;
+      case 'pill.logs':
+        setPillLogs(msg.id, msg.logs);
+        break;
       case 'plugin.delete.error':
         showToast(`Failed to remove plugin: ${msg.error}`, { duration: 4000 });
         break;
@@ -247,6 +271,7 @@ mobileQuery.addEventListener('change', (e) => { if (!e.matches) closeMobileSideb
 
 // Sidebar events
 const sessionList = document.getElementById('session-list');
+sessionList.addEventListener('projects-rendered', () => renderProjectActions());
 
 sessionList.addEventListener('click', (e) => {
   closeCreator();
@@ -254,6 +279,7 @@ sessionList.addEventListener('click', (e) => {
 
   // Project header click — toggle collapse (skip if just finished a drag)
   const projHeader = e.target.closest('.project-header');
+  if (e.target.closest('.plugin-project-btn')) return; // handled by btn's own click listener
   if (projHeader && !e.target.closest('.project-menu-btn') && !wasDragging()) {
     toggleProjectCollapse(projHeader.dataset.projectId);
     return;
@@ -278,6 +304,9 @@ sessionList.addEventListener('click', (e) => {
     closeMobileSidebar();
     return;
   }
+
+  // Pill row click — handled by pill's own listener
+  if (e.target.closest('.pill-row')) return;
 
   const item = e.target.closest('.group');
   if (!item) return;
@@ -720,7 +749,7 @@ function renderPluginsPanel(list) {
       </div>
       <div class="plugin-body ${open ? '' : 'hidden'}">
         <div class="px-4 pb-3">
-          ${(p.settings || []).map(s => renderSettingField(p.id, s, p.settingValues[s.key] ?? s.default)).join('')}
+          ${(p.settings || []).map(s => renderSettingField(p.id, s, p.settingValues[s.key] ?? s.default, p.dynamicOptions)).join('')}
         </div>
       </div>
     </div>`;
@@ -756,11 +785,11 @@ function renderPluginsPanel(list) {
     if (el.type === 'checkbox') el.addEventListener('change', () => onChange(el.checked));
     else if (el.tagName === 'SELECT') el.addEventListener('change', () => onChange(el.value));
     else if (el.type === 'number') el.addEventListener('change', () => onChange(Number(el.value)));
-    else el.addEventListener('input', () => onChange(el.value));
+    else el.addEventListener('change', () => onChange(el.value));
   });
 }
 
-function renderSettingField(pluginId, setting, value) {
+function renderSettingField(pluginId, setting, value, dynamicOptions) {
   const id = `ps-${pluginId}-${setting.key}`;
   const attrs = `data-plugin="${esc(pluginId)}" data-setting="${esc(setting.key)}"`;
   const label = esc(setting.label || setting.key);
@@ -772,12 +801,17 @@ function renderSettingField(pluginId, setting, value) {
       <span class="text-xs text-slate-400">${label}</span>
     </label>${desc}`;
   }
-  if (setting.type === 'select') {
-    const opts = (setting.options || []).map(o => {
+  if (setting.type === 'select' || setting.type === 'dynamic-select') {
+    const source = setting.type === 'dynamic-select' ? (dynamicOptions?.[setting.key] || []) : (setting.options || []);
+    let opts = source.map(o => {
       const optVal = typeof o === 'object' ? o.value : o;
       const optLabel = typeof o === 'object' ? o.label : o;
       return `<option value="${esc(String(optVal))}" ${String(value) === String(optVal) ? 'selected' : ''}>${esc(String(optLabel))}</option>`;
     }).join('');
+    // Dynamic-select with no options yet: show the saved value so the control isn't blank
+    if (setting.type === 'dynamic-select' && !source.length && value) {
+      opts = `<option value="${esc(String(value))}" selected>${esc(String(value))}</option>`;
+    }
     return `<div class="mt-2">
       <label class="block text-xs text-slate-400 mb-1">${label}</label>
       <select id="${id}" ${attrs} class="w-full px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors">${opts}</select>
@@ -816,6 +850,15 @@ async function loadPlugins(list) {
   }
 
   renderPluginsPanel(list);
+
+  // Store project-header actions from plugins (used by regroupSessions to render icons)
+  state.projectActions = [];
+  for (const plugin of list) {
+    for (const action of plugin.actions || []) {
+      if (action.slot === 'project-header') state.projectActions.push({ ...action, pluginId: plugin.id });
+    }
+  }
+  renderProjectActions();
 
   // Render server-registered toolbar actions — also clears stale client toolbar buttons
   const toolbar = document.getElementById('plugin-toolbar');
@@ -860,6 +903,30 @@ async function loadPlugins(list) {
         });
       }
     } catch (e) { console.error(`[plugin:${plugin.id}] client load failed:`, e); }
+  }
+}
+
+// Render plugin-registered project header action buttons into all project groups
+function renderProjectActions() {
+  const actions = state.projectActions || [];
+  for (const slot of document.querySelectorAll('.project-plugin-actions')) {
+    slot.innerHTML = '';
+    const projId = slot.closest('.project-header')?.dataset.projectId;
+    if (!projId) continue;
+    for (const action of actions) {
+      const btn = document.createElement('button');
+      btn.className = 'project-plugin-action plugin-project-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-indigo-400 flex-shrink-0 transition-opacity p-0.5';
+      btn.title = action.title || '';
+      btn.innerHTML = action.icon || '';
+      btn.dataset.pluginId = action.pluginId;
+      btn.dataset.actionId = action.id;
+      btn.dataset.projectId = projId;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        send({ type: `plugin.${action.pluginId}.${action.id}`, action: action.id, projectId: projId });
+      });
+      slot.appendChild(btn);
+    }
   }
 }
 

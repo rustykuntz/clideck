@@ -1,6 +1,7 @@
 const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync, rmSync } = require('fs');
 const { join, sep } = require('path');
 const { DATA_DIR } = require('./paths');
+const transcript = require('./transcript');
 
 const PLUGINS_DIR = join(DATA_DIR, 'plugins');
 mkdirSync(PLUGINS_DIR, { recursive: true });
@@ -33,16 +34,22 @@ const inputHooks = [];
 const outputHooks = [];
 const statusHooks = [];
 const transcriptHooks = [];
+const menuHooks = [];
 const sessionStatus = new Map(); // sessionId → boolean (dedup multi-client reports)
+const autoApproveMenus = new Set(); // sessionIds where menus should be auto-approved
 const frontendHandlers = new Map();
 let broadcastFn = null;
 let sessionsFn = null;
 let getConfigFn = null;
 let saveConfigFn = null;
+let inputFn = null;
+let createSessionFn = null;
+let closeSessionFn = null;
 const settingsChangeHandlers = new Map(); // pluginId → [fn]
+const sessionPills = new Map(); // pillId → { pluginId, id, title, projectId, working, statusText, icon, logs[] }
 
 function removeHooks(pluginId) {
-  for (const arr of [inputHooks, outputHooks, statusHooks, transcriptHooks]) {
+  for (const arr of [inputHooks, outputHooks, statusHooks, transcriptHooks, menuHooks]) {
     for (let i = arr.length - 1; i >= 0; i--) {
       if (arr[i].pluginId === pluginId) arr.splice(i, 1);
     }
@@ -51,13 +58,22 @@ function removeHooks(pluginId) {
     if (key.startsWith(`plugin.${pluginId}.`)) frontendHandlers.delete(key);
   }
   settingsChangeHandlers.delete(pluginId);
+  for (const [id, pill] of sessionPills) {
+    if (pill.pluginId === pluginId) {
+      sessionPills.delete(id);
+      broadcastFn?.({ type: 'pill.removed', id });
+    }
+  }
 }
 
-function init(broadcast, getSessions, getConfig, saveConfig) {
+function init(broadcast, getSessions, getConfig, saveConfig, sessionInput, createProgrammatic, closeSession) {
   broadcastFn = broadcast;
   sessionsFn = getSessions;
   getConfigFn = getConfig;
   saveConfigFn = saveConfig;
+  inputFn = sessionInput;
+  createSessionFn = createProgrammatic;
+  closeSessionFn = closeSession;
 
   for (const entry of readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -88,7 +104,7 @@ function init(broadcast, getSessions, getConfig, saveConfig) {
       continue;
     }
 
-    const state = { manifest, dir, shutdownFns: [], actions: [] };
+    const state = { manifest, dir, shutdownFns: [], actions: [], dynamicOptions: {} };
     plugins.set(manifest.id, state);
 
     try {
@@ -113,6 +129,7 @@ function buildApi(pluginId, pluginDir, state) {
     onSessionOutput(fn) { outputHooks.push({ pluginId, fn }); },
     onStatusChange(fn) { statusHooks.push({ pluginId, fn }); },
     onTranscriptEntry(fn) { transcriptHooks.push({ pluginId, fn }); },
+    onMenuDetected(fn) { menuHooks.push({ pluginId, fn }); },
 
     sendToFrontend(event, data = {}) {
       broadcastFn?.({ ...data, type: `plugin.${pluginId}.${event}` });
@@ -124,17 +141,69 @@ function buildApi(pluginId, pluginDir, state) {
     getSession(id) {
       const s = sessionsFn?.()?.get(id);
       if (!s) return null;
-      return { id, name: s.name, cwd: s.cwd, commandId: s.commandId, themeId: s.themeId, projectId: s.projectId };
+      return { id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: !!sessionStatus.get(id) };
     },
     getSessions() {
       const sessions = sessionsFn?.();
       if (!sessions) return [];
       return [...sessions].map(([id, s]) => ({
-        id, name: s.name, cwd: s.cwd, commandId: s.commandId, themeId: s.themeId, projectId: s.projectId,
+        id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: !!sessionStatus.get(id),
       }));
     },
 
+    createSession(opts) {
+      const cfg = getConfigFn?.();
+      if (!cfg || !createSessionFn) return null;
+      const result = createSessionFn(opts, cfg);
+      return result.error ? null : result.id;
+    },
+    closeSession(id) {
+      const cfg = getConfigFn?.();
+      if (!cfg || !closeSessionFn) return;
+      closeSessionFn({ id }, cfg);
+    },
+
+    inputToSession(id, data) { inputFn?.({ id, data }); },
+    setAutoApproveMenu(id, enabled) { enabled ? autoApproveMenus.add(id) : autoApproveMenus.delete(id); },
+
+    getRoles() { return JSON.parse(JSON.stringify(getConfigFn?.()?.roles || [])); },
+    getProjects() { return JSON.parse(JSON.stringify(getConfigFn?.()?.projects || [])); },
+    getTranscript(id, n) { return transcript.getLastTurns(id, n || 20); },
+    getScreenTurns(id, agent, opts) { return transcript.getScreenTurns(id, agent, opts); },
+    getScreen(id) { return transcript.getScreen(id); },
+    detectMenu(lines, presetId) { return transcript.detectMenu(lines, presetId); },
+
     addToolbarAction(opts) { state.actions.push({ ...opts, pluginId, slot: 'toolbar' }); },
+    addProjectAction(opts) { state.actions.push({ ...opts, pluginId, slot: 'project-header' }); },
+
+    addSessionPill(opts) {
+      const pill = { pluginId, id: opts.id, title: opts.title, projectId: opts.projectId, working: false, statusText: '', icon: opts.icon || '', logs: [], startedAt: Date.now() };
+      sessionPills.set(opts.id, pill);
+      broadcastFn?.({ type: 'pill.added', pill: pillInfo(pill) });
+    },
+    updateSessionPill(id, updates) {
+      const pill = sessionPills.get(id);
+      if (!pill || pill.pluginId !== pluginId) return;
+      if (updates.title !== undefined) pill.title = updates.title;
+      if (updates.working !== undefined) pill.working = updates.working;
+      if (updates.statusText !== undefined) pill.statusText = updates.statusText;
+      if (updates.projectId !== undefined) pill.projectId = updates.projectId;
+      broadcastFn?.({ type: 'pill.updated', pill: pillInfo(pill) });
+    },
+    appendPillLog(id, text) {
+      const pill = sessionPills.get(id);
+      if (!pill || pill.pluginId !== pluginId) return;
+      const entry = { ts: Date.now(), text };
+      pill.logs.push(entry);
+      if (pill.logs.length > 200) pill.logs.splice(0, pill.logs.length - 200);
+      broadcastFn?.({ type: 'pill.log', id, entry });
+    },
+    removeSessionPill(id) {
+      const pill = sessionPills.get(id);
+      if (!pill || pill.pluginId !== pluginId) return;
+      sessionPills.delete(id);
+      broadcastFn?.({ type: 'pill.removed', id });
+    },
 
     getSetting(key) {
       const cfg = getConfigFn?.();
@@ -153,6 +222,28 @@ function buildApi(pluginId, pluginDir, state) {
       settingsChangeHandlers.get(pluginId).push(fn);
     },
 
+    setSettingOptions(key, options) {
+      state.dynamicOptions[key] = options;
+      broadcastFn?.({ type: 'plugins', list: getInfo() });
+    },
+    setSetting(key, value) {
+      updateSetting(pluginId, key, value);
+      broadcastFn?.({ type: 'plugins', list: getInfo() });
+    },
+
+    resolve(specifier) {
+      // Resolve a package from the app's node_modules. Intended for bundled
+      // plugins that ship with CliDeck and can rely on app-level dependencies.
+      // Third-party plugins should bundle their own deps or be self-contained.
+      try { return require.resolve(specifier); } catch {}
+      const parts = specifier.startsWith('@') ? specifier.split('/').slice(0, 2) : [specifier.split('/')[0]];
+      const pkgDir = join(__dirname, 'node_modules', ...parts);
+      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+      const entry = typeof pkg.exports === 'string' ? pkg.exports
+        : pkg.exports?.['.']?.import || pkg.exports?.['.']?.default || pkg.exports?.['.']
+        || pkg.module || pkg.main || 'index.js';
+      return join(pkgDir, entry);
+    },
     onShutdown(fn) { state.shutdownFns.push(fn); },
     log(msg) { console.log(`[plugin:${pluginId}] ${msg}`); },
   };
@@ -177,11 +268,11 @@ function notifyOutput(id, data) {
   }
 }
 
-function notifyStatus(id, working) {
+function notifyStatus(id, working, source) {
   if (sessionStatus.get(id) === working) return;
   sessionStatus.set(id, working);
   for (const h of statusHooks) {
-    try { h.fn(id, working); }
+    try { h.fn(id, working, source); }
     catch (e) { console.error(`[plugin:${h.pluginId}] status error: ${e.message}`); }
   }
 }
@@ -193,6 +284,14 @@ function notifyTranscript(id, role, text) {
   }
 }
 
+function notifyMenu(id, choices) {
+  for (const h of menuHooks) {
+    try { h.fn(id, choices); }
+    catch (e) { console.error(`[plugin:${h.pluginId}] menu error: ${e.message}`); }
+  }
+}
+
+
 function updateSetting(pluginId, key, value) {
   // Validate plugin exists (also prevents __proto__ pollution — Map lookup returns undefined)
   const plugin = plugins.get(pluginId);
@@ -201,7 +300,8 @@ function updateSetting(pluginId, key, value) {
   const settingDef = (plugin.manifest.settings || []).find(s => s.key === key);
   if (!settingDef) return;
   // Type-coerce/validate value against manifest type
-  const coerced = coerceSetting(settingDef, value);
+  const dynOpts = settingDef.type === 'dynamic-select' ? plugin.dynamicOptions?.[key] : null;
+  const coerced = coerceSetting(settingDef, value, dynOpts);
   if (coerced === undefined) return;
 
   const cfg = getConfigFn?.();
@@ -217,7 +317,7 @@ function updateSetting(pluginId, key, value) {
   }
 }
 
-function coerceSetting(def, value) {
+function coerceSetting(def, value, dynOpts) {
   switch (def.type) {
     case 'toggle': return !!value;
     case 'number': {
@@ -230,6 +330,12 @@ function coerceSetting(def, value) {
     case 'select': {
       const opts = (def.options || []).map(o => String(typeof o === 'object' ? o.value : o));
       const s = String(value);
+      return opts.includes(s) ? s : undefined;
+    }
+    case 'dynamic-select': {
+      const s = String(value);
+      if (!dynOpts?.length) return s; // options not loaded yet — accept
+      const opts = dynOpts.map(o => String(typeof o === 'object' ? o.value : o));
       return opts.includes(s) ? s : undefined;
     }
     default: return String(value);
@@ -254,6 +360,7 @@ function getInfo() {
     description: p.manifest.description || '',
     settings: p.manifest.settings || [],
     settingValues: cfg?.pluginSettings?.[p.manifest.id] || {},
+    dynamicOptions: p.dynamicOptions || {},
     actions: p.actions,
     hasClient: existsSync(join(p.dir, 'client.js')),
     bundled: BUNDLED_IDS.has(p.manifest.id),
@@ -288,7 +395,16 @@ function shutdown() {
   }
 }
 
-function clearStatus(id) { sessionStatus.delete(id); }
+function pillInfo(pill) {
+  return { id: pill.id, pluginId: pill.pluginId, title: pill.title, projectId: pill.projectId, working: pill.working, statusText: pill.statusText, icon: pill.icon, startedAt: pill.startedAt };
+}
+
+function getPills() { return [...sessionPills.values()].map(pillInfo); }
+function getPillLogs(id) { return sessionPills.get(id)?.logs || []; }
+
+function clearStatus(id) { sessionStatus.delete(id); autoApproveMenus.delete(id); }
+function isWorking(id) { return !!sessionStatus.get(id); }
+function shouldAutoApproveMenu(id) { return autoApproveMenus.has(id); }
 
 // Bundled plugin IDs — these ship with CliDeck and must not be deleted
 const BUNDLED_IDS = new Set(
@@ -318,6 +434,7 @@ function removePlugin(pluginId) {
 module.exports = {
   PLUGINS_DIR, BUNDLED_IDS,
   init, shutdown,
-  transformInput, notifyOutput, notifyStatus, notifyTranscript, clearStatus,
+  transformInput, notifyOutput, notifyStatus, notifyTranscript, notifyMenu, clearStatus, isWorking, shouldAutoApproveMenu,
   handleMessage, updateSetting, getInfo, resolveFile, removePlugin,
+  getPills, getPillLogs,
 };

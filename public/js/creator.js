@@ -74,7 +74,7 @@ function sortedPresets() {
   return [...agents, ...shell];
 }
 
-function createFromPreset(preset, sessionName, cwd, projectId) {
+function createFromPreset(preset, sessionName, cwd, projectId, roleId) {
   // Find existing command matching this preset
   let cmd = findCommandForPreset(preset);
   // Auto-create the command if it doesn't exist yet
@@ -99,7 +99,7 @@ function createFromPreset(preset, sessionName, cwd, projectId) {
     state.cfg.commands.push(cmd);
     send({ type: 'config.update', config: state.cfg });
   }
-  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, ...estimateSize() });
+  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, roleId: roleId || undefined, ...estimateSize() });
   localStorage.setItem(MRU_KEY, preset.presetId);
 }
 
@@ -124,7 +124,13 @@ export function openCreator() {
     ${(state.cfg.projects?.length) ? `
     <input type="hidden" id="creator-project" value="">
     <button type="button" id="creator-project-trigger" class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer mb-2">
-      <span id="creator-project-label">No project</span>
+      <span id="creator-project-label">Select project</span>
+      <span class="text-slate-600 ml-2">&#9662;</span>
+    </button>` : ''}
+    ${(state.cfg.roles?.length) ? `
+    <input type="hidden" id="creator-role" value="">
+    <button type="button" id="creator-role-trigger" class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer mb-2">
+      <span id="creator-role-label">Select role</span>
       <span class="text-slate-600 ml-2">&#9662;</span>
     </button>` : ''}
     <input id="creator-name" type="text" maxlength="35" placeholder="Session / Agent name"
@@ -179,7 +185,7 @@ export function openCreator() {
       menu.style.width = rect.width + 'px';
 
       menu.innerHTML = `
-        <div class="proj-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-400 ${!hidden.value ? 'bg-slate-700/50' : ''}" data-value="">No project</div>
+        <div class="proj-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-400 ${!hidden.value ? 'bg-slate-700/50' : ''}" data-value="">None</div>
         ${projects.map(p => `
           <div class="proj-option flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-300 ${hidden.value === p.id ? 'bg-slate-700/50' : ''}" data-value="${p.id}">
             <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${p.color || '#3b82f6'}"></span>
@@ -193,7 +199,7 @@ export function openCreator() {
         if (!item) return;
         hidden.value = item.dataset.value;
         const proj = projects.find(p => p.id === item.dataset.value);
-        label.textContent = proj ? proj.name : 'No project';
+        label.textContent = proj ? proj.name : 'Select project';
         // Auto-set working directory from project path
         if (proj?.path) cwdInput.value = proj.path;
         else cwdInput.value = defaultPath;
@@ -214,6 +220,64 @@ export function openCreator() {
     });
   }
 
+  // Role picker dropdown
+  const roleTrigger = card.querySelector('#creator-role-trigger');
+  if (roleTrigger) {
+    let roleMenuCleanup = null;
+    roleTrigger.addEventListener('click', () => {
+      if (roleMenuCleanup) { roleMenuCleanup(); return; }
+      const rect = roleTrigger.getBoundingClientRect();
+      const hidden = card.querySelector('#creator-role');
+      const label = card.querySelector('#creator-role-label');
+      const roles = state.cfg.roles || [];
+
+      const menu = document.createElement('div');
+      menu.className = 'fixed z-[500] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1 overflow-y-auto';
+      menu.style.maxHeight = '200px';
+      menu.style.left = rect.left + 'px';
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.width = rect.width + 'px';
+
+      menu.innerHTML = `
+        <div class="role-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-400 ${!hidden.value ? 'bg-slate-700/50' : ''}" data-value="" data-name="">None</div>
+        ${roles.map(r => `
+          <div class="role-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-300 ${hidden.value === r.id ? 'bg-slate-700/50' : ''}" data-value="${r.id}" data-name="${esc(r.name)}">
+            ${esc(r.name)}
+          </div>`).join('')}`;
+
+      document.body.appendChild(menu);
+
+      const onClick = (e) => {
+        const item = e.target.closest('.role-option');
+        if (!item) return;
+        hidden.value = item.dataset.value;
+        const roleName = item.dataset.name;
+        label.textContent = roleName || 'Select role';
+        // Auto-fill session name from role name (only if user hasn't typed a custom name)
+        if (roleName && (!nameInput.value.trim() || nameInput.dataset.autoFilled === '1')) {
+          nameInput.value = roleName;
+          nameInput.dataset.autoFilled = '1';
+        }
+        if (!item.dataset.value) nameInput.dataset.autoFilled = '';
+        roleMenuCleanup();
+      };
+      const onOutside = (e) => {
+        if (!menu.contains(e.target) && !roleTrigger.contains(e.target)) roleMenuCleanup();
+      };
+      menu.addEventListener('click', onClick);
+      requestAnimationFrame(() => document.addEventListener('click', onOutside));
+
+      roleMenuCleanup = () => {
+        menu.removeEventListener('click', onClick);
+        document.removeEventListener('click', onOutside);
+        menu.remove();
+        roleMenuCleanup = null;
+      };
+    });
+    // Clear auto-fill flag when user manually types
+    nameInput.addEventListener('input', () => { nameInput.dataset.autoFilled = ''; });
+  }
+
   // "Add" button for missing agents — opens install toaster
   card.addEventListener('click', (e) => {
     const installBtn = e.target.closest('.install-btn');
@@ -230,7 +294,9 @@ export function openCreator() {
     const cwd = cwdInput.value.trim() || undefined;
     const projectSelect = card.querySelector('#creator-project');
     const projectId = projectSelect?.value || undefined;
-    createFromPreset(preset, name, cwd, projectId);
+    const roleSelect = card.querySelector('#creator-role');
+    const roleId = roleSelect?.value || undefined;
+    createFromPreset(preset, name, cwd, projectId, roleId);
     closeCreator();
   });
 }

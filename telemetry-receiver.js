@@ -5,7 +5,9 @@
 const ioActivity = require('./activity');
 const activity = new Map(); // sessionId → has received events
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
-const pendingIdle = new Map(); // sessionId → timer (api_request → confirm idle after output silence)
+const pendingIdle = new Map(); // sessionId → timer (PTY silence → idle)
+const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → confirm idle after output silence)
+const escSuppressUntil = new Map(); // sessionId → ts (briefly ignore telemetry reassertions after Esc)
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -65,50 +67,22 @@ function handleLogs(req, res) {
     if (firstEvent) console.log(`Telemetry: first event from ${agent} (${resolvedId.slice(0, 8)})`);
 
     // Process each log record — capture session ID for resume
-    let captured = false;
     for (const sl of rl.scopeLogs || []) {
       for (const lr of sl.logRecords || []) {
         const attrs = parseAttrs(lr.attributes);
-
         const eventName = attrs['event.name'];
+
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
-        // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName}`);
+        // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)} working=${sessionsFn?.()?.get(resolvedId)?.working}`);
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
-        // Telemetry-based status
+        // Status: user_prompt → working + start PTY silence monitor for idle
         const startEvents = new Set(['user_prompt', 'gemini_cli.user_prompt', 'codex.user_prompt']);
         if (startEvents.has(eventName)) {
           cancelPendingIdle(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-        }
-        // Claude: telemetry-only status. api_request → pending idle (confirm after 1s output silence, expire after 6s).
-        if (serviceName === 'claude-code' && eventName) {
-          if (eventName === 'api_request') {
-            startPendingIdle(resolvedId);
-          } else if (eventName !== 'user_prompt') {
-            cancelPendingIdle(resolvedId);
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-          }
-        }
-        // Codex: codex.sse_event → pending idle (2s PTY silence), other events → working.
-        if (serviceName === 'codex_cli_rs' && eventName) {
-          if (eventName === 'codex.sse_event') {
-            startPendingIdle(resolvedId);
-          } else if (eventName !== 'codex.user_prompt') {
-            cancelPendingIdle(resolvedId);
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-          }
-        }
-        // Gemini: api_response (role=main) → pending idle (2s PTY silence), whitelisted events → working.
-        if (serviceName === 'gemini-cli' && eventName) {
-          if (eventName === 'gemini_cli.api_response' && attrs['role'] === 'main') {
-            startPendingIdle(resolvedId);
-          } else if (eventName === 'gemini_cli.api_request' || eventName === 'gemini_cli.model_routing'
-            || (eventName === 'gemini_cli.api_response' && attrs['role'] !== 'main')) {
-            cancelPendingIdle(resolvedId);
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-          }
+          startPendingIdle(resolvedId, serviceName);
         }
 
         const agentSessionId = attrs['session.id'] || attrs['conversation.id'];
@@ -118,7 +92,6 @@ function handleLogs(req, res) {
           if (!sess.sessionToken || dominated) {
             sess.sessionToken = agentSessionId;
             console.log(`Telemetry: captured session ID ${agentSessionId} for ${agent} (${resolvedId.slice(0, 8)})`);
-            captured = true;
           }
         }
       }
@@ -150,14 +123,41 @@ function cancelPendingSetup(sessionId) {
   }
 }
 
-// Pending idle: starts a check loop. Confirm idle after 2s of PTY output silence.
-function startPendingIdle(id) {
-  cancelPendingIdle(id);
-  const started = Date.now();
+// PTY activity monitor: 2s silent → idle, 2s active or user_prompt → working.
+// Agent working indicators in PTY output.
+const CLAUDE_WORKING_RE = /[✳✽✢✻·]|Working…|thinking/;
+const CODEX_WORKING_RE = /Working|•/;
+
+function startPendingIdle(id, agent) {
+  if (pendingIdle.has(id)) return; // already monitoring
+  const isClaude = agent === 'claude-code';
+  const isCodex = agent === 'codex_cli_rs';
+  let isIdle = false;
+  let activeStart = 0;
   const check = setInterval(() => {
-    if (Date.now() - Math.max(started, ioActivity.lastOutputAt(id)) >= 2000) {
-      cancelPendingIdle(id);
+    const lastOut = ioActivity.lastOutputAt(id);
+    const lastIn = ioActivity.lastInputAt(id);
+    // Ignore echo: if last output is within 100ms of last input, treat as silent
+    const agentOut = (lastIn && lastOut - lastIn >= 0 && lastOut - lastIn < 100) ? 0 : lastOut;
+    let silent = (Date.now() - agentOut) >= 2000;
+    // Agent override: if recent output has spinner/working chars, not silent
+    if (silent && (Date.now() - lastOut) < 2000) {
+      const chunk = ioActivity.lastChunk(id);
+      if (isClaude && CLAUDE_WORKING_RE.test(chunk)) silent = false;
+      if (isCodex && CODEX_WORKING_RE.test(chunk)) silent = false;
+    }
+    if (silent && !isIdle) {
+      isIdle = true;
+      activeStart = 0;
       broadcastFn?.({ type: 'session.status', id, working: false, source: 'telemetry' });
+    } else if (!silent && isIdle) {
+      if (!activeStart) activeStart = Date.now();
+      if (Date.now() - activeStart >= 2000) {
+        isIdle = false;
+        broadcastFn?.({ type: 'session.status', id, working: true, source: 'telemetry' });
+      }
+    } else if (!silent) {
+      activeStart = 0;
     }
   }, 250);
   pendingIdle.set(id, check);
@@ -168,9 +168,40 @@ function cancelPendingIdle(id) {
   if (timer) { clearInterval(timer); pendingIdle.delete(id); }
 }
 
+function startEscIdle(id) {
+  cancelEscIdle(id);
+  const started = Date.now();
+  const ignoreUntil = started + 500;
+  console.log(`[escIdle] start session=${id.slice(0,8)}`);
+  const check = setInterval(() => {
+    const lastOut = ioActivity.lastOutputAt(id);
+    const silence = Date.now() - Math.max(ignoreUntil, lastOut);
+    const elapsed = Date.now() - started;
+    if (elapsed > 10000) {
+      console.log(`[escIdle] timeout session=${id.slice(0,8)} silence=${silence}ms`);
+      cancelEscIdle(id);
+      return;
+    }
+    if (silence >= 2000) {
+      console.log(`[escIdle] idle session=${id.slice(0,8)} silence=${silence}ms`);
+      escSuppressUntil.set(id, Date.now() + 2000);
+      cancelEscIdle(id);
+      broadcastFn?.({ type: 'session.status', id, working: false, source: 'esc' });
+    }
+  }, 250);
+  escPendingIdle.set(id, check);
+}
+
+function cancelEscIdle(id) {
+  const timer = escPendingIdle.get(id);
+  if (timer) { clearInterval(timer); escPendingIdle.delete(id); }
+}
+
 function clear(id) {
   activity.delete(id);
   cancelPendingIdle(id);
+  cancelEscIdle(id);
+  escSuppressUntil.delete(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }
@@ -180,4 +211,4 @@ function hasEvents(id) {
   return activity.has(id);
 }
 
-module.exports = { init, handleLogs, clear, hasEvents, watchSession };
+module.exports = { init, handleLogs, clear, hasEvents, watchSession, startPendingIdle, startEscIdle };

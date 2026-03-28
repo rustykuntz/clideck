@@ -22,16 +22,19 @@
       --color-session-icon-bg: #f7f5f3;
     }
     .session-row,
-    .resumable-row {
+    .resumable-row,
+    .pill-row {
       margin: 2px 8px;
       border-radius: 10px;
       transition: background-color 0.18s ease;
     }
     .session-row:hover,
-    .resumable-row:hover {
+    .resumable-row:hover,
+    .pill-row:hover {
       background: var(--color-list-row-hover) !important;
     }
-    .session-row.active-session {
+    .session-row.active-session,
+    .pill-row.active-session {
       background: var(--color-list-row-active) !important;
     }
     .project-group {
@@ -144,6 +147,9 @@
     <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="prompts" title="Prompt Library">
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
     </button>
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="roles" title="Roles">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </button>
     <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="plugins" title="Plugins">
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="3"/><path d="M12 8V6m0 12v-2M8 12H6m12 0h-2"/></svg>
     </button>
@@ -194,6 +200,8 @@
     </div>
     <!-- Prompts panel (rendered by prompts.js) -->
     <div id="panel-prompts" class="hidden flex-col flex-1 min-h-0"></div>
+    <!-- Roles panel (rendered by roles.js) -->
+    <div id="panel-roles" class="hidden flex-col flex-1 min-h-0"></div>
     <!-- Plugins panel -->
     <div id="panel-plugins" class="hidden flex-col flex-1 min-h-0">
       <div class="flex items-center px-4 py-3 border-b border-slate-700/50">

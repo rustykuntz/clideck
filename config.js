@@ -20,6 +20,7 @@ const DEFAULTS = {
   defaultTheme: 'catppuccin-mocha',
   defaultShell,
   prompts: [],
+  roles: [],
   projects: [],
 };
 
@@ -81,6 +82,7 @@ function migrate(cfg) {
     }
   }
   if (!cfg.projects) cfg.projects = [];
+  if (!cfg.roles) cfg.roles = [];
   return cfg;
 }
 

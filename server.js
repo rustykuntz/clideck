@@ -53,9 +53,12 @@ transcript.init(sessions.broadcast, new Set(sessions.getResumable().map(s => s.i
 telemetry.init(sessions.broadcast, sessions.getSessions);
 require('./opencode-bridge').init(sessions.broadcast, sessions.getSessions);
 const config = require('./config');
-plugins.init(sessions.broadcast, sessions.getSessions, () => require('./handlers').getConfig(), (cfg) => config.save(cfg));
+plugins.init(sessions.broadcast, sessions.getSessions, () => require('./handlers').getConfig(), (cfg) => config.save(cfg), sessions.input, sessions.createProgrammatic, sessions.close);
 
 const PORT = 4000;
+const hostIdx = process.argv.indexOf('--host');
+const hostArg = hostIdx >= 0 ? process.argv[hostIdx + 1] : undefined;
+const HOST = hostIdx < 0 ? '127.0.0.1' : (hostArg && !hostArg.startsWith('-') ? hostArg : '0.0.0.0');
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 const ALIASES = {
   '/xterm.css':    join(__dirname, 'node_modules/@xterm/xterm/css/xterm.css'),
@@ -140,9 +143,9 @@ function onShutdown() {
 process.on('SIGINT', onShutdown);
 process.on('SIGTERM', onShutdown);
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   const v = require('./package.json').version;
-  const url = `http://localhost:${PORT}`;
+  const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
   console.log(`
 \x1b[38;5;105m  ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸\x1b[0m
 
@@ -159,7 +162,7 @@ server.listen(PORT, '127.0.0.1', () => {
 
 \x1b[38;5;252m  ▸ Ready at \x1b[38;5;44m${url}\x1b[0m
 \x1b[38;5;245m  ▸ Stop with \x1b[38;5;252mCtrl+C\x1b[38;5;245m · Restart anytime with \x1b[38;5;252mclideck\x1b[0m
-`);
+${HOST !== '127.0.0.1' ? '\x1b[38;5;208m  ▸ Warning: listening on ' + HOST + ' — no authentication, anyone on the network can connect\x1b[0m\n' : ''}`);
 });
 
 }); // checkSelfUpdate

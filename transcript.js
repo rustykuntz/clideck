@@ -254,15 +254,27 @@ function anchorParse(id, lines) {
   return turns;
 }
 
+// For consecutive agent turns, keep only the last one (strips tool output, keeps conversational response).
+function collapseAgentTurns(turns) {
+  if (!turns?.length) return turns;
+  const result = [];
+  for (let i = 0; i < turns.length; i++) {
+    if (turns[i].role === 'agent' && i + 1 < turns.length && turns[i + 1].role === 'agent') continue;
+    result.push(turns[i]);
+  }
+  return result;
+}
+
 // Parse .screen into structured turns — use agent-specific parser if available, else anchor fallback.
-function getScreenTurns(id, agent) {
+// opts.raw: if true, preserve trailing user turn (needed by autopilot for freshness checks).
+function getScreenTurns(id, agent, opts) {
   const screen = getScreen(id);
   if (!screen) return null;
   const lines = screen.split('\n');
   const parser = agentParsers[agent];
-  const turns = parser ? parser(lines, id) : anchorParse(id, lines);
+  const turns = collapseAgentTurns(parser ? parser(lines, id) : anchorParse(id, lines));
   // Drop trailing user turn — it's the empty prompt or unanswered input
-  if (turns?.length && turns[turns.length - 1].role === 'user') turns.pop();
+  if (!opts?.raw && turns?.length && turns[turns.length - 1].role === 'user') turns.pop();
   return turns?.length >= 2 ? turns : null;
 }
 

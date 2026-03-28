@@ -3,7 +3,7 @@ import { esc, binName } from './utils.js';
 import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu, addPill, updatePill, removePill, appendPillLog, setPillLogs, closePillLog } from './terminals.js';
 import { renderSettings, updateVersionFooter } from './settings.js';
 import { openCreator, closeCreator, refreshCreator } from './creator.js';
-import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
+import { handleDirsResponse, handleMkdirResponse, openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
 import { applyTheme } from './profiles.js';
 import { toggleMode, applyMode } from './color-mode.js';
@@ -144,6 +144,9 @@ function connect() {
       }
       case 'dirs':
         handleDirsResponse(msg);
+        break;
+      case 'dirs.mkdir':
+        handleMkdirResponse(msg);
         break;
       case 'session.theme': {
         const entry = state.terms.get(msg.id);

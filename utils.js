@@ -44,10 +44,10 @@ function resolveValidDir(dir) {
   return require('os').homedir();
 }
 
-function listDirs(path) {
+function listDirs(path, showHidden) {
   try {
     return readdirSync(path, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+      .filter(d => d.isDirectory() && (showHidden || !d.name.startsWith('.')))
       .map(d => d.name)
       .sort();
   } catch (e) {

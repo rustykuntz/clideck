@@ -175,18 +175,18 @@ function startEscIdle(id) {
   cancelEscIdle(id);
   const started = Date.now();
   const ignoreUntil = started + 500;
-  console.log(`[escIdle] start session=${id.slice(0,8)}`);
+  // console.log(`[escIdle] start session=${id.slice(0,8)}`);
   const check = setInterval(() => {
     const lastOut = ioActivity.lastOutputAt(id);
     const silence = Date.now() - Math.max(ignoreUntil, lastOut);
     const elapsed = Date.now() - started;
     if (elapsed > 10000) {
-      console.log(`[escIdle] timeout session=${id.slice(0,8)} silence=${silence}ms`);
+      // console.log(`[escIdle] timeout session=${id.slice(0,8)} silence=${silence}ms`);
       cancelEscIdle(id);
       return;
     }
     if (silence >= 2000) {
-      console.log(`[escIdle] idle session=${id.slice(0,8)} silence=${silence}ms`);
+      // console.log(`[escIdle] idle session=${id.slice(0,8)} silence=${silence}ms`);
       escSuppressUntil.set(id, Date.now() + 2000);
       cancelEscIdle(id);
       broadcastFn?.({ type: 'session.status', id, working: false, source: 'esc' });

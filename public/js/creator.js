@@ -124,13 +124,13 @@ export function openCreator() {
     ${(state.cfg.projects?.length) ? `
     <input type="hidden" id="creator-project" value="">
     <button type="button" id="creator-project-trigger" class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer mb-2">
-      <span id="creator-project-label">Select project</span>
+      <span id="creator-project-label">Select project <span class="opacity-40">- optional</span></span>
       <span class="text-slate-600 ml-2">&#9662;</span>
     </button>` : ''}
     ${(state.cfg.roles?.length) ? `
     <input type="hidden" id="creator-role" value="">
     <button type="button" id="creator-role-trigger" class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer mb-2">
-      <span id="creator-role-label">Select role</span>
+      <span id="creator-role-label">Select role <span class="opacity-40">- optional</span></span>
       <span class="text-slate-600 ml-2">&#9662;</span>
     </button>` : ''}
     <input id="creator-name" type="text" maxlength="35" placeholder="Session / Agent name"
@@ -199,7 +199,7 @@ export function openCreator() {
         if (!item) return;
         hidden.value = item.dataset.value;
         const proj = projects.find(p => p.id === item.dataset.value);
-        label.textContent = proj ? proj.name : 'Select project';
+        label.innerHTML = proj ? esc(proj.name) : 'Select project <span class="opacity-40">- optional</span>';
         // Auto-set working directory from project path
         if (proj?.path) cwdInput.value = proj.path;
         else cwdInput.value = defaultPath;
@@ -252,7 +252,7 @@ export function openCreator() {
         if (!item) return;
         hidden.value = item.dataset.value;
         const roleName = item.dataset.name;
-        label.textContent = roleName || 'Select role';
+        label.innerHTML = roleName ? esc(roleName) : 'Select role <span class="opacity-40">- optional</span>';
         // Auto-fill session name from role name (only if user hasn't typed a custom name)
         if (roleName && (!nameInput.value.trim() || nameInput.dataset.autoFilled === '1')) {
           nameInput.value = roleName;

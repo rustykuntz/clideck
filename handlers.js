@@ -269,10 +269,26 @@ function onConnection(ws) {
 
       case 'dirs.list': {
         const target = msg.path || cfg.defaultPath;
-        const result = listDirs(target);
+        const result = listDirs(target, !!msg.showHidden);
         const entries = Array.isArray(result) ? result : [];
         const error = result.error || undefined;
         ws.send(JSON.stringify({ type: 'dirs', path: target, entries, error }));
+        break;
+      }
+
+      case 'dirs.mkdir': {
+        const name = (msg.name || '').trim();
+        if (!name || name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
+          ws.send(JSON.stringify({ type: 'dirs.mkdir', success: false, error: 'Invalid folder name' }));
+          break;
+        }
+        const dirPath = join(msg.parent, name);
+        try {
+          mkdirSync(dirPath);
+          ws.send(JSON.stringify({ type: 'dirs.mkdir', success: true, path: dirPath }));
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'dirs.mkdir', success: false, error: e.message }));
+        }
         break;
       }
 

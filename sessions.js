@@ -279,7 +279,7 @@ function input(msg) {
   sessions.get(msg.id)?.pty.write(data);
   if (data === '\x1b') {
     const s = sessions.get(msg.id);
-    console.log(`[esc] session=${msg.id.slice(0,8)} working=${s?.working}`);
+    // console.log(`[esc] session=${msg.id.slice(0,8)} working=${s?.working}`);
     if (s?.working) telemetry.startEscIdle(msg.id);
   }
 }

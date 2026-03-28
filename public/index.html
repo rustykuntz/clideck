@@ -461,7 +461,17 @@
     <!-- Folder picker -->
     <div id="folder-picker" class="absolute inset-0 z-[300] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
       <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl shadow-black/50 w-[420px] max-h-[460px] flex flex-col">
-        <div class="px-4 py-3 border-b border-slate-700 text-sm font-semibold">Choose Directory</div>
+        <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+          <span class="text-sm font-semibold">Choose Directory</span>
+          <div class="flex items-center gap-2">
+            <button id="fp-new-folder" class="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors" title="New folder">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button id="fp-toggle-hidden" class="p-1 rounded hover:bg-slate-700 text-slate-500 transition-colors" title="Show hidden files">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
         <div id="fp-path" class="px-4 py-2 text-xs text-slate-400 border-b border-slate-700 break-all"></div>
         <div id="fp-listing" class="flex-1 overflow-y-auto py-1 min-h-[200px]"></div>
         <div class="px-4 py-3 border-t border-slate-700 flex justify-end gap-2">

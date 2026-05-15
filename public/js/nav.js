@@ -1,8 +1,8 @@
 import { closeThemeMenu } from './settings.js';
 import { closeDropdown } from './prompts.js';
 
-const ALL_PANELS = ['chats', 'prompts', 'plugins', 'settings'];
-const PANEL_TITLES = { chats: 'Sessions', prompts: 'Prompts', plugins: 'Plugins', settings: 'Settings' };
+const ALL_PANELS = ['chats', 'prompts', 'roles', 'plugins', 'settings'];
+const PANEL_TITLES = { chats: 'Sessions', prompts: 'Prompts', roles: 'Roles', plugins: 'Plugins', settings: 'Settings' };
 const ACTIVE = ['text-slate-200', 'bg-slate-800'];
 const INACTIVE = ['text-slate-500', 'hover:text-slate-300', 'hover:bg-slate-800/50'];
 

@@ -102,10 +102,9 @@ function sortedPresets() {
   return [...agents, ...shell];
 }
 
-function createFromPreset(preset, sessionName, cwd, projectId) {
-  // Find existing command matching this preset
+function createFromPreset(preset, sessionName, cwd, projectId, role) {
   const cmd = ensureCommandForPreset(preset);
-  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, ...estimateSize() });
+  send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, roleId: role?.id, ...estimateSize() });
   localStorage.setItem(MRU_KEY, preset.presetId);
 }
 
@@ -196,6 +195,13 @@ export function openCreator() {
     <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Session name</div>
     <input id="creator-name" type="text" maxlength="35" placeholder="Session name"
       class="w-full px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors mb-2">
+    ${(state.cfg.roles?.length) ? `
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Role <span class="normal-case font-normal text-slate-600">— optional</span></div>
+    <input type="hidden" id="creator-role" value="">
+    <button type="button" id="creator-role-trigger" class="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer mb-2">
+      <span id="creator-role-label">No role</span>
+      <span class="text-slate-600 ml-2">&#9662;</span>
+    </button>` : ''}
     <div id="creator-cwd-wrap" class="flex items-center gap-1.5 mb-2 ${(state.cfg.projects?.length) ? 'hidden' : ''}">
       <input id="creator-cwd" type="text" value="${esc(defaultPath)}" placeholder="Working directory"
         class="flex-1 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 placeholder-slate-600 outline-none focus:border-blue-500 transition-colors font-mono">
@@ -298,6 +304,50 @@ export function openCreator() {
     });
   }
 
+  // Role picker dropdown
+  const roleTrigger = card.querySelector('#creator-role-trigger');
+  const roleHidden = card.querySelector('#creator-role');
+  if (roleTrigger) {
+    const roles = state.cfg.roles || [];
+    const roleLabel = card.querySelector('#creator-role-label');
+    let rolMenuCleanup = null;
+    roleTrigger.addEventListener('click', () => {
+      if (rolMenuCleanup) { rolMenuCleanup(); return; }
+      const rect = roleTrigger.getBoundingClientRect();
+      const menu = document.createElement('div');
+      menu.className = 'fixed z-[500] bg-slate-800 border border-slate-600 rounded-lg shadow-xl shadow-black/40 py-1 overflow-y-auto';
+      menu.style.maxHeight = '200px';
+      menu.style.left = rect.left + 'px';
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.width = rect.width + 'px';
+      menu.innerHTML = `
+        <div class="role-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-400 ${!roleHidden.value ? 'bg-slate-700/50' : ''}" data-value="">No role</div>
+        ${roles.map(r => `
+          <div class="role-option px-3 py-1.5 cursor-pointer hover:bg-slate-700 transition-colors text-xs text-slate-300 ${roleHidden.value === r.id ? 'bg-slate-700/50' : ''}" data-value="${r.id}">${esc(r.name)}</div>`).join('')}`;
+      document.body.appendChild(menu);
+      const onClick = (e) => {
+        const item = e.target.closest('.role-option');
+        if (!item) return;
+        const role = roles.find(r => r.id === item.dataset.value);
+        roleHidden.value = item.dataset.value;
+        roleLabel.textContent = role ? role.name : 'No role';
+        if (role && !nameInput.value.trim()) nameInput.value = role.name;
+        rolMenuCleanup();
+      };
+      const onOutside = (e) => {
+        if (!menu.contains(e.target) && !roleTrigger.contains(e.target)) rolMenuCleanup();
+      };
+      menu.addEventListener('click', onClick);
+      requestAnimationFrame(() => document.addEventListener('click', onOutside));
+      rolMenuCleanup = () => {
+        menu.removeEventListener('click', onClick);
+        document.removeEventListener('click', onOutside);
+        menu.remove();
+        rolMenuCleanup = null;
+      };
+    });
+  }
+
   // "Add" button for missing agents — opens install toaster
   card.addEventListener('click', (e) => {
     const installBtn = e.target.closest('.install-btn');
@@ -326,7 +376,8 @@ export function openCreator() {
     const name = nameInput.value.trim() || fallbackName;
     const cwd = cwdInput.value.trim() || undefined;
     const projectId = projHidden?.value && projHidden.value !== NO_PROJECT_VALUE ? projHidden.value : undefined;
-    createFromPreset(preset, name, cwd, projectId);
+    const role = roleHidden?.value ? (state.cfg.roles || []).find(r => r.id === roleHidden.value) : undefined;
+    createFromPreset(preset, name, cwd, projectId, role);
     closeCreator();
   });
 }

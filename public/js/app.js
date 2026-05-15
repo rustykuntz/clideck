@@ -12,6 +12,7 @@ import './nav.js';
 import { initDrag, wasDragging } from './drag.js';
 import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
+import { renderRoles } from './roles.js';
 
 const shownAgentHealthToasts = new Set();
 let reconnectReplaySkip = null;
@@ -34,6 +35,7 @@ function connect() {
         regroupSessions();
         renderSettings();
         renderPrompts();
+        renderRoles();
         refreshCreator();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
         break;

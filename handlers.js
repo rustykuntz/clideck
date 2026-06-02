@@ -240,7 +240,7 @@ function detectTelemetryConfig(c) {
 const appVersion = require('./package.json').version;
 
 function configForClient() {
-  return { ...cfg, commands: filterClientCommands(cfg.commands), pluginsDir: plugins.PLUGINS_DIR, version: appVersion, bootId: BOOT_ID, hostDir: process.env.CLIDECK_HOST_DIR || null };
+  return { ...cfg, commands: filterClientCommands(cfg.commands), pluginsDir: plugins.PLUGINS_DIR, version: appVersion, overlayVersion: process.env.OVERLAY_VERSION || null, bootId: BOOT_ID, hostDir: process.env.CLIDECK_HOST_DIR || null };
 }
 
 function remoteCliEnv() {

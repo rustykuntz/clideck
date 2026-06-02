@@ -50,6 +50,7 @@ function renderStatusBadge() {
   if (!badge || !dot || !text) return;
   const open = state.ws && state.ws.readyState === WebSocket.OPEN && connectedAt;
   const v    = state.cfg?.version ? `v${state.cfg.version}` : '';
+  const ov   = state.cfg?.overlayVersion ? `overlay ${state.cfg.overlayVersion}` : '';
   badge.classList.remove(
     'bg-slate-800/80', 'border-slate-700/60', 'text-slate-400',
     'bg-emerald-900/50', 'border-emerald-700/50', 'text-emerald-300',
@@ -60,7 +61,7 @@ function renderStatusBadge() {
     badge.classList.add('bg-emerald-900/50', 'border-emerald-700/50', 'text-emerald-300');
     dot.classList.add('bg-emerald-400');
     const up = fmtUptime(Date.now() - connectedAt);
-    text.textContent = `connected · ${up}${v ? ' · ' + v : ''}`;
+    text.textContent = `connected · ${up}${v ? ' · ' + v : ''}${ov ? ' · ' + ov : ''}`;
   } else {
     badge.classList.add('bg-red-900/50', 'border-red-700/50', 'text-red-300');
     dot.classList.add('bg-red-400', 'animate-pulse');

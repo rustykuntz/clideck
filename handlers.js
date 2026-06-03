@@ -240,7 +240,23 @@ function detectTelemetryConfig(c) {
 const appVersion = require('./package.json').version;
 
 function configForClient() {
-  return { ...cfg, commands: filterClientCommands(cfg.commands), pluginsDir: plugins.PLUGINS_DIR, version: appVersion, overlayVersion: process.env.OVERLAY_VERSION || null, bootId: BOOT_ID, hostDir: process.env.CLIDECK_HOST_DIR || null };
+  return { ...cfg, commands: filterClientCommands(cfg.commands), pluginsDir: plugins.PLUGINS_DIR, version: appVersion, overlayVersion: overlayVersionInfo(), bootId: BOOT_ID, hostDir: process.env.CLIDECK_HOST_DIR || null };
+}
+
+// Overlay version data shipped to the browser: timestamp renders as the
+// connection-badge text, sha + message + dirty surface as a hover tooltip.
+// Returns null when the image wasn't stamped (defaults are `dev`), so the
+// upstream clideck app stays clean of overlay-specific rendering when run
+// without the clideck-docker-lance overlay.
+function overlayVersionInfo() {
+  const ts = process.env.OVERLAY_TIMESTAMP;
+  if (!ts || ts === 'dev') return null;
+  return {
+    timestamp: ts,
+    sha:       process.env.OVERLAY_SHA     || null,
+    message:   process.env.OVERLAY_MESSAGE || null,
+    dirty:     process.env.OVERLAY_DIRTY === '1',
+  };
 }
 
 function remoteCliEnv() {

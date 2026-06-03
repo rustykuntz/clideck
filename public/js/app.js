@@ -50,7 +50,16 @@ function renderStatusBadge() {
   if (!badge || !dot || !text) return;
   const open = state.ws && state.ws.readyState === WebSocket.OPEN && connectedAt;
   const v    = state.cfg?.version ? `v${state.cfg.version}` : '';
-  const ov   = state.cfg?.overlayVersion ? `overlay ${state.cfg.overlayVersion}` : '';
+  // Overlay version: visible text is the HEAD commit's timestamp (no
+  // commit-lookup required at a glance); hover tooltip surfaces the SHA
+  // + commit message so a build is verifiable on demand. `ovInfo` is null
+  // when the image wasn't stamped (upstream clideck running without the
+  // clideck-docker-lance overlay), in which case nothing extra is rendered.
+  const ovInfo = state.cfg?.overlayVersion;
+  const ov     = ovInfo?.timestamp ? `overlay ${ovInfo.timestamp}${ovInfo.dirty ? ' (dirty)' : ''}` : '';
+  badge.title  = ovInfo
+    ? `${ovInfo.sha || '(no sha)'}${ovInfo.dirty ? ' (dirty working tree)' : ''}\n${ovInfo.message || ''}`
+    : '';
   badge.classList.remove(
     'bg-slate-800/80', 'border-slate-700/60', 'text-slate-400',
     'bg-emerald-900/50', 'border-emerald-700/50', 'text-emerald-300',

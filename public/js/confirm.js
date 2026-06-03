@@ -36,6 +36,14 @@ function close(result) {
   overlay.classList.add('hidden');
   overlay.classList.remove('flex');
   if (pendingResolve) { pendingResolve(result); pendingResolve = null; }
+  // AC 6 — modal dismiss must leave focus on the active terminal. The
+  // confirm/cancel button was the activeElement until we hid the
+  // overlay; once hidden the browser drops focus to <body> and the
+  // user's next Enter would be lost. Defer to terminals.js's helper
+  // (registered on window to avoid a circular import). The rAF inside
+  // refocusActiveTerm also re-checks `.confirm-overlay:not(.hidden)`
+  // so a subsequent open() during the same tick won't be undone.
+  window.__refocusActiveTerm?.();
 }
 
 confirmBtn.addEventListener('click', () => close(true));

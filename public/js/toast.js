@@ -57,7 +57,16 @@ export function showToast(message, opts = {}) {
   const dismiss = () => {
     el.style.opacity = '0';
     el.style.transform = 'translateY(12px)';
-    setTimeout(() => el.remove(), 300);
+    setTimeout(() => {
+      el.remove();
+      // AC 6 — toast dismiss must leave focus on the active terminal.
+      // The dismiss button received focus on the click that triggered
+      // us, and `el.remove()` rips that focused button out of the DOM
+      // — focus falls to <body> next, and the user's next Enter is
+      // a no-op. Routed through window.__refocusActiveTerm (defined
+      // in terminals.js) to avoid a circular import.
+      window.__refocusActiveTerm?.();
+    }, 300);
   };
 
   el.querySelectorAll('.toast-close').forEach(b => b.onclick = dismiss);

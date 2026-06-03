@@ -14,6 +14,67 @@ function isLightBg(themeId) {
 
 // --- Helpers ---
 
+// Re-focus the active terminal after a paste/dismiss/teardown completes.
+//
+// Phase 11 fixes a class of regressions where a Ctrl+V, drag-and-drop, or
+// toast/modal dismiss left focus on `<body>` (or a button that was about to
+// be removed), so Enter became a no-op until the user clicked the narrow
+// prompt row. Every paste path and every dismiss handler now routes through
+// this helper so the active xterm's hidden helper-textarea regains focus
+// before the next keystroke.
+//
+// R2 mitigation: the call is deferred to the next animation frame so any
+// sibling synchronous + microtask handlers (toast teardown's 300ms remove,
+// the lozenge animation, modal hide transitions, drag-end browser-side
+// focus shuffling) have all run by the time we focus the term. Ordering
+// matters — if we focused synchronously, a later handler that re-focuses a
+// dismiss button (then removes it) would undo our work and re-drop focus
+// to body.
+//
+// Guards (re-evaluated on the rAF tick so DOM mutations between scheduling
+// and firing are caught):
+//
+//   - Visible confirm-modal overlay (`.confirm-overlay:not(.hidden)`) or
+//     creator card (`.creator-card`) → skip (user is in a dialog).
+//   - `document.activeElement` is an input/textarea/select/contenteditable/
+//     role=combobox → skip (user is typing into a real form control like
+//     the sidebar search box or a contenteditable rename).
+//   - EXCEPTION to the above: xterm's hidden `.xterm-helper-textarea` IS
+//     a `<textarea>`, but it's a descendant of `.term-wrap.active`. That
+//     particular textarea IS the focus we want, so a TEXTAREA inside a
+//     `.term-wrap.active` ancestor is NOT a "real input" — fall through
+//     to focus. Same Phase 9 lesson learned from the Ctrl/Cmd +/-/0
+//     keydown handler.
+//   - Entry may have been removed between scheduling and the rAF tick —
+//     re-lookup before calling `term.focus()`.
+//
+// Always exported — callers in other modules (toast.js, confirm.js) import
+// this rather than reimplementing the guard.
+export function refocusActiveTerm(idOverride) {
+  const id = idOverride ?? state.active;
+  if (!id) return;
+  if (!state.terms.has(id)) return;
+  requestAnimationFrame(() => {
+    if (document.querySelector('.confirm-overlay:not(.hidden), .creator-card')) return;
+    const ae = document.activeElement;
+    if (ae && typeof ae.matches === 'function'
+        && ae.matches('input, textarea, select, [contenteditable="true"], [role="combobox"]')) {
+      // xterm's hidden helper-textarea exception (Phase 9 lesson).
+      if (!ae.closest?.('.term-wrap.active')) return;
+    }
+    const entry = state.terms.get(id);
+    if (entry) entry.term.focus();
+  });
+}
+
+// Expose the helper on `window` so dismiss handlers in non-importing
+// modules (toast.js, confirm.js) can reach it without forcing a
+// circular import (terminals.js already imports both). Mirrors the
+// `window.__refreshStatusBadge` pattern in app.js.
+if (typeof window !== 'undefined') {
+  window.__refocusActiveTerm = refocusActiveTerm;
+}
+
 const RECENT_MS = 15 * 60 * 1000; // 15 minutes
 
 function isRecent(ts) { return Date.now() - ts < RECENT_MS; }
@@ -214,7 +275,13 @@ async function pasteIntoTerminal(sessionId) {
         if (binaryType) {
           const blob = await item.getType(binaryType);
           await uploadBlobToSession(sessionId, blob, binaryType);
-          return; // binary intent wins; do NOT also send text to PTY
+          // AC 1 — restore focus after the binary-blob paste so the
+          // user's next Enter reaches the PTY without an intervening
+          // click. rAF-deferred to win over any teardown that fires
+          // after our resolve. binary intent wins; do NOT also send
+          // text to PTY.
+          refocusActiveTerm(sessionId);
+          return;
         }
       }
     }
@@ -230,6 +297,11 @@ async function pasteIntoTerminal(sessionId) {
   } catch {
     showToast('Clipboard read failed.', { type: 'error' });
   }
+  // AC 1 — restore focus after the text paste lands. Same rationale as
+  // above: Ctrl+V hits the document keydown listener which fires AFTER
+  // xterm's custom handler, so focus has typically drifted to <body>
+  // by the time send() returns.
+  refocusActiveTerm(sessionId);
 }
 
 async function uploadBlobToSession(sessionId, blob, mime, filename) {
@@ -719,6 +791,11 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     if (await copyTerminalSelection(id)) {
       showToast('Copied', { id: 'terminal-copy', type: 'success', duration: 1200 });
     }
+    // Defence-in-depth: a pointer-release that copied a selection
+    // landed inside .xterm-screen, so focus is usually already on the
+    // helper-textarea. But showToast mutates DOM and a subsequent
+    // animation tick could shift activeElement — re-anchor focus.
+    refocusActiveTerm(id);
   };
   el.addEventListener('pointerup', onPointerUp);
 
@@ -752,6 +829,10 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     for (const file of files) {
       await uploadBlobToSession(id, file, file.type || 'application/octet-stream', file.name);
     }
+    // AC 2 — restore focus after drag-and-drop teardown. The browser's
+    // drag-drop pipeline ends with focus on <body>; without this the
+    // user's next Enter is swallowed until they click the prompt row.
+    refocusActiveTerm(id);
   };
   el.addEventListener('dragover', onDragOver);
   el.addEventListener('dragleave', onDragLeave);
@@ -861,7 +942,11 @@ export function select(id) {
       if (state.filter.tab === 'unread') setTab('all');
     }
     entry.term.scrollToBottom();
-    if (!document.querySelector('[contenteditable="true"]')) entry.term.focus();
+    // Was: `if (!document.querySelector('[contenteditable="true"]')) entry.term.focus();`.
+    // The new refocusActiveTerm() extends the same guard to inputs/
+    // textareas/selects/combobox + visible modals/overlays. state.active
+    // hasn't been updated yet at this point, so pass the explicit id.
+    refocusActiveTerm(id);
   }
   state.active = id;
 }

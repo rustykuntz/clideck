@@ -492,6 +492,32 @@ export function estimateSize() {
   return { cols: Math.max(Math.floor(w / 7.8), 80), rows: Math.max(Math.floor(h / 17), 24) };
 }
 
+// --- Font-size clamp helper (Phase 9 — terminal display sizing) ---
+//
+// D-02 (CONTEXT.md): xterm font-size range 8..32px, step 1px, default 13px.
+// This is a pure helper so it lives next to estimateSize. Anything that
+// touches the font-size (the Settings stepper, the keyboard shortcut
+// handler, the Terminal constructor) routes through here so the clamp +
+// fallback behaviour is identical in every call site.
+//
+// Bad input (NaN / null / undefined / non-numeric / Infinity) → default.
+// This is the cold-start guard: `state.cfg.terminalFontSize` may not have
+// arrived yet when the first terminal mounts, and clampFontSize(undefined)
+// returning 13 keeps the constructor happy without explicit `??` everywhere.
+
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 32;
+export const FONT_SIZE_DEFAULT = 13;
+
+export function clampFontSize(n) {
+  const num = typeof n === 'string' ? Number(n) : n;
+  if (typeof num !== 'number' || !Number.isFinite(num)) return FONT_SIZE_DEFAULT;
+  const i = Math.floor(num);
+  if (i < FONT_SIZE_MIN) return FONT_SIZE_MIN;
+  if (i > FONT_SIZE_MAX) return FONT_SIZE_MAX;
+  return i;
+}
+
 // --- Terminal management ---
 
 export function addTerminal(id, name, themeId, commandId, projectId, muted, lastPreview, presetId, cwd) {

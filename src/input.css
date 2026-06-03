@@ -254,6 +254,64 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
   height: 100%;
 }
 
+/* ── Sidebar drag-resize gutter (Phase 9, D-09) ──
+   A thin transparent vertical strip living between <aside id="sidebar">
+   and <main id="main">. Hover/active states use the existing
+   --color-border token so the gutter respects light/dark mode without
+   extra plumbing. The ::before pseudo-element extends a hit-zone 4px
+   to each side so a fast pointer doesn't slip past the 5px gutter. */
+.sidebar-resize-gutter {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+  transition: background 0.15s ease;
+  /* Above #terminals (z=auto inside #main) so the hit-zone is clickable
+     when the terminal pane is at large widths. */
+  z-index: 5;
+}
+
+/* Invisible 13px-wide hit zone (5px gutter + 4px padding each side). */
+.sidebar-resize-gutter::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+
+.sidebar-resize-gutter:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.sidebar-resize-gutter.dragging {
+  background: color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+/* While the user is dragging the gutter, disable pointer events on the
+   terminal area so the cursor can't accidentally select terminal text
+   and so xterm's own mouse routing doesn't fire phantom events. The
+   class is toggled on <body> by sidebar-resize.js on pointerdown /
+   pointerup. */
+body.sidebar-resizing #terminals {
+  pointer-events: none;
+  user-select: none;
+}
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
+}
+
+/* D-10: below the mobile breakpoint the sidebar becomes a full-width
+   slide-in overlay; the gutter has no useful purpose and would intercept
+   touches. Hide it and disable pointer events so the existing
+   body.mobile-nav-open flow runs untouched. */
+@media (max-width: 960px) {
+  .sidebar-resize-gutter {
+    display: none;
+    pointer-events: none;
+  }
+}
+
 /* ── Save indicator ── */
 
 .save-indicator {

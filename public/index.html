@@ -164,7 +164,12 @@
   </nav>
 
   <!-- Sidebar -->
-  <aside id="sidebar" class="w-[354px] min-w-[354px] bg-slate-900 border-r border-slate-700/50 flex flex-col">
+  <!-- Phase 9 (D-08 / D-09): min-w-[354px] removed so the JS-driven
+       inline `width` style (set by sidebar-resize.js paint-hint and the
+       case 'config' broadcast in app.js) is the canonical width source.
+       w-[354px] kept as cold-start fallback for the first paint before
+       JS runs (e.g. in case localStorage and config both miss). -->
+  <aside id="sidebar" class="w-[354px] bg-slate-900 border-r border-slate-700/50 flex flex-col">
     <!-- Chats panel -->
     <div id="panel-chats" class="flex flex-col flex-1 min-h-0">
       <div class="flex items-center justify-between px-3 pt-3 pb-2">
@@ -251,6 +256,12 @@
       </div>
     </div>
   </aside>
+  <!-- Phase 9 (D-09): drag-resize gutter. Sits between #sidebar and
+       #main as a sibling of <aside> inside #sidebar-shell so it shares
+       the same flex flow. Styles live in src/input.css; behaviour is
+       owned by public/js/sidebar-resize.js. Inert (display:none) below
+       the 960px breakpoint per D-10. -->
+  <div id="sidebar-resize-gutter" class="sidebar-resize-gutter" aria-hidden="true"></div>
   </div>
 
   <!-- Main -->

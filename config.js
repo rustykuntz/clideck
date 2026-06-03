@@ -86,6 +86,11 @@ const DEFAULTS = {
   notifySound: 'soft-beep',
   notifyMinWork: 0,
   defaultTheme: 'catppuccin-mocha',
+  // Phase 9 — terminal display sizing. xterm font-size in px; range 8..32
+  // (clamped client-side via clampFontSize). 13 matches the historical
+  // hardcoded value in public/js/terminals.js. See SPEC.md AC 1-4 and
+  // CONTEXT.md D-02 / D-05.
+  terminalFontSize: 13,
   defaultShell,
   prompts: [],
   roles: [],

@@ -799,6 +799,32 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   };
   el.addEventListener('pointerup', onPointerUp);
 
+  // AC 4 — wider click target. A click anywhere over the .term-wrap
+  // (the padded container around the xterm canvas) refocuses the
+  // terminal. Previously the clickable hitbox was only the rendered
+  // prompt row; mis-clicks landed on bare .term-wrap padding, focus
+  // stayed wherever it was, and Enter went nowhere.
+  //
+  // Guards:
+  //   - Skip when the click target is an interactive child
+  //     (button, anchor, contenteditable, input, textarea, the
+  //     drop-overlay card while a drag is being staged) — those
+  //     widgets have their own focus semantics we mustn't trample.
+  //   - Skip when xterm reports an active selection — the pointerup-
+  //     copy path above is mutually exclusive with a plain click,
+  //     but guarding here keeps the two handlers strictly separated
+  //     (selection release → copy + refocus; plain click → refocus
+  //     only).
+  //
+  // term.focus() is idempotent; clicking inside .xterm-screen when
+  // the term already holds focus is a no-op.
+  const onClickRefocus = (e) => {
+    if (e.target.closest?.('button, a, [contenteditable="true"], input, textarea, .drop-overlay-card')) return;
+    if (term.hasSelection()) return;
+    term.focus();
+  };
+  el.addEventListener('click', onClickRefocus);
+
   // Drag-and-drop file upload. Files copied from File Explorer don't
   // put their bytes on the clipboard (only their path), so paste from
   // clipboard can't see them — D&D is the only path that gives us a
@@ -881,7 +907,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     }
   }, 500);
   const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
-  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, onContextMenu, onPointerUp, onDragOver, onDragLeave, onDrop, linkProvider, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, cwd: cwd || '', working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '', hasToken: false });
+  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, onContextMenu, onPointerUp, onClickRefocus, onDragOver, onDragLeave, onDrop, linkProvider, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, cwd: cwd || '', working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '', hasToken: false });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
   if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
@@ -897,6 +923,7 @@ export function removeTerminal(id) {
   entry.ro?.disconnect();
   entry.el.removeEventListener?.('contextmenu', entry.onContextMenu);
   if (entry.onPointerUp) entry.el.removeEventListener?.('pointerup', entry.onPointerUp);
+  if (entry.onClickRefocus) entry.el.removeEventListener?.('click', entry.onClickRefocus);
   if (entry.onDragOver) entry.el.removeEventListener?.('dragover', entry.onDragOver);
   if (entry.onDragLeave) entry.el.removeEventListener?.('dragleave', entry.onDragLeave);
   if (entry.onDrop) entry.el.removeEventListener?.('drop', entry.onDrop);

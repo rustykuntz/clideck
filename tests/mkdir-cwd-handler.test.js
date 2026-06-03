@@ -102,6 +102,11 @@ describe('mkdir-cwd WS handler', () => {
   });
 
   it('surfaces EACCES when mkdirSync throws (R2 mitigation)', () => {
+    // Install the spy AFTER freshHandlers() so the paths.js module-load
+    // mkdir(DATA_DIR) (which fires during require-cache reload) runs
+    // unimpeded. The handler-side mkdir-cwd case calls require('fs')
+    // .mkdirSync, which is the spied binding.
+    const handlers = freshHandlers();
     const fs = require('fs');
     const spy = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {
       const err = new Error('permission denied');
@@ -109,7 +114,6 @@ describe('mkdir-cwd WS handler', () => {
       throw err;
     });
     try {
-      const handlers = freshHandlers();
       const ws = fakeWs();
       handlers.onConnection(ws);
       const target = process.platform === 'win32' ? 'C:/Windows/cannot-create' : '/root/cannot-create';

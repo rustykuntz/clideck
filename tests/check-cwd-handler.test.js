@@ -102,6 +102,10 @@ describe('check-cwd WS handler', () => {
   it('reports error:"EACCES" when statSync throws EACCES', () => {
     // EACCES on Windows is hard to produce naturally — admin accounts can
     // open most things. Mock fs.statSync at the require boundary.
+    // Install the spy AFTER freshHandlers() so the paths.js / utils.js
+    // load-time stats run unimpeded. The handler-side check-cwd case
+    // calls require('fs').statSync, which IS the spied binding.
+    const handlers = freshHandlers();
     const fs = require('fs');
     const spy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
       const err = new Error('permission denied');
@@ -109,7 +113,6 @@ describe('check-cwd WS handler', () => {
       throw err;
     });
     try {
-      const handlers = freshHandlers();
       const ws = fakeWs();
       handlers.onConnection(ws);
       ws.emit('message', JSON.stringify({ type: 'check-cwd', path: 'C:/anything' }));

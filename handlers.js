@@ -6,7 +6,7 @@ const config = require('./config');
 const sessions = require('./sessions');
 const themes = require('./themes');
 const presets = JSON.parse(readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
-const { listDirs, binName, defaultShell } = require('./utils');
+const { listDirs, binName, defaultShell, validateCwdPath } = require('./utils');
 const { PORT, BOOT_ID } = require('./runtime');
 for (const p of presets) if (p.presetId === 'shell') p.command = defaultShell;
 function isPresetEnabled(preset) {
@@ -564,6 +564,102 @@ function onConnection(ws) {
           ws.send(JSON.stringify({ type: 'dirs.mkdir', success: true, path: dirPath }));
         } catch (e) {
           ws.send(JSON.stringify({ type: 'dirs.mkdir', success: false, error: e.message }));
+        }
+        break;
+      }
+
+      // Phase 10 creator pre-flight check. Pure stat — no side effects.
+      // Client uses { exists, isDirectory, error } to decide whether to
+      // pop the create-or-cancel modal. ENOENT is the "doesn't exist
+      // yet" branch and is mapped to error:null so the client can
+      // distinguish it from a true error (EACCES/EPERM).
+      case 'check-cwd': {
+        const raw = typeof msg.path === 'string' ? msg.path : '';
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          ws.send(JSON.stringify({
+            type: 'check-cwd-result',
+            path: msg.path,
+            exists: false,
+            isDirectory: false,
+            error: 'invalid-input',
+          }));
+          break;
+        }
+        try {
+          // require('fs').statSync (rather than the top-of-module
+          // destructured binding) so unit tests can spy on the EACCES
+          // branch. Behaviour is identical; require caches.
+          const s = require('fs').statSync(trimmed);
+          ws.send(JSON.stringify({
+            type: 'check-cwd-result',
+            path: trimmed,
+            exists: true,
+            isDirectory: s.isDirectory(),
+            error: null,
+          }));
+        } catch (e) {
+          if (e && e.code === 'ENOENT') {
+            // Doesn't exist — normal branch, not an error. Includes
+            // dangling symlinks (statSync follows the link and raises
+            // ENOENT on the missing target). Per SPEC §61.
+            ws.send(JSON.stringify({
+              type: 'check-cwd-result',
+              path: trimmed,
+              exists: false,
+              isDirectory: false,
+              error: null,
+            }));
+          } else {
+            ws.send(JSON.stringify({
+              type: 'check-cwd-result',
+              path: trimmed,
+              exists: false,
+              isDirectory: false,
+              error: e && e.code ? e.code : (e && e.message) || 'error',
+            }));
+          }
+        }
+        break;
+      }
+
+      // Phase 10 creator pre-flight mkdir. Recursive, gated by the
+      // validateCwdPath helper so a typo'd or malicious client can't
+      // ask the server to mkdirSync '..\\escape'. R2: on mkdirSync
+      // failure (EACCES, EPERM, EROFS) the handler returns ok:false
+      // and the client surfaces a one-button error modal — NO session
+      // is created.
+      case 'mkdir-cwd': {
+        const v = validateCwdPath(msg.path);
+        if (!v.ok) {
+          ws.send(JSON.stringify({
+            type: 'mkdir-cwd-result',
+            path: msg.path,
+            ok: false,
+            error: v.error,
+          }));
+          break;
+        }
+        try {
+          // Call through require('fs').mkdirSync (rather than the
+          // destructured top-of-module binding) so unit tests can spy on
+          // it without also intercepting the data-dir bootstrap mkdir in
+          // paths.js. This is purely a testability seam — behaviour is
+          // identical because require caches.
+          require('fs').mkdirSync(v.path, { recursive: true });
+          ws.send(JSON.stringify({
+            type: 'mkdir-cwd-result',
+            path: v.path,
+            ok: true,
+            error: null,
+          }));
+        } catch (e) {
+          ws.send(JSON.stringify({
+            type: 'mkdir-cwd-result',
+            path: v.path,
+            ok: false,
+            error: e && e.code ? e.code : (e && e.message) || 'error',
+          }));
         }
         break;
       }

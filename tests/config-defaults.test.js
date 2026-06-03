@@ -45,10 +45,9 @@ describe('config DEFAULTS — terminal display sizing', () => {
     expect(cfg.terminalFontSize).toBe(13);
   });
 
-  // TODO PLAN-sidebar: un-comment when sidebar plan lands
-  // it('sidebarWidth defaults to 354', () => {
-  //   const { load } = freshConfig();
-  //   const cfg = load();
-  //   expect(cfg.sidebarWidth).toBe(354);
-  // });
+  it('sidebarWidth defaults to 354', () => {
+    const { load } = freshConfig();
+    const cfg = load();
+    expect(cfg.sidebarWidth).toBe(354);
+  });
 });

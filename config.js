@@ -91,6 +91,12 @@ const DEFAULTS = {
   // hardcoded value in public/js/terminals.js. See SPEC.md AC 1-4 and
   // CONTEXT.md D-02 / D-05.
   terminalFontSize: 13,
+  // Phase 9 — sidebar drag-resize. Sidebar width in px; range
+  // [280, min(640, 50vw)] (clamped client-side via clampSidebarWidth).
+  // 354 matches the historical `w-[354px]` Tailwind class on
+  // #sidebar so a fresh config produces the same layout as v1.31.10.
+  // See SPEC.md AC 5-10 and CONTEXT.md D-05 / D-08.
+  sidebarWidth: 354,
   defaultShell,
   prompts: [],
   roles: [],

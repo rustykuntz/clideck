@@ -365,6 +365,16 @@
           </button>
           <div id="default-theme-preview" class="mt-2 rounded-md overflow-hidden text-[11px] font-mono leading-[1.45] whitespace-pre"></div>
         </div>
+        <div class="mb-5">
+          <label class="block text-xs text-slate-400 mb-1.5">Terminal font size</label>
+          <div class="flex items-center gap-2">
+            <button type="button" id="cfg-font-size-dec" class="w-9 h-9 flex items-center justify-center text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Decrease font size">&minus;</button>
+            <span id="cfg-font-size-display" data-value="13" class="min-w-[64px] px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 text-center select-none">13px</span>
+            <button type="button" id="cfg-font-size-inc" class="w-9 h-9 flex items-center justify-center text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Increase font size">+</button>
+            <button type="button" id="cfg-font-size-reset" class="ml-2 px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" title="Reset to default (13px)">Reset</button>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1.5">Affects every open terminal. <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">Ctrl/Cmd</kbd> <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">+</kbd> / <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">-</kbd> / <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">0</kbd> work inside a focused terminal.</p>
+        </div>
       </div>
 
     </div>

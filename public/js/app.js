@@ -1,7 +1,7 @@
 import { state, send } from './state.js';
 import { esc, binName, resolveIconPath } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startResumableRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, reorderTerms, setHasToken, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu, addPill, updatePill, removePill, appendPillLog, setPillLogs, closePillLog } from './terminals.js';
-import { renderSettings, updateVersionFooter } from './settings.js';
+import { addTerminal, removeTerminal, select, startRename, startResumableRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, reorderTerms, setHasToken, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu, addPill, updatePill, removePill, appendPillLog, setPillLogs, closePillLog, applyFontSize, clampFontSize, FONT_SIZE_DEFAULT, FONT_SIZE_MIN, FONT_SIZE_MAX } from './terminals.js';
+import { renderSettings, updateVersionFooter, setFontSize } from './settings.js';
 import { openCreator, closeCreator, refreshCreator } from './creator.js';
 import { handleDirsResponse, handleMkdirResponse, openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
@@ -130,6 +130,10 @@ function connect() {
         renderPrompts();
         refreshCreator();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
+        // Phase 9 (D-03): a config broadcast can carry a new terminalFontSize
+        // (e.g. another connected client used the stepper). Push it to every
+        // open xterm so the size stays consistent across clients/tabs.
+        applyFontSize(state.cfg.terminalFontSize);
         break;
       }
       case 'themes':

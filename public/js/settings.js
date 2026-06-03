@@ -2,6 +2,13 @@ import { state, send } from './state.js';
 import { esc, debounce, agentIcon, binName } from './utils.js';
 import { openFolderPicker } from './folder-picker.js';
 import { confirmClose } from './confirm.js';
+import {
+  clampFontSize,
+  applyFontSize,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
+  FONT_SIZE_DEFAULT,
+} from './terminals.js';
 
 // ── Category navigation ──
 
@@ -86,8 +93,41 @@ export function renderSettings() {
   renderAgentList();
   renderThemeSection();
   renderNotifications();
+  renderFontSize();
   updateVersionFooter();
   restoreSettingsFocus(focusSnapshot);
+}
+
+// ── Font size stepper (Phase 9 — terminal display sizing) ──
+//
+// Renders the current state.cfg.terminalFontSize into the stepper display
+// and disables the +/- buttons at the clamp boundaries so the user gets
+// visual feedback that they're at the limit. Called from renderSettings
+// on every WS `config` broadcast so the readout stays in sync if a
+// keyboard shortcut or other client changes the value out-of-band.
+function renderFontSize() {
+  const size = clampFontSize(state.cfg.terminalFontSize);
+  const display = document.getElementById('cfg-font-size-display');
+  const inc = document.getElementById('cfg-font-size-inc');
+  const dec = document.getElementById('cfg-font-size-dec');
+  if (!display) return;
+  display.textContent = size + 'px';
+  display.dataset.value = String(size);
+  if (inc) inc.disabled = size >= FONT_SIZE_MAX;
+  if (dec) dec.disabled = size <= FONT_SIZE_MIN;
+}
+
+// Single source of truth for "user wants a new font-size": clamp, store
+// on state.cfg, push to every open xterm via applyFontSize, repaint the
+// stepper readout, and persist via saveConfig. Called by the +/- buttons,
+// Reset, and the Ctrl/Cmd +/-/0 keyboard handler in app.js (re-exported).
+export function setFontSize(px) {
+  const size = clampFontSize(px);
+  state.cfg.terminalFontSize = size;
+  applyFontSize(size);
+  renderFontSize();
+  saveConfig();
+  return size;
 }
 
 export function updateVersionFooter() {
@@ -583,7 +623,10 @@ function saveConfig() {
   state.cfg.notifySoundEnabled = document.getElementById('cfg-notify-sound').checked;
   state.cfg.notifySound = document.getElementById('cfg-notify-sound-pick').value;
   // Preserve fields not managed by this form
-  // (projects, prompts, etc. live on state.cfg and must not be dropped)
+  // (projects, prompts, terminalFontSize, sidebarWidth, etc. live on
+  // state.cfg and must not be dropped — the font-size stepper and the
+  // sidebar drag write directly into state.cfg.* before calling
+  // saveConfig, so the full-object send below carries them through.)
   send({ type: 'config.update', config: state.cfg });
 }
 
@@ -593,6 +636,21 @@ document.getElementById('cfg-confirm-close').addEventListener('change', saveConf
 // ── Events: Appearance ──
 document.getElementById('default-theme-trigger').addEventListener('click', (e) => {
   openThemeMenu(e.currentTarget);
+});
+
+// Font-size stepper (Phase 9): +/-/Reset all go through setFontSize so
+// the clamp + apply + persist sequence stays identical. The buttons read
+// the current value from state.cfg (NOT the display dataset) so a stale
+// display can never drift the next step. Reset jumps straight to the
+// default (13) regardless of current position.
+document.getElementById('cfg-font-size-inc').addEventListener('click', () => {
+  setFontSize((state.cfg.terminalFontSize ?? FONT_SIZE_DEFAULT) + 1);
+});
+document.getElementById('cfg-font-size-dec').addEventListener('click', () => {
+  setFontSize((state.cfg.terminalFontSize ?? FONT_SIZE_DEFAULT) - 1);
+});
+document.getElementById('cfg-font-size-reset').addEventListener('click', () => {
+  setFontSize(FONT_SIZE_DEFAULT);
 });
 
 // ── Browse ──

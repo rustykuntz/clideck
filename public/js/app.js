@@ -11,6 +11,7 @@ import { showToast } from './toast.js';
 import { sessionsInCwd } from './session-collisions.js';
 import './nav.js';
 import { initDrag, wasDragging } from './drag.js';
+import { init as initSidebarResize, applySidebarWidth } from './sidebar-resize.js';
 import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
 
@@ -134,6 +135,12 @@ function connect() {
         // (e.g. another connected client used the stepper). Push it to every
         // open xterm so the size stays consistent across clients/tabs.
         applyFontSize(state.cfg.terminalFontSize);
+        // Phase 9 (D-06): config is the source of truth for sidebarWidth.
+        // The paint-hint in sidebar-resize.js applies localStorage
+        // synchronously at module load; this call replaces that with the
+        // authoritative value from the server and re-mirrors to localStorage
+        // (healing any out-of-band drift between cache and config.json).
+        applySidebarWidth(state.cfg.sidebarWidth);
         break;
       }
       case 'themes':
@@ -1942,5 +1949,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 initDrag();
+initSidebarResize();
 initSessionScrollbarVisibility();
 connect();

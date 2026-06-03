@@ -234,7 +234,18 @@ export function openCreator() {
   const cwdWrap = card.querySelector('#creator-cwd-wrap');
   const projHidden = card.querySelector('#creator-project');
   const projTrigger = card.querySelector('#creator-project-trigger');
-  (projTrigger || nameInput).focus();
+  // Phase 10 Task 5: focus the name input always. Project trigger no longer
+  // needs first-touch because the default is None — submitting straight
+  // away is the common case.
+  nameInput.focus();
+
+  // Phase 10: pre-flight cwd check. Folder-picker selections (and any future
+  // drag-folder events) already gave us a path the OS proved exists, so we
+  // skip the round-trip in those cases. User-typed paths flip the flag
+  // back off via the 'input' listener below so a re-typed override is
+  // validated again.
+  let cwdCheckedViaPicker = false;
+  cwdInput.addEventListener('input', () => { cwdCheckedViaPicker = false; });
 
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeCreator();
@@ -246,8 +257,96 @@ export function openCreator() {
   card.querySelector('#creator-browse').addEventListener('click', () => {
     openFolderPicker(cwdInput.value.trim() || defaultPath, (path) => {
       cwdInput.value = path;
+      cwdCheckedViaPicker = true;
     });
   });
+
+  // Helper: one-shot WS response listener with a soft timeout. Mirrors the
+  // install-toast handler pattern at creator.js's showInstallToast helper.
+  // Returns null on timeout so callers can decide between "block" vs
+  // "soft-fall-through". For the pre-flight check we soft-fall-through to
+  // 'proceed' because blocking forever on a slow server is worse than
+  // letting the existing resolveValidDir silent-fallback handle it.
+  function waitForResult(predicate, timeoutMs) {
+    return new Promise((resolve) => {
+      const onMsg = (e) => {
+        try {
+          const m = JSON.parse(e.data);
+          if (predicate(m)) {
+            state.ws.removeEventListener('message', onMsg);
+            clearTimeout(t);
+            resolve(m);
+          }
+        } catch { /* ignore non-JSON frames */ }
+      };
+      const t = setTimeout(() => {
+        state.ws.removeEventListener('message', onMsg);
+        resolve(null);
+      }, timeoutMs);
+      state.ws.addEventListener('message', onMsg);
+    });
+  }
+
+  // The pre-flight check. Returns 'proceed' (continue with createFromPreset)
+  // or 'cancel' (abort; modal-induced focus already wired). Encapsulates
+  // SPEC AC 1-7.
+  async function ensureCwdExistsOrConfirm(cwd) {
+    if (!cwd || !cwd.trim()) return 'proceed';                   // AC 7
+    if (cwdCheckedViaPicker) return 'proceed';                   // AC 6
+    const focusCwd = () => {
+      cwdInput.focus();
+      cwdInput.setSelectionRange(0, cwdInput.value.length);
+    };
+    send({ type: 'check-cwd', path: cwd });
+    const r = await waitForResult(
+      (m) => m.type === 'check-cwd-result' && m.path === cwd,
+      5000,
+    );
+    if (!r) return 'proceed';                                    // soft timeout
+    if (r.exists && r.isDirectory) return 'proceed';
+    if (r.exists && !r.isDirectory) {                            // AC 4
+      await confirmClose(
+        "A file already exists at that path — pick a different folder.",
+        '',
+        { hideConfirm: true, cancelLabel: 'OK' },
+      );
+      focusCwd();
+      return 'cancel';
+    }
+    if (r.error === 'EACCES' || r.error === 'EPERM') {           // AC 5
+      await confirmClose(
+        'Permission denied for that path. Try a different folder.',
+        '',
+        { hideConfirm: true, cancelLabel: 'OK' },
+      );
+      focusCwd();
+      return 'cancel';
+    }
+    // Not-exists branch (AC 1 + 2 + 3).
+    const ok = await confirmClose(
+      "That folder doesn't exist yet. Create it and open the session there?",
+      'Create and open',
+    );
+    if (!ok) {                                                    // AC 3
+      focusCwd();
+      return 'cancel';
+    }
+    send({ type: 'mkdir-cwd', path: cwd });
+    const m = await waitForResult(
+      (msg) => msg.type === 'mkdir-cwd-result' && msg.path === cwd,
+      5000,
+    );
+    if (m && m.ok) return 'proceed';                              // AC 2
+    // R2: mkdir failed — surface a second one-button error modal and
+    // explicitly do NOT call createFromPreset.
+    await confirmClose(
+      "Couldn't create that folder: " + ((m && m.error) || 'unknown error'),
+      '',
+      { hideConfirm: true, cancelLabel: 'OK' },
+    );
+    focusCwd();
+    return 'cancel';
+  }
 
   // Project picker dropdown
   if (projTrigger) {
@@ -272,6 +371,14 @@ export function openCreator() {
       cwdWrap.classList.add('hidden');
       cwdInput.value = defaultPath;
     };
+
+    // Phase 10 Task 5 (AC 9, 10): pre-seed projHidden.value to None at
+    // creator-card open so submitting without touching the dropdown
+    // creates an ungrouped session. setProjectSelection(NO_PROJECT_VALUE)
+    // also runs cwdWrap.classList.remove('hidden') so the cwd input is
+    // visible at first render. The user can still switch to a real
+    // project via the dropdown — and switch back to None — at will.
+    setProjectSelection(NO_PROJECT_VALUE);
 
     let projMenuCleanup = null;
     projTrigger.addEventListener('click', () => {
@@ -317,7 +424,7 @@ export function openCreator() {
   }
 
   // "Add" button for missing agents — opens install toaster
-  card.addEventListener('click', (e) => {
+  card.addEventListener('click', async (e) => {
     const installBtn = e.target.closest('.install-btn');
     if (installBtn) {
       const preset = state.presets.find(p => p.presetId === installBtn.dataset.preset);
@@ -336,17 +443,18 @@ export function openCreator() {
     if (!btn) return;
     const preset = state.presets.find(p => p.presetId === btn.dataset.preset);
     if (!preset) return;
-    if (projTrigger && !projHidden.value) {
-      showToast('Choose a project or select `None (outside project hierarchy)`.', { title: 'Choose Project', type: 'warn' });
-      projTrigger.focus();
-      return;
-    }
+    // Phase 10 Task 5: the old `if (projTrigger && !projHidden.value)` toast
+    // guard is now dead code — projHidden is pre-seeded to NO_PROJECT_VALUE
+    // when the picker is rendered, so the !projHidden.value branch can
+    // never fire (AC 10). The dropdown still lets users pick a real project
+    // and switch back to None via setProjectSelection.
     const name = nameInput.value.trim() || fallbackName;
     const cwd = cwdInput.value.trim() || undefined;
     const projectId = projHidden?.value && projHidden.value !== NO_PROJECT_VALUE ? projHidden.value : undefined;
-    createFromPreset(preset, name, cwd, projectId).then(ok => {
-      if (ok) closeCreator();
-    });
+    const decision = await ensureCwdExistsOrConfirm(cwd);
+    if (decision !== 'proceed') return;
+    const ok = await createFromPreset(preset, name, cwd, projectId);
+    if (ok) closeCreator();
   });
 }
 

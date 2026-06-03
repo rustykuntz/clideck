@@ -1,5 +1,6 @@
 const { chmodSync, existsSync, statSync, readdirSync } = require('fs');
-const { dirname, join } = require('path');
+const path = require('path');
+const { dirname, join } = path;
 
 function ensurePtyHelper() {
   if (process.platform === 'win32') return;
@@ -44,6 +45,26 @@ function resolveValidDir(dir) {
   return require('os').homedir();
 }
 
+// validateCwdPath — gate for the mkdir-cwd WS handler. Pure-helper, no I/O.
+// Rejects empty, relative, or `..`-containing paths so a malicious or typo'd
+// client can't ask the server to mkdirSync `..\\escape` and walk out of the
+// intended directory. See SPEC §86 AC 8 and PLAN Task 1.
+//
+// Returns { ok:true, path: <trimmed input> } on success
+//      or { ok:false, error: 'empty' | 'not-absolute' | 'parent-traversal' } on failure.
+function validateCwdPath(p) {
+  if (p == null) return { ok: false, error: 'empty' };
+  const trimmed = String(p).trim();
+  if (!trimmed) return { ok: false, error: 'empty' };
+  if (!path.isAbsolute(trimmed)) return { ok: false, error: 'not-absolute' };
+  // Split on both forward- and back-slashes so the rule catches `..` regardless
+  // of which separator the client used. Empty segments (trailing separator,
+  // double separator) are not flagged — only literal `..` segments are.
+  const segments = trimmed.split(/[\\/]+/);
+  if (segments.some(seg => seg === '..')) return { ok: false, error: 'parent-traversal' };
+  return { ok: true, path: trimmed };
+}
+
 function listDirs(path, showHidden) {
   try {
     return readdirSync(path, { withFileTypes: true })
@@ -69,4 +90,4 @@ function binName(command) {
   return exec.split(/[\\/]/).pop().split(/\s/)[0].replace(/\.(exe|cmd)$/i, '');
 }
 
-module.exports = { ensurePtyHelper, parseCommand, resolveValidDir, listDirs, defaultShell, binName };
+module.exports = { ensurePtyHelper, parseCommand, resolveValidDir, validateCwdPath, listDirs, defaultShell, binName };

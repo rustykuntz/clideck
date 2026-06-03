@@ -518,6 +518,33 @@ export function clampFontSize(n) {
   return i;
 }
 
+// Apply a new font-size to every open terminal AND broadcast the resulting
+// resize to each PTY so the shell recomputes cols/rows. D-03: live apply
+// to all open terminals globally (not per-session). The proposeDimensions
+// guard mirrors doFit() so a font-size change that doesn't actually shift
+// cols/rows (e.g. a tiny tweak inside the same character cell) skips the
+// spurious PTY resize. Callers (Settings stepper, Ctrl+/- handler) pass
+// any value; clampFontSize normalises it.
+export function applyFontSize(px) {
+  const size = clampFontSize(px);
+  for (const [id, entry] of state.terms) {
+    try {
+      entry.term.options.fontSize = size;
+      const dims = entry.fit.proposeDimensions();
+      if (!dims) continue;
+      const changed = dims.cols !== entry.term.cols || dims.rows !== entry.term.rows;
+      entry.fit.fit();
+      if (changed) {
+        send({ type: 'resize', id, cols: entry.term.cols, rows: entry.term.rows });
+      }
+    } catch {
+      // A single terminal in a bad state must not stop the loop — every
+      // other open terminal still needs the new size applied.
+    }
+  }
+  return size;
+}
+
 // --- Terminal management ---
 
 export function addTerminal(id, name, themeId, commandId, projectId, muted, lastPreview, presetId, cwd) {
@@ -561,7 +588,11 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   document.getElementById('terminals').appendChild(el);
 
   const term = new Terminal({
-    fontSize: 13,
+    // Phase 9 (D-03): every new terminal reads the live config value so
+    // it joins existing terminals at the user's chosen size. clampFontSize
+    // returns the default 13 when state.cfg hasn't yet arrived (cold
+    // start path), so no explicit guard is needed here.
+    fontSize: clampFontSize(state.cfg?.terminalFontSize),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     theme: resolveTheme(themeId),
     // Keep ANSI/truecolor output readable across dark and light terminal themes.

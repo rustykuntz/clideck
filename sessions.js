@@ -11,6 +11,7 @@ const piBridge = require('./pi-bridge');
 const plugins = require('./plugin-loader');
 const { presetForCommand } = require('./preset-utils');
 const { stripAnsi } = require('./ansi-utils');
+const serverCapture = require('./server-capture');
 
 const THEMES = require('./themes');
 const MAX_BUFFER = 2 * 1024 * 1024;
@@ -35,6 +36,43 @@ function addBroadcastListener(fn) {
   };
 }
 
+function detectServerMenu(id, sess, lines) {
+  if (!serverCapture.enabled || !sess) return;
+  const rawChoices = transcript.detectMenu(lines, sess.presetId);
+  let choices = rawChoices;
+  if (choices && sess.presetId === 'codex') {
+    const last = telemetry.getLastEvent(id);
+    if (!last.startsWith('codex.sse_event:response.completed')) choices = null;
+  }
+  let key = choices ? JSON.stringify(choices) : '';
+  if (choices && sess.presetId === 'claude-code' && key === (sess._resolvedMenuKey || '')) {
+    choices = null;
+    key = '';
+  }
+  const candidateLines = (choices || (rawChoices && sess.presetId === 'claude-code'))
+    ? transcript.stripMenu(lines, sess.presetId)
+    : lines;
+  serverCapture.updateCandidate(id, sess.presetId, candidateLines, transcript.getUserTexts(id));
+
+  if (choices && plugins.shouldAutoApproveMenu(id)) {
+    setTimeout(() => input({ id, data: '\r' }), 500);
+  }
+
+  if (key !== (sess._menuKey || '')) {
+    sess._menuKey = key;
+    // Without browser menuVersion, Claude startup/resume/compact menus are not
+    // distinguishable from approval menus. Surface the menu, but do not use it
+    // as a working-state transition source in this experiment path.
+    sess._menuStartsWork = sess.presetId !== 'claude-code';
+    broadcast({ type: 'session.menu', id, choices: choices || [] });
+    if (choices) {
+      plugins.notifyMenu(id, choices);
+      if (sess.presetId === 'codex') telemetry.cancelCodexMenuPoll(id);
+      broadcast({ type: 'session.status', id, working: false, source: 'menu' });
+    }
+  }
+}
+
 function broadcast(msg) {
   const raw = JSON.stringify(msg);
   for (const c of clients) if (c.readyState === 1) c.send(raw);
@@ -52,6 +90,10 @@ function broadcast(msg) {
       // reply; keep idle finalization enabled there so the completed post-menu
       // answer is not lost. Other agents still suppress transcript finalization on menu.
       s._finalizeOnIdle = !msg.working && msg.source !== 'esc' && (msg.source !== 'menu' || s.presetId === 'codex');
+      if (serverCapture.enabled && !msg.working && s._finalizeOnIdle) {
+        s._finalizeOnIdle = false;
+        serverCapture.commit(msg.id, s.presetId);
+      }
       // if (s.presetId === 'claude-code') {
       //   console.log(`[claude] broadcast status session=${msg.id.slice(0,8)} working=${!!msg.working} source=${msg.source} finalizeOnIdle=${!!s._finalizeOnIdle}`);
       // }
@@ -116,6 +158,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null, presetId: preset?.presetId || 'shell', working: undefined };
   sessions.set(id, session);
   transcript.setFinalizeOnIdle(id, ['claude-code', 'codex', 'gemini-cli', 'opencode', 'pi', 'clideck-agent'].includes(session.presetId) ? session.presetId : null);
+  serverCapture.create(id, session.presetId, cols || 80, rows || 24);
 
   // Always watch telemetry-backed agents so OTLP fallback matching can attach
   // early events to this session even when the agent omits clideck.session_id.
@@ -140,6 +183,8 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
     }
     activity.trackOut(id, data);
     transcript.trackOutput(id, data);
+    const serverLines = serverCapture.update(id, session.presetId, data, term.cols, term.rows);
+    if (serverLines) detectServerMenu(id, session, serverLines);
     plugins.notifyOutput(id, data);
     broadcast({ type: 'output', id, data });
   });
@@ -165,6 +210,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
     } else {
       transcript.clear(id);
     }
+    serverCapture.clear(id);
     sessions.delete(id);
     broadcast({ type: 'closed', id });
     if (!s.ephemeral && cmd.canResume && s.sessionToken) {
@@ -319,7 +365,10 @@ function input(msg) {
     broadcast({ type: 'session.status', id: msg.id, working: false, source: 'esc' });
   }
 }
-function resize(msg) { sessions.get(msg.id)?.pty.resize(msg.cols, msg.rows); }
+function resize(msg) {
+  sessions.get(msg.id)?.pty.resize(msg.cols, msg.rows);
+  serverCapture.resize(msg.id, msg.cols, msg.rows);
+}
 
 function rename(msg) {
   const s = sessions.get(msg.id);

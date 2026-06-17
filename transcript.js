@@ -179,6 +179,15 @@ function commitAgentCandidate(id, presetId) {
   store(id, 'agent', text);
 }
 
+function commitExternalAgentText(id, presetId, text) {
+  if (!finalizePreset[id]) return;
+  const clean = builder.cleanAgentText(presetId, text);
+  if (!clean) return;
+  if (clean === lastAgentText[id]) return;
+  lastAgentText[id] = clean;
+  store(id, 'agent', clean);
+}
+
 function clearAgentCandidate(id) {
   candidate.clear(id);
 }
@@ -186,6 +195,10 @@ function clearAgentCandidate(id) {
 function getUsers(id) {
   if (userTexts[id]?.length) return userTexts[id];
   return (entriesById[id] || []).filter(e => e.role === 'user').map(e => e.text);
+}
+
+function getUserTexts(id) {
+  return [...getUsers(id)];
 }
 
 function readEntries(id) {
@@ -326,4 +339,4 @@ function stripMenu(lines, presetId) {
   return lines.filter((_, i) => i < block.startIdx || i > block.endIdx);
 }
 
-module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getTurns, getEntriesSince, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu, stripMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, commitExternalAgentText, clearAgentCandidate, parseTurnsFromLines, getTurns, getEntriesSince, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu, stripMenu, getUserTexts };

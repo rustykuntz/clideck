@@ -261,7 +261,6 @@ function detectTelemetryConfig(c) {
           repairAllowed = repairAllowed || hasAnyExistingHook(hooks, 'claude-hook.js');
           detected = hasExistingHook(hooks.UserPromptSubmit, 'claude-hook.js', 'start')
                   && hasExistingHook(hooks.Stop, 'claude-hook.js', 'stop')
-                  && hasExistingHook(hooks.StopFailure, 'claude-hook.js', 'stop')
                   && hasExistingHook(hooks.SessionStart, 'claude-hook.js', 'session-start')
                   && hasExistingHook(hooks.SessionEnd, 'claude-hook.js', 'session-end')
                   && hasExistingHook(hooks.PreToolUse, 'claude-hook.js', 'menu')
@@ -760,12 +759,17 @@ function applyTelemetryConfig(preset, cmd = null) {
         try { settings = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
       }
       const hooks = settings.hooks || {};
+      // StopFailure isn't a real Claude Code hook event; a previous version of this
+      // installer wrote it, which makes Claude Code reject the whole settings.json.
+      // Scrub it from anyone who already has it, on every run.
+      const hadStopFailure = 'StopFailure' in hooks;
+      delete hooks.StopFailure;
       const hookCmd = (route) => `"${process.execPath.replace(/\\/g, '/')}" "${join(__dirname, 'bin', 'claude-hook.js').replace(/\\/g, '/')}" ${port} ${route}`;
       const clideckHook = (route) => ({ hooks: [{ type: 'command', command: hookCmd(route) }] });
       const hasClideck = (arr, path) => arr?.some(h => h.hooks?.some(x => x.command === hookCmd(path)));
-      if (hasClideck(hooks.UserPromptSubmit, 'start')
+      if (!hadStopFailure
+          && hasClideck(hooks.UserPromptSubmit, 'start')
           && hasClideck(hooks.Stop, 'stop')
-          && hasClideck(hooks.StopFailure, 'stop')
           && hasClideck(hooks.SessionStart, 'session-start')
           && hasClideck(hooks.SessionEnd, 'session-end')
           && hasClideck(hooks.PreToolUse, 'menu')
@@ -775,14 +779,12 @@ function applyTelemetryConfig(preset, cmd = null) {
       const stripOld = (arr) => (arr || []).filter(h => !h.hooks?.some(x => x.url?.includes('/hook/claude/') || x.command?.includes('claude-hook.js')));
       hooks.UserPromptSubmit = stripOld(hooks.UserPromptSubmit);
       hooks.Stop = stripOld(hooks.Stop);
-      hooks.StopFailure = stripOld(hooks.StopFailure);
       hooks.SessionStart = stripOld(hooks.SessionStart);
       hooks.SessionEnd = stripOld(hooks.SessionEnd);
       hooks.PreToolUse = stripOld(hooks.PreToolUse);
       hooks.Notification = stripOld(hooks.Notification);
       if (!hasClideck(hooks.UserPromptSubmit, 'start')) hooks.UserPromptSubmit = [...(hooks.UserPromptSubmit || []), clideckHook('start')];
       if (!hasClideck(hooks.Stop, 'stop')) hooks.Stop = [...(hooks.Stop || []), clideckHook('stop')];
-      if (!hasClideck(hooks.StopFailure, 'stop')) hooks.StopFailure = [...(hooks.StopFailure || []), clideckHook('stop')];
       if (!hasClideck(hooks.SessionStart, 'session-start')) hooks.SessionStart = [...(hooks.SessionStart || []), clideckHook('session-start')];
       if (!hasClideck(hooks.SessionEnd, 'session-end')) hooks.SessionEnd = [...(hooks.SessionEnd || []), clideckHook('session-end')];
       if (!hasClideck(hooks.Notification, 'idle')) hooks.Notification = [...(hooks.Notification || []), { matcher: 'idle_prompt', ...clideckHook('idle') }];
@@ -883,7 +885,7 @@ function removeTelemetryConfig(preset, cmd = null) {
       let settings = {};
       try { settings = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
       if (!settings.hooks) return { success: true, message: 'No hooks to remove' };
-      for (const event of ['UserPromptSubmit', 'Stop', 'StopFailure', 'SessionStart', 'SessionEnd', 'Notification', 'PreToolUse']) {
+      for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd', 'Notification', 'PreToolUse']) {
         const arr = settings.hooks[event];
         if (!arr) continue;
         settings.hooks[event] = arr.filter(h => !h.hooks?.some(x => x.url?.includes('/hook/claude/') || x.command?.includes('claude-hook.js')));
@@ -943,4 +945,4 @@ function removeTelemetryConfig(preset, cmd = null) {
 
 function getConfig() { return cfg; }
 
-module.exports = { onConnection, getConfig };
+module.exports = { onConnection, getConfig, applyTelemetryConfig, removeTelemetryConfig };

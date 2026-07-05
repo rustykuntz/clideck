@@ -11,7 +11,8 @@
     "build:css": "tailwindcss -i src/input.css -o public/tailwind.css --minify",
     "prepublishOnly": "npm run build:css",
     "smoke:providers": "node tests/providers/run.js",
-    "smoke:menu": "node tests/providers/menu-detection.test.js"
+    "smoke:menu": "node tests/providers/menu-detection.test.js",
+    "smoke:telemetry-config": "node tests/providers/telemetry-config.test.js"
   },
   "keywords": [
     "terminal",

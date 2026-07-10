@@ -49,6 +49,9 @@ const notAMenu = [
 
 const cases = [
   ['claude-code', claudeMenu, 3, '1'],
+  // antigravity is a claude-code fork: same menu chrome, detected via lineage.
+  // Locks the contract that antigravity keeps inheriting claude-code parsing.
+  ['antigravity', claudeMenu, 3, '1'],
   ['codex', codexMenu, 2, '1'],
   ['gemini-cli', geminiMenu, 2, '1'],
 ];

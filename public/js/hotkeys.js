@@ -128,8 +128,8 @@ export function attachToTerminal(term, presetId) {
     }
 
     // Claude Code uses Shift+Enter for multiline input, but xterm emits the
-    // same "\r" as plain Enter. Scope CSI-u translation to Claude only so
-    // other terminals keep their existing Enter behavior unchanged.
+    // same "\r" as plain Enter. Scope CSI-u translation to Claude Code and its
+    // forks (antigravity) so other terminals keep their Enter behavior unchanged.
     if ((presetId === 'claude-code' || presetId === 'antigravity')
       && e.type === 'keydown'
       && e.key === 'Enter'

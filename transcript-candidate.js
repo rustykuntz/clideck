@@ -1,9 +1,11 @@
 const builder = require('./transcript-normalizer');
 const parser = require('./transcript-parser');
+const { lineageOf } = require('./lineage');
 
 const candidateText = {};
 
 function isTransientChrome(presetId, text) {
+  presetId = lineageOf(presetId);
   if (presetId === 'codex') {
     return /^Working \(/.test(text) || /^esc to interrupt$/i.test(text);
   }

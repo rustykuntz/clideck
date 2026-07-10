@@ -104,6 +104,20 @@
     }
   },
   {
+    "presetId": "antigravity",
+    "name": "Antigravity",
+    "icon": "/img/antigravity.svg",
+    "command": "agy",
+    "lineage": "claude-code",
+    "installCmd": "agy update",
+    "isAgent": true,
+    "canResume": false,
+    "resumeCommand": null,
+    "sessionIdPattern": null,
+    "outputMarker": "⏺",
+    "telemetrySetup": "Antigravity (agy) is a Claude Code fork, so CliDeck reuses Claude's transcript, menu, and turn-marker parsing. agy exposes no lifecycle hooks or OpenTelemetry, so working/idle status is inferred from terminal activity rather than pushed by the agent. Resume is not yet wired (agy uses --conversation/--project ids that aren't echoed to the terminal)."
+  },
+  {
     "presetId": "clideck-agent",
     "name": "Clideck Agent",
     "icon": "/img/clideck-agent.svg",

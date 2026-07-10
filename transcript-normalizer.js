@@ -1,4 +1,7 @@
+const { lineageOf } = require('./lineage');
+
 function cleanAgentText(presetId, text) {
+  presetId = lineageOf(presetId);
   let out = String(text || '').split('\n').map(l => l.replace(/[ \t]+$/g, '')).join('\n').trim();
   out = out.replace(/\n\n─{5,}\s*$/u, '').trim();
   if (presetId === 'codex' || presetId === 'claude-code') {

@@ -1,9 +1,13 @@
+const { lineageOf } = require('./lineage');
+
 function parseTurns(presetId, lines, users) {
+  presetId = lineageOf(presetId);
   const parser = parsers[presetId];
   return collapseAgentTurns(parser ? parser(lines, users) : anchorParse(lines, users));
 }
 
 function parseLastAgentOnly(presetId, lines) {
+  presetId = lineageOf(presetId);
   if (presetId === 'claude-code') return parseLastClaudeAgentOnly(lines);
   const turns = collapseAgentTurns((parsers[presetId] || (() => null))(lines, null));
   if (!turns?.length) return null;

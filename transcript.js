@@ -5,6 +5,7 @@ const builder = require('./transcript-normalizer');
 const parser = require('./transcript-parser');
 const candidate = require('./transcript-candidate');
 const { stripAnsi } = require('./ansi-utils');
+const { lineageOf } = require('./lineage');
 
 const DIR = join(DATA_DIR, 'transcripts');
 const MAX_CACHE = 50 * 1024;
@@ -53,6 +54,7 @@ function fpath(id) { return join(DIR, `${id}.jsonl`); }
 function setPrefix(id, prefix) { prefixes[id] = prefix; }
 function setFinalizeOnIdle(id, presetId) {
   if (!presetId) { delete finalizePreset[id]; return; }
+  presetId = lineageOf(presetId);  // agy → claude-code: reuse claude's finalize/parse path
   finalizePreset[id] = presetId;
   entriesById[id] = builder.compactEntries(entriesById[id], presetId);
 }
@@ -231,6 +233,7 @@ function hasSettledReplay(entries) {
 }
 
 function getReplayText(id, presetId) {
+  presetId = lineageOf(presetId);  // agy renders claude-style ❯/⏺ markers
   const entries = builder.compactEntries(entriesById[id], presetId);
   if (!hasSettledReplay(entries)) return '';
   const marks = {
@@ -277,6 +280,7 @@ function cleanMenuLabel(text) {
 }
 
 function detectMenuBlock(lines, presetId) {
+  presetId = lineageOf(presetId);  // agy uses claude-style ❯/› menu chrome
   const marker = MENU_MARKERS[presetId];
   if (!marker) return null;
   // Only scan the bottom 40 lines — menus are always near the visible area

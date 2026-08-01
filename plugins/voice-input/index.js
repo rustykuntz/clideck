@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { join } = require('path');
 const { readFileSync, existsSync, statSync } = require('fs');
 
@@ -13,8 +13,8 @@ module.exports = {
 
     // --- Python virtual environment ---
 
-    const pyDir = join(api.pluginDir, 'python');
-    const venvDir = join(pyDir, '.venv');
+    const pyDir = join(__dirname, 'python');
+    const venvDir = join(__dirname, 'python', '.venv');
     const venvPy = process.platform === 'win32'
       ? join(venvDir, 'Scripts', 'python.exe')
       : join(venvDir, 'bin', 'python3');
@@ -32,10 +32,10 @@ module.exports = {
 
     function run(cmd, args) {
       return new Promise((resolve, reject) => {
-        const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        let err = '';
-        p.stderr.on('data', d => { err += d; });
-        p.on('close', code => code === 0 ? resolve() : reject(new Error(err.trim() || `exit ${code}`)));
+        execFile(cmd, args, (error, _stdout, stderr) => {
+          if (error) reject(new Error(stderr.trim() || error.message));
+          else resolve();
+        });
       });
     }
 
@@ -122,7 +122,7 @@ module.exports = {
 
     function spawnWorker() {
       if (worker) return;
-      const script = join(api.pluginDir, 'python', 'worker.py');
+      const script = join(__dirname, 'python', 'worker.py');
       if (!existsSync(script)) { api.log('worker.py not found'); return; }
 
       worker = spawn(venvPy, ['-u', script], {

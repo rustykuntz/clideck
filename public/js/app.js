@@ -114,7 +114,7 @@ function connect() {
       case 'output': {
         const entry = state.terms.get(msg.id);
         if (msg.replay && reconnectReplaySkip?.has(msg.id) && entry) break;
-        if (entry && !entry.queue(msg.data)) entry.term.write(msg.data);
+        if (entry && !entry.queue(msg.data, !!msg.replay)) entry.writeChunk(msg.data, !!msg.replay);
         updatePreview(msg.id);
         markUnread(msg.id);
         break;
@@ -148,7 +148,7 @@ function connect() {
         const entry = state.terms.get(msg.id);
         if (msg.replay && reconnectReplaySkip?.has(msg.id) && entry) break;
         const historyText = normalizeTerminalHistoryText(msg.text);
-        if (entry && !entry.queue(historyText)) entry.term.write(historyText);
+        if (entry && !entry.queue(historyText, !!msg.replay)) entry.writeChunk(historyText, !!msg.replay);
         updatePreview(msg.id);
         break;
       }

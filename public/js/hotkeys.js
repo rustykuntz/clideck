@@ -100,9 +100,11 @@ function decodeOsc52(data) {
   }
 }
 
-function attachClipboardOscHandler(term) {
+function attachClipboardOscHandler(term, isReplaying) {
   if (!term.parser?.registerOscHandler) return;
   term.parser.registerOscHandler(52, (data) => {
+    // Replayed terminal history must not repeat clipboard side effects.
+    if (isReplaying?.()) return true;
     const text = decodeOsc52(data);
     if (!text || !navigator.clipboard?.writeText) return false;
     return navigator.clipboard.writeText(text).then(() => true, () => false);
@@ -112,8 +114,8 @@ function attachClipboardOscHandler(term) {
 // Attach to an xterm terminal instance — xterm's hidden textarea is an input,
 // so we bypass the isInput check and dispatch directly.
 // Prompt autocomplete (// trigger) runs first, then hotkey dispatch.
-export function attachToTerminal(term, presetId) {
-  attachClipboardOscHandler(term);
+export function attachToTerminal(term, presetId, isReplaying) {
+  attachClipboardOscHandler(term, isReplaying);
   term.attachCustomKeyEventHandler((e) => {
     if (e.type === 'keydown'
       && e.ctrlKey

@@ -2,19 +2,19 @@
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 
 const { execFile } = require('child_process');
-const { readFileSync, statSync, readlinkSync } = require('fs');
+const { readFileSync, statSync, readlinkSync, copyFileSync, mkdirSync } = require('fs');
 const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
-const hljs = require('highlight.js');
+// highlight.js is not called from here: the browser does the highlighting through diff2html's
+// own bundle. The package is still needed for its theme stylesheets, resolved by path below.
 
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const GIT_TIMEOUT = 15000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 const MAX_UNTRACKED_BYTES = 512 * 1024; // larger untracked files are listed, not rendered
 const BINARY_SNIFF_BYTES = 8000;
-const HIGHLIGHT_MAX_LINES = 6000;      // above this, skip highlighting to keep the tab responsive
-const HIGHLIGHT_MAX_LINE_CHARS = 2000; // minified or generated lines are not worth colouring
+const HIGHLIGHT_MAX_LINES = 6000; // above this the browser is told not to highlight
 const CACHE_MAX = 20;
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -323,162 +323,41 @@ function renderHtml(built, layout, settings) {
     matching: 'words',
     renderNothingWhenEmpty: false,
   });
-  const changed = built.totals.additions + built.totals.deletions;
-  if (settings.syntaxHighlight === false || changed > HIGHLIGHT_MAX_LINES) return html;
-  return highlightHtml(html);
+  return html;
 }
 
-// --- syntax highlighting ---
-//
-// diff2html only highlights in the browser, through its diff2html-ui bundle, which pulls in a
-// megabyte of highlight.js. Since rendering already happens here, highlighting happens here
-// too and the browser receives finished markup plus a small theme stylesheet.
-//
-// The wrinkle is word-level diffing: each rendered line already contains <ins> and <del> from
-// diff2html, and highlight.js wants plain text. diff2html-ui reconciles the two by walking DOM
-// node streams, which needs a document. Instead the two are merged by character offset below.
-
-// diff2html puts the file extension in data-lang. highlight.js accepts extensions directly as
-// language aliases, so no mapping table is needed. Aliases are then resolved to canonical ids
-// so the emitted class is "javascript" whether the file was .js, .mjs or .cjs. Built once by
-// matching each registered language object against the alias, since highlight.js exposes no
-// alias-to-id call.
-const PLAINTEXT = hljs.getLanguage('plaintext');
-const CANONICAL_LANGUAGE = new Map();
-for (const id of hljs.listLanguages()) CANONICAL_LANGUAGE.set(hljs.getLanguage(id), id);
-
-// Returns the canonical language id, or '' when there is nothing worth colouring, which covers
-// both unknown extensions and ones that resolve to plain text.
-function languageFor(extension) {
-  if (!extension) return '';
-  const language = hljs.getLanguage(extension);
-  if (!language || language === PLAINTEXT) return '';
-  return CANONICAL_LANGUAGE.get(language) || extension;
+// Highlighting itself runs in the browser, through diff2html's own diff2html-ui bundle. This
+// only decides whether it is worth doing: very large diffs are left plain so the tab stays
+// responsive.
+function shouldHighlight(built, settings) {
+  if (settings.syntaxHighlight === false) return false;
+  return built.totals.additions + built.totals.deletions <= HIGHLIGHT_MAX_LINES;
 }
 
-const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+// diff2html's browser bundle does the highlighting. Only files under the plugin's public/
+// folder can be served (plugin-loader.js resolveFile), so the bundle is copied out of
+// node_modules on startup. Copying beats committing a megabyte of minified third-party code,
+// and beats sending it over the WebSocket, which the browser could not cache.
+const VENDOR_BUNDLE = 'diff2html-ui.min.js';
 
-function decodeEntities(text) {
-  return text.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, code) => {
-    if (code[0] === '#') {
-      const value = code[1] === 'x' || code[1] === 'X'
-        ? Number.parseInt(code.slice(2), 16)
-        : Number.parseInt(code.slice(1), 10);
-      if (!Number.isFinite(value) || value < 0 || value > 0x10ffff) return whole;
-      try { return String.fromCodePoint(value); } catch { return whole; }
-    }
-    return NAMED_ENTITIES[code] ?? whole;
-  });
-}
-
-function escapeChar(ch) {
-  if (ch === '&') return '&amp;';
-  if (ch === '<') return '&lt;';
-  if (ch === '>') return '&gt;';
-  if (ch === '"') return '&quot;';
-  return ch;
-}
-
-// A rendered line into plain characters plus which of them diff2html marked as inserted or
-// deleted. Returns null for anything other than ins/del markup, so unexpected input is left
-// untouched rather than mangled.
-function splitLineMarks(inner) {
-  const chars = [];
-  const marks = [];
-  let mark = '';
-  let index = 0;
-  const token = /<(\/?)(ins|del)>|([^<]+)/g;
-  let match;
-  while ((match = token.exec(inner)) !== null) {
-    if (match.index !== index) return null; // skipped over markup we do not understand
-    index = token.lastIndex;
-    if (match[2]) { mark = match[1] ? '' : match[2]; continue; }
-    for (const ch of decodeEntities(match[3])) { chars.push(ch); marks.push(mark); }
-  }
-  return index === inner.length ? { chars, marks } : null;
-}
-
-// highlight.js output into the same shape: one class stack per character.
-function splitHighlighted(html) {
-  const chars = [];
-  const stacks = [];
-  const stack = [];
-  let index = 0;
-  const token = /<span class="([^"]*)">|<\/span>|([^<]+)/g;
-  let match;
-  while ((match = token.exec(html)) !== null) {
-    if (match.index !== index) return null;
-    index = token.lastIndex;
-    if (match[1] !== undefined) { stack.push(match[1]); continue; }
-    if (match[2] === undefined) { stack.pop(); continue; }
-    for (const ch of decodeEntities(match[2])) { chars.push(ch); stacks.push(stack.slice()); }
-  }
-  return index === html.length ? { chars, stacks } : null;
-}
-
-function sameStack(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
-// Re-emit the line with the ins/del mark on the outside and highlight spans nested inside.
-//
-// The nesting order matters. Where a marked range and a token overlap only partially, one of
-// the two has to be split, and diff2html styles ins/del with a border radius and
-// inline-block, so splitting a mark shows up as two rounded boxes with a seam mid-word.
-// Highlight spans carry only a colour, so splitting those is invisible. Marks therefore stay
-// whole and spans are closed and reopened around them.
-function weave(chars, stacks, marks) {
-  let out = '';
-  let openStack = [];
-  let openMark = '';
-  for (let i = 0; i < chars.length; i++) {
-    const stack = stacks[i];
-    const mark = marks[i];
-    if (mark !== openMark) {
-      out += '</span>'.repeat(openStack.length);
-      if (openMark) out += `</${openMark}>`;
-      openStack = [];
-      openMark = mark;
-      if (mark) out += `<${mark}>`;
-    }
-    if (!sameStack(stack, openStack)) {
-      out += '</span>'.repeat(openStack.length);
-      for (const cls of stack) out += `<span class="${cls}">`;
-      openStack = stack;
-    }
-    out += escapeChar(chars[i]);
-  }
-  out += '</span>'.repeat(openStack.length);
-  if (openMark) out += `</${openMark}>`;
-  return out;
-}
-
-function highlightLine(inner, language) {
-  const split = splitLineMarks(inner);
-  if (!split || !split.chars.length || split.chars.length > HIGHLIGHT_MAX_LINE_CHARS) return null;
-  let result;
+function installBrowserBundle(pluginDir, log) {
   try {
-    result = hljs.highlight(split.chars.join(''), { language, ignoreIllegals: true });
-  } catch { return null; }
-  const highlighted = splitHighlighted(result.value);
-  // Bail unless the highlighter returned exactly the same characters back.
-  if (!highlighted || highlighted.chars.length !== split.chars.length) return null;
-  return weave(highlighted.chars, highlighted.stacks, split.marks);
-}
-
-function highlightHtml(html) {
-  let language = '';
-  return html.replace(
-    /data-lang="([^"]*)"|<span class="d2h-code-line-ctn">([\s\S]*?)<\/span>/g,
-    (whole, dataLang, inner) => {
-      if (dataLang !== undefined) { language = languageFor(dataLang); return whole; }
-      if (!language) return whole; // unknown or plain text, nothing to colour
-      const woven = highlightLine(inner, language);
-      return woven === null ? whole : `<span class="d2h-code-line-ctn hljs ${language}">${woven}</span>`;
-    },
-  );
+    const source = require.resolve(`diff2html/bundles/js/${VENDOR_BUNDLE}`);
+    const targetDir = join(pluginDir, 'public', 'vendor');
+    const target = join(targetDir, VENDOR_BUNDLE);
+    // Size is enough to spot a version change; the file is only ever replaced wholesale.
+    let current = -1;
+    try { current = statSync(target).size; } catch { /* not copied yet */ }
+    const wanted = statSync(source).size;
+    if (current === wanted) return true;
+    mkdirSync(targetDir, { recursive: true });
+    copyFileSync(source, target);
+    log(`copied ${VENDOR_BUNDLE} (${Math.round(wanted / 1024)} KB) for the browser`);
+    return true;
+  } catch (e) {
+    log(`could not install the highlighter bundle, syntax highlighting is off: ${e.message}`);
+    return false;
+  }
 }
 
 // The chosen highlight.js theme, read from the installed package. Only the token colours are
@@ -518,6 +397,8 @@ function diff2htmlStyles() {
 
 module.exports = {
   init(api) {
+    const bundleReady = installBrowserBundle(api.pluginDir, (m) => api.log(m));
+
     // sessionId → last built diff, so a layout toggle re-renders instead of re-running git.
     const cache = new Map();
     // sessionId → newest requestId, so a superseded poll's reply is dropped.
@@ -597,6 +478,7 @@ module.exports = {
         files: built.files,
         tooBig: built.tooBig,
         maxChanges: built.maxChanges,
+        highlight: bundleReady && shouldHighlight(built, api.getSettings()),
         html: renderHtml(built, layout, api.getSettings()),
       });
     }
@@ -657,9 +539,9 @@ module.exports = {
       const settings = api.getSettings();
       api.sendToFrontend('styles', {
         css: diff2htmlStyles(),
-        hljsCss: settings.syntaxHighlight === false ? '' : highlightStyles(settings.highlightTheme),
+        hljsCss: settings.syntaxHighlight === false || !bundleReady ? '' : highlightStyles(settings.highlightTheme),
         theme: settings.highlightTheme || 'github-dark',
-        highlight: settings.syntaxHighlight !== false,
+        highlight: bundleReady && settings.syntaxHighlight !== false,
       });
     });
 

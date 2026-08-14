@@ -1,5 +1,8 @@
 node_modules/
 
+# Third-party browser bundles copied out of node_modules by plugins at startup
+plugins/*/public/vendor/
+
 # Local app state
 config.json
 sessions.json

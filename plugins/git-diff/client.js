@@ -13,6 +13,7 @@ let btnEl = null;
 let currentHotkey = null;
 let stylesRequested = false;
 let appliedTheme = '';
+let highlighterPromise = null;
 
 let overlay = null;
 let el = {};
@@ -41,14 +42,14 @@ export function init(pluginApi) {
     if (btnEl) btnEl.style.display = settings.enabled === false ? 'none' : '';
     if (settings.enabled === false) close();
     bindHotkey(settings.hotkey || 'F9');
-    // Highlighting is applied server-side, so a theme or toggle change needs fresh CSS and a
-    // re-render of the diff itself.
-    const highlightChanged = stylesRequested
-      && (settings.highlightTheme !== previous.highlightTheme || settings.syntaxHighlight !== previous.syntaxHighlight);
-    if (highlightChanged) api.send('getStyles');
+    // A theme change only needs a different stylesheet. Turning highlighting on or off changes
+    // what the server permits, so the diff is re-rendered to pick that up.
+    const themeChanged = stylesRequested && settings.highlightTheme !== previous.highlightTheme;
+    const toggled = stylesRequested && settings.syntaxHighlight !== previous.syntaxHighlight;
+    if (themeChanged || toggled) api.send('getStyles');
     if (overlay && !overlay.hidden) {
       startPolling();
-      if (highlightChanged) { lastReply = null; request('diff'); }
+      if (toggled) { lastReply = null; request('diff'); }
     }
   });
   api.onMessage('styles', (msg) => injectStyles(msg || {}));
@@ -84,6 +85,34 @@ function injectStyles(msg) {
   if (typeof msg.hljsCss === 'string') {
     setStyleBlock('gd-hljs-styles', msg.hljsCss);
     appliedTheme = msg.theme || '';
+  }
+}
+
+// diff2html's own browser bundle, which brings highlight.js with it. Loaded on first open
+// rather than at page load, since it is only needed once a diff is on screen. The server
+// copies it into the plugin's public/ folder, so the browser caches it like any other script.
+function loadHighlighter() {
+  if (highlighterPromise) return highlighterPromise;
+  highlighterPromise = new Promise((resolve) => {
+    if (window.Diff2HtmlUI) { resolve(true); return; }
+    const script = document.createElement('script');
+    script.src = '/plugins/git-diff/vendor/diff2html-ui.min.js';
+    script.onload = () => resolve(!!window.Diff2HtmlUI);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return highlighterPromise;
+}
+
+// Highlighting is diff2html's job, not ours: its Diff2HtmlUI walks the rendered lines and
+// merges highlight.js output with the word-level ins/del markers it produced itself.
+async function highlightRendered() {
+  if (!(await loadHighlighter())) return;
+  if (!overlay || overlay.hidden) return;
+  try {
+    new window.Diff2HtmlUI(el.body).highlightCode();
+  } catch (e) {
+    console.error('[git-diff] highlighting failed:', e);
   }
 }
 
@@ -455,6 +484,7 @@ function renderDiff(msg) {
     // rename as "src/{old.js → new.js}", which never matches the path in msg.files.
     if (freshView && files > COLLAPSE_THRESHOLD) collapsed = new Set(renderedFileNames());
     applyCollapsed();
+    if (msg.highlight) highlightRendered();
   }
   el.body.scrollTop = scrollTop;
   updateCollapseButton();

@@ -2,7 +2,7 @@
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 
 const { execFile } = require('child_process');
-const { readFileSync, statSync, readlinkSync, copyFileSync, mkdirSync } = require('fs');
+const { readFileSync, statSync, copyFileSync, mkdirSync } = require('fs');
 const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
@@ -125,80 +125,17 @@ async function listWorktrees(repoRoot) {
   return trees.filter((t) => t.path && !t.bare);
 }
 
-// --- live working directory of a session's process (Linux) ---
-//
-// api.getSession() reports where a session was spawned, not where its shell or agent has since
-// moved, so a session whose agent has cd'd into a worktree still reports the original folder.
-// Reading /proc/<pid>/cwd answers that, but it needs the session's process id.
-//
-// CliDeck does not currently include a pid in the projection from api.getSession(), so this
-// stays inert and the folder falls back to where the session was spawned. The folder selector
-// still lists the session folder and every worktree of the repository, so the common case is
-// covered either way.
-//
-// A pid can be dug out of core's internals from here, by finding the already-loaded
-// sessions.js in require.cache and reading pty.pid off the live session map. That is
-// deliberately not done: it bypasses the projection the plugin API exists to provide, hands
-// over the whole pty object rather than one field, and would break silently on any rename or
-// refactor. UPSTREAM.md proposes the two-line addition to plugin-loader.js instead. When that
-// lands, this starts working with no change here.
-
-const LIVE_CWD_SUPPORTED = process.platform === 'linux';
-
-function ptyPid(session) {
-  return session && Number.isInteger(session.pid) && session.pid > 0 ? session.pid : 0;
-}
-
-function procCwd(pid) {
-  try { return readlinkSync(`/proc/${pid}/cwd`); } catch { return ''; }
-}
-
-function procName(pid) {
-  try { return readFileSync(`/proc/${pid}/comm`, 'utf8').trim(); } catch { return ''; }
-}
-
-// Where the session's own command is sitting right now. Only that process is inspected, not
-// anything it launched.
-function liveFolders(session) {
-  if (!LIVE_CWD_SUPPORTED) return [];
-  const pid = ptyPid(session);
-  if (!pid) return [];
-  const cwd = procCwd(pid);
-  return cwd ? [{ path: cwd, process: procName(pid) || `pid ${pid}` }] : [];
-}
-
-// The folder to diff. An explicit client choice wins. Otherwise prefer where the session's
-// processes actually are, falling back to where it was spawned.
+// The folder to diff. An explicit client choice wins, as long as it is a directory. Otherwise
+// use where the session was spawned. UPSTREAM.md proposes exposing the session's process id so
+// a plugin could follow the shell's real working directory instead.
 function resolveFolder(session, requested) {
   if (typeof requested === 'string' && requested) {
     try {
       if (statSync(requested).isDirectory()) return { folder: requested, rejected: false };
     } catch { /* fall through below */ }
-    return { folder: defaultFolder(session), rejected: true };
+    return { folder: session.cwd, rejected: true };
   }
-  return { folder: defaultFolder(session), rejected: false };
-}
-
-// Prefer where the session's command actually is. It only wins over the spawn folder when it
-// is inside a repository, so a session sitting somewhere unrelated does not open on an error.
-function defaultFolder(session) {
-  const live = liveFolders(session)[0];
-  if (!live || live.path === session.cwd) return session.cwd;
-  if (looksLikeRepo(live.path)) return live.path;
-  return looksLikeRepo(session.cwd) ? session.cwd : live.path;
-}
-
-function looksLikeRepo(dir) {
-  let current = dir;
-  for (let i = 0; i < 40; i++) {
-    try {
-      if (statSync(join(current, '.git')) ) return true;
-    } catch { /* keep walking up */ }
-    const parent = dirname(current);
-    if (parent === current) return false;
-    current = parent;
-  }
-  return false;
+  return { folder: session.cwd, rejected: false };
 }
 
 function isBinaryBuffer(buf) {
@@ -419,16 +356,15 @@ module.exports = {
       return `${folder}|${settings.contextLines}|${settings.maxChanges}|${settings.baseBranch || ''}`;
     }
 
-    // Folders the client can switch between: wherever the session's processes currently are,
-    // where the session started, and every worktree of the repository in view. The folder in
-    // use is always present so the selector can always show it.
+    // Folders the client can switch between: where the session started, and every worktree of
+    // the repository in view. The folder in use is always present so the selector can always
+    // show it.
     function folderChoices(session, built, folder) {
       const seen = new Map();
       const add = (path, label, kind) => {
         if (!path || seen.has(path)) return;
         seen.set(path, { path, label, kind });
       };
-      for (const live of liveFolders(session)) add(live.path, live.process, 'live');
       add(session.cwd, 'session start', 'session');
       for (const tree of built.worktrees || []) {
         add(tree.path, tree.branch || (tree.detached ? 'detached' : ''), tree.path === built.repoRoot ? 'current-worktree' : 'worktree');

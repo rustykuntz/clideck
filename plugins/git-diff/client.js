@@ -355,7 +355,6 @@ function shortenPath(path) {
 
 function optionLabel(choice, repoRoot) {
   const path = shortenPath(choice.path);
-  if (choice.kind === 'live') return `${path}  (${choice.label || 'in use now'})`;
   if (choice.kind === 'session') return `${path}  (session start folder)`;
   if (choice.kind === 'worktree' || choice.kind === 'current-worktree') {
     const here = choice.path === repoRoot ? ', current' : '';

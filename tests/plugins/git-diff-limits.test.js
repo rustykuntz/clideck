@@ -12,9 +12,13 @@
 //   4. renames, new files and multi-file patches are handled
 //   5. the scan itself is cheap enough to run on every diff
 //
+// The file list for a patch past that ceiling comes from `git diff --numstat -z` instead of from
+// a parse, so its reader is checked here too, against the record shapes git actually emits.
+//
 //   node tests/plugins/git-diff-limits.test.js
 
 const { capLongLines, pathFromHeader, MAX_LINE_CHARS, MAX_PATCH_BYTES } = require('../../plugins/git-diff/budget');
+const { parseNumstat } = require('../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -104,6 +108,38 @@ check('a multi-megabyte patch of ordinary lines is scanned quickly and unchanged
   scanned.longLines.size === 0 && scanned.patch === bigPatch && tookMs < 500,
   `${(bigPatch.length / 1048576).toFixed(1)} MB in ${tookMs}ms`);
 console.log(`        (scanned ${(bigPatch.length / 1048576).toFixed(1)} MB in ${tookMs}ms)`);
+
+// The numstat reader. Record shapes confirmed against git 2.55: an ordinary file is
+// "adds\tdels\tpath", a rename leaves the path field empty and follows it with the old and new
+// paths as separate records, and a binary file reports "-" for both counts.
+const ordinaryRecord = parseNumstat('1\t0\tkeep.txt\0');
+check('numstat: an ordinary record carries both counts',
+  ordinaryRecord.length === 1 && ordinaryRecord[0].path === 'keep.txt'
+    && ordinaryRecord[0].additions === 1 && ordinaryRecord[0].deletions === 0
+    && ordinaryRecord[0].isRename === false && ordinaryRecord[0].isBinary === false,
+  JSON.stringify(ordinaryRecord));
+
+const NUL = '\u0000';
+const renameRecord = parseNumstat(['1\t0\tkeep.txt', '1\t0\t', 'old.txt', 'new.txt', ''].join(NUL));
+check('numstat: a rename reports both paths and does not swallow its neighbour',
+  renameRecord.length === 2
+    && renameRecord[1].oldPath === 'old.txt' && renameRecord[1].path === 'new.txt'
+    && renameRecord[1].isRename === true
+    && renameRecord[0].path === 'keep.txt',
+  JSON.stringify(renameRecord));
+
+const binaryRecord = parseNumstat('-\t-\timage.png\0');
+check('numstat: a binary file has no counts and is marked binary',
+  binaryRecord.length === 1 && binaryRecord[0].isBinary === true
+    && binaryRecord[0].additions === 0 && binaryRecord[0].deletions === 0,
+  JSON.stringify(binaryRecord));
+
+check('numstat: a tab in the path is kept, not treated as a field break',
+  parseNumstat('2\t3\todd\tname.txt\0')[0].path === 'odd\tname.txt',
+  JSON.stringify(parseNumstat('2\t3\todd\tname.txt\0')));
+
+check('numstat: no output means no files',
+  parseNumstat('').length === 0 && parseNumstat(undefined).length === 0);
 
 // 6. A conflicted file, since git reports those differently when no base is named. The plugin
 // always names one, so the ordinary header form is what arrives, and the ceiling applies.

@@ -1,148 +1,25 @@
 // Git Diff — runs git in a session's working folder and renders the patch with diff2html.
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 
-const { execFile } = require('child_process');
 const { readFileSync, statSync, copyFileSync, mkdirSync, promises: fsp } = require('fs');
 const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
 const { collectUntracked } = require('./untracked');
-const { GLOBAL_ARGS, UNTRUSTED_ARGS, diffArgs, numstatArgs, riskyKeys, isValidRefName } = require('./safety');
+const { diffArgs } = require('./safety');
 const { MAX_PATCH_BYTES, MAX_CHANGES_CEILING, MAX_LINE_CHARS, capLongLines } = require('./budget');
+const {
+  makeGit, trustedGit, resolveRepo, resolveBase, listWorktrees, assessTrust, listUntracked, numstatFiles,
+} = require('./git');
 // highlight.js is not called from here: the browser does the highlighting through diff2html's
 // own bundle. The package is still needed for its theme stylesheets, resolved by path below.
 
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
-const GIT_TIMEOUT = 15000;
-const MAX_BUFFER = 64 * 1024 * 1024;
 const HIGHLIGHT_MAX_LINES = 6000; // above this the browser is told not to highlight
 const CACHE_MAX = 20;
 const CACHE_MAX_BYTES = 16 * 1024 * 1024;
 const CACHE_TTL = 5 * 60 * 1000;
 const FOLDER_STAT_TIMEOUT = 2000;
 const TRUST_TTL = 60 * 1000;
-
-// GIT_OPTIONAL_LOCKS=0 stops `git diff` taking index.lock to refresh the index stat cache.
-// Without it, polling a folder where an agent is also running git can collide on that lock.
-// GIT_TERMINAL_PROMPT=0 stops git ever blocking on a credential prompt.
-const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };
-
-// Run git and never throw — callers branch on ok.
-function runGit(args, cwd) {
-  return new Promise((resolve) => {
-    execFile('git', args, { cwd, env: GIT_ENV, timeout: GIT_TIMEOUT, maxBuffer: MAX_BUFFER, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
-      const out = (stdout || Buffer.alloc(0)).toString('utf8');
-      const errOut = (stderr || Buffer.alloc(0)).toString('utf8');
-      if (!err) return resolve({ ok: true, stdout: out, stderr: errOut });
-      resolve({
-        ok: false,
-        stdout: out,
-        stderr: errOut,
-        missing: err.code === 'ENOENT',
-        timedOut: !!err.killed,
-        message: errOut.trim() || err.message,
-      });
-    });
-  });
-}
-
-// Every git call goes through one of these. The trusted one leaves the repository's own
-// settings alone; the untrusted one switches off what ./safety can switch off. -c has to come
-// before the subcommand, which is why it is prepended here rather than passed by the callers.
-function makeGit(untrusted) {
-  const prefix = untrusted ? [...GLOBAL_ARGS, ...UNTRUSTED_ARGS] : GLOBAL_ARGS;
-  return (args, cwd) => runGit([...prefix, ...args], cwd);
-}
-
-const trustedGit = makeGit(false);
-
-async function resolveRepo(git, cwd) {
-  const top = await git(['rev-parse', '--show-toplevel'], cwd);
-  if (!top.ok) {
-    if (top.missing) return { ok: false, code: 'no-git', message: 'git was not found on PATH' };
-    if (top.timedOut) return { ok: false, code: 'timeout', message: 'git rev-parse timed out' };
-    return { ok: false, code: 'not-a-repo', message: `Not a git repository: ${cwd}` };
-  }
-  const repoRoot = top.stdout.trim();
-  if (!repoRoot) return { ok: false, code: 'not-a-repo', message: `Not a git repository: ${cwd}` };
-
-  const named = await git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
-  let branch = named.ok ? named.stdout.trim() : '';
-  if (!branch || branch === 'HEAD') {
-    const short = await git(['rev-parse', '--short', 'HEAD'], repoRoot);
-    branch = short.ok && short.stdout.trim() ? `detached at ${short.stdout.trim()}` : 'no commits yet';
-  }
-  return { ok: true, repoRoot, branch };
-}
-
-async function hasCommits(git, repoRoot) {
-  const head = await git(['rev-parse', '--verify', '--quiet', 'HEAD'], repoRoot);
-  return head.ok && !!head.stdout.trim();
-}
-
-// Which commit the diff is taken against, and what to call it in the header.
-async function resolveBase(git, repoRoot, scope, baseBranchSetting) {
-  const committed = await hasCommits(git, repoRoot);
-  const localBase = committed ? 'HEAD' : EMPTY_TREE;
-  const localLabel = committed ? 'HEAD' : 'empty repo';
-
-  // The setting reaches git's argv, so a name that is not a ref name is dropped rather than
-  // handed over. The client says so, since silently ignoring it looks like a broken setting.
-  const badSetting = !!baseBranchSetting && !isValidRefName(baseBranchSetting);
-  const wanted = badSetting ? '' : baseBranchSetting;
-
-  if (scope !== 'base') return { base: localBase, baseLabel: localLabel, baseFallback: false, badSetting };
-  if (!committed) return { base: localBase, baseLabel: localLabel, baseFallback: true, badSetting };
-
-  const candidates = [];
-  if (wanted) {
-    candidates.push(wanted);
-  } else {
-    const originHead = await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoRoot);
-    if (originHead.ok && originHead.stdout.trim()) candidates.push(originHead.stdout.trim());
-    candidates.push('origin/main', 'origin/master', 'main', 'master');
-  }
-
-  const head = await git(['rev-parse', 'HEAD'], repoRoot);
-  const headSha = head.ok ? head.stdout.trim() : '';
-
-  for (const candidate of candidates) {
-    const exists = await git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], repoRoot);
-    if (!exists.ok || !exists.stdout.trim()) continue;
-    const mergeBase = await git(['merge-base', 'HEAD', candidate], repoRoot);
-    if (!mergeBase.ok || !mergeBase.stdout.trim()) continue;
-    const base = mergeBase.stdout.trim();
-    // On the base branch itself the merge base is HEAD, so this scope shows nothing extra.
-    return { base, baseLabel: candidate, baseFallback: false, baseIsHead: base === headSha, badSetting };
-  }
-  // Nothing to compare against — show uncommitted work instead and say so.
-  return { base: localBase, baseLabel: localLabel, baseFallback: true, badSetting };
-}
-
-// Every worktree attached to this repository, main checkout included. A session started in
-// the main checkout can therefore offer its worktrees as targets, which is the common case
-// when an agent works on a branch in a worktree.
-async function listWorktrees(git, repoRoot) {
-  const listed = await git(['worktree', 'list', '--porcelain'], repoRoot);
-  if (!listed.ok) return [];
-  const trees = [];
-  let current = null;
-  for (const line of listed.stdout.split('\n')) {
-    if (line.startsWith('worktree ')) {
-      current = { path: line.slice(9).trim(), branch: '', detached: false, bare: false };
-      trees.push(current);
-    } else if (!current) {
-      continue;
-    } else if (line.startsWith('branch ')) {
-      current.branch = line.slice(7).trim().replace(/^refs\/heads\//, '');
-    } else if (line === 'detached') {
-      current.detached = true;
-    } else if (line === 'bare') {
-      current.bare = true;
-    }
-  }
-  return trees.filter((t) => t.path && !t.bare);
-}
 
 // The folder to diff. An explicit client choice wins, as long as it is a directory. Otherwise
 // use where the session was spawned. UPSTREAM.md proposes exposing the session's process id so
@@ -172,80 +49,10 @@ async function isDirectory(path) {
   }
 }
 
-// Whether the plugin may hand a folder's own git configuration to git. Diffing a repository
-// runs commands it names in diff.external, diff.<driver>.textconv, filter.<driver>.clean and
-// core.fsmonitor, and this panel re-runs git every few seconds on its own. The session's folder
-// and the worktrees of its repository are trusted: that is where the user's agent already runs.
-// Anything else has its configuration read first, and a folder that names a command needs the
-// user to say go ahead.
-//
-// rev-parse and config run no hooks or filters, so probing is safe. They still go through the
-// untrusted git, which switches off core.fsmonitor.
-async function assessTrust(sessionCwd, folder) {
-  if (!folder || folder === sessionCwd) return { trusted: true, riskyKeys: [] };
-
-  const untrustedGit = makeGit(true);
-  const sessionRepo = await resolveRepo(trustedGit, sessionCwd);
-  if (sessionRepo.ok) {
-    const trees = await listWorktrees(trustedGit, sessionRepo.repoRoot);
-    const own = new Set([sessionRepo.repoRoot, ...trees.map((t) => t.path)]);
-    const top = await untrustedGit(['rev-parse', '--show-toplevel'], folder);
-    if (top.ok && own.has(top.stdout.trim())) return { trusted: true, riskyKeys: [] };
-  }
-
-  const config = await untrustedGit(['config', '--local', '--list', '-z'], folder);
-  return { trusted: false, riskyKeys: config.ok ? riskyKeys(config.stdout) : [] };
-}
-
-// Untracked files are turned into added-file patches by ./untracked, which also reports what it
-// left out: files too large to render, and paths it refused to read at all.
-async function untrackedPatch(git, repoRoot) {
-  const listed = await git(['ls-files', '--others', '--exclude-standard', '-z'], repoRoot);
-  if (!listed.ok) return { patch: '', oversized: new Map(), skipped: new Map(), entries: [], truncated: null };
-  const paths = listed.stdout.split('\0').filter(Boolean).sort();
-  return collectUntracked(repoRoot, paths);
-}
-
-// The file list when the patch is too large to parse. numstat covers tracked files only, so the
-// untracked side comes from the scan's own records. -z records are "adds\tdels\tpath", except a
-// rename, which is "adds\tdels\t" followed by the old and new paths as separate records, and a
-// binary file, which reports "-" for both counts.
-function parseNumstat(out) {
-  const fields = String(out || '').split('\0');
-  const files = [];
-  for (let i = 0; i < fields.length; i++) {
-    const record = fields[i];
-    if (!record) continue;
-    const parts = record.split('\t');
-    if (parts.length < 3) continue;
-    const [addRaw, delRaw] = parts;
-    let path = parts.slice(2).join('\t');
-    let oldPath = '';
-    if (!path) {
-      oldPath = fields[++i] || '';
-      path = fields[++i] || '';
-    }
-    files.push({
-      path,
-      oldPath,
-      additions: addRaw === '-' ? 0 : Number(addRaw) || 0,
-      deletions: delRaw === '-' ? 0 : Number(delRaw) || 0,
-      isNew: false,
-      isDeleted: false,
-      isRename: !!oldPath,
-      isBinary: addRaw === '-' && delRaw === '-',
-      isTooBig: false,
-      oversizedBytes: 0,
-      longestLine: 0,
-    });
-  }
-  return files;
-}
-
-async function tooBigFileList(git, repoRoot, base, untrackedEntries) {
-  const numstat = await git(numstatArgs(base), repoRoot);
-  const tracked = numstat.ok ? parseNumstat(numstat.stdout) : [];
-  const untracked = untrackedEntries.map((e) => ({
+// The untracked half of the file list for a diff too large to parse. Everything needed is
+// already in the scan's records, so no second pass over the filesystem is required.
+function untrackedFileList(entries) {
+  return entries.map((e) => ({
     path: e.path,
     oldPath: '',
     additions: e.additions || 0,
@@ -258,7 +65,6 @@ async function tooBigFileList(git, repoRoot, base, untrackedEntries) {
     oversizedBytes: e.oversized ? e.bytes : 0,
     longestLine: 0,
   }));
-  return [...tracked, ...untracked];
 }
 
 function sumTotals(files) {
@@ -288,7 +94,7 @@ async function buildDiff(cwd, scope, settings, opts = {}) {
     return { ok: false, code: 'git-failed', message: tracked.message || 'git diff failed' };
   }
 
-  const untracked = await untrackedPatch(git, repoRoot);
+  const untracked = await collectUntracked(repoRoot, await listUntracked(git, repoRoot));
   const patch = tracked.stdout + untracked.patch;
   const patchBytes = Buffer.byteLength(patch);
   const maxChanges = Number.isFinite(settings.maxChanges)
@@ -308,7 +114,7 @@ async function buildDiff(cwd, scope, settings, opts = {}) {
   // Parsing is where a huge diff costs the server, so the byte check comes before it. The file
   // list then has to come from somewhere other than the parse.
   if (patchBytes > MAX_PATCH_BYTES) {
-    const files = await tooBigFileList(git, repoRoot, base, untracked.entries);
+    const files = [...await numstatFiles(git, repoRoot, base), ...untrackedFileList(untracked.entries)];
     const totals = sumTotals(files);
     return {
       ...common,

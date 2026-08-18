@@ -24,7 +24,9 @@ let maximised = false;                  // remembered across opens while the tab
 let folder = '';                        // folder being diffed; '' means the session's own folder
 const folderBySession = new Map();      // remembers the choice while the tab stays open
 let pendingRequest = null;
+let pendingTimer = null;                // clears a request that never came back
 let pendingPatchRequest = null;
+const unsafeAllowed = new Set();        // folders the user chose to diff despite their git config
 let requestSeq = 0;
 let pollTimer = null;
 let collapsed = new Set();
@@ -290,6 +292,7 @@ function open() {
 function close() {
   stopPolling();
   pendingRequest = null;
+  clearPending();
   if (overlay) {
     overlay.hidden = true;
     el.body.innerHTML = '';
@@ -322,7 +325,23 @@ function request(kind, opts = {}) {
     el.refresh.classList.add('gd-busy');
     if (!lastReply) el.body.innerHTML = '<div class="gd-state">Running git…</div>';
   }
-  api.send(kind, { requestId: pendingRequest, sessionId, scope, layout, folder });
+  // Polling skips a tick while a request is out, so a reply that never arrives would stop the
+  // panel refreshing for good. The server's git timeout is 15 seconds; this gives it 20.
+  clearPending();
+  pendingTimer = setTimeout(() => {
+    pendingRequest = null;
+    pendingTimer = null;
+    el.refresh.classList.remove('gd-busy');
+  }, 20000);
+  api.send(kind, {
+    requestId: pendingRequest, sessionId, scope, layout, folder,
+    allowUnsafe: unsafeAllowed.has(folder),
+  });
+}
+
+function clearPending() {
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
 }
 
 // --- folder selection ---
@@ -386,6 +405,7 @@ function onDiffReply(msg) {
   if (!overlay || overlay.hidden) return;
   if (msg.requestId !== pendingRequest) return; // stale or another tab's reply
   pendingRequest = null;
+  clearPending();
   el.refresh.classList.remove('gd-busy');
 
   if (!msg.ok) { renderError(msg); return; }
@@ -427,6 +447,7 @@ function renderError(msg) {
     'no-git': 'git was not found on PATH of the CliDeck server process.',
     'no-session': 'That session is no longer running.',
     timeout: 'git took longer than 15 seconds and was stopped.',
+    'unsafe-config': 'This folder\'s git configuration would run commands.',
   };
   stopPolling();
   el.summary.textContent = '';
@@ -435,7 +456,25 @@ function renderError(msg) {
   el.body.innerHTML = `<div class="gd-state gd-error">
     <div class="gd-error-title">${escapeHtml(hints[msg.code] || 'git failed')}</div>
     ${msg.message ? `<pre class="gd-error-detail">${escapeHtml(msg.message)}</pre>` : ''}
+    ${msg.code === 'unsafe-config' ? unsafeConfigActions(msg) : ''}
   </div>`;
+  if (msg.code === 'unsafe-config') {
+    el.body.querySelector('.gd-allow-unsafe')?.addEventListener('click', () => {
+      unsafeAllowed.add(msg.folder || '');
+      lastReply = null;
+      request('diff');
+      startPolling();   // renderError stopped it, and the user has now chosen to go ahead
+    });
+  }
+}
+
+// Git runs what these keys name whenever it diffs the folder. Three of them are switched off
+// per invocation; a clean filter cannot be, so going ahead means accepting that it runs.
+function unsafeConfigActions(msg) {
+  const keys = (msg.riskyKeys || []).map((k) => `<li>${escapeHtml(k)}</li>`).join('');
+  return `${keys ? `<ul class="gd-error-keys">${keys}</ul>` : ''}
+    <p class="gd-error-note">Pick another folder, or diff it anyway. The panel re-runs git every few seconds while it is open.</p>
+    <button class="gd-btn gd-allow-unsafe" type="button">Diff anyway</button>`;
 }
 
 function renderDiff(msg) {
@@ -466,6 +505,18 @@ function renderDiff(msg) {
   if (skipped.length) {
     notes.push(`${skipped.length} untracked entr${skipped.length === 1 ? 'y' : 'ies'} skipped, not a regular file: ${skipped.map((s) => `${s.path} (${s.kind})`).join(', ')}`);
   }
+  // A file left out for line length is text, so it must not read as "binary" in the panel.
+  const longLines = (msg.files || []).filter((f) => f.longestLine);
+  if (longLines.length) {
+    const limit = Number(msg.maxLineChars || 0).toLocaleString();
+    notes.push(`${longLines.length} file${longLines.length === 1 ? '' : 's'} shown without contents, lines over ${limit} characters: ${longLines.map((f) => `${f.path} (${f.longestLine.toLocaleString()})`).join(', ')}`);
+  }
+  if (msg.untrackedTruncated) {
+    const { files, reason } = msg.untrackedTruncated;
+    notes.push(`${files} untracked file${files === 1 ? '' : 's'} not shown, past the scan ${reason === 'bytes' ? 'size' : 'file count'} budget.`);
+  }
+  if (msg.baseBranchInvalid) notes.push('The Base Branch setting is not a valid ref name, so it was ignored.');
+  if (msg.folderTrusted === false) notes.push('This folder is outside the session\'s repository, so its git configuration is used when it is diffed.');
   el.note.hidden = notes.length === 0;
   el.note.textContent = notes.join(' ');
 
@@ -502,9 +553,14 @@ function renderFileListOnly(msg) {
       <span class="gd-big-stats"><span class="gd-add">+${f.additions}</span> <span class="gd-del">−${f.deletions}</span></span>
     </li>`).join('');
   const total = (msg.totals.additions + msg.totals.deletions).toLocaleString();
+  // Two different limits land here: too many changed lines, or a patch too large to parse at
+  // all. Only the first one is a setting the user can raise.
+  const why = msg.tooBig?.reason === 'bytes'
+    ? `The patch is ${formatBytes(msg.tooBig.bytes)}, too large to render. Use Copy patch to get it.`
+    : `${total} changed lines, over the ${Number(msg.maxChanges).toLocaleString()} line limit. Raise "Max Changed Lines" in the plugin settings, or use Copy patch.`;
   return `<div class="gd-state gd-toobig">
       <div class="gd-error-title">Diff too large to render</div>
-      <p>${total} changed lines, over the ${Number(msg.maxChanges).toLocaleString()} line limit. Raise "Max Changed Lines" in the plugin settings, or use Copy patch.</p>
+      <p>${why}</p>
     </div>
     <ul class="gd-big-list">${rows}</ul>`;
 }

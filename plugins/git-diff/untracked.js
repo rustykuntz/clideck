@@ -4,14 +4,21 @@
 //
 // Nothing here reads a path that is not a regular file, and nothing follows a symlink: an
 // untracked link pointing at ~/.ssh/id_rsa must never end up rendered as patch content, and
-// opening a fifo or device node would block the single node process the whole server runs in.
+// opening a fifo or device node would block the process the whole server runs in.
+//
+// The work is bounded and asynchronous. Bounded because an unignored node_modules can put a
+// hundred thousand paths on the list, and asynchronous because a slow or dead mount would
+// otherwise freeze the event loop for as long as the filesystem takes to answer.
 //
 // Kept out of index.js so the tests can drive it without the plugin's npm dependencies.
 
-const { lstatSync, readlinkSync, openSync, closeSync, fstatSync, readFileSync, constants } = require('fs');
+const { promises: fsp, constants } = require('fs');
 const { join } = require('path');
 
-const MAX_UNTRACKED_BYTES = 512 * 1024; // larger untracked files are listed, not rendered
+const MAX_UNTRACKED_BYTES = 512 * 1024;              // per file: larger ones are listed, not read
+const MAX_UNTRACKED_FILES = 2000;                    // paths classified per scan
+const MAX_UNTRACKED_TOTAL_BYTES = 8 * 1024 * 1024;   // bytes read per scan
+const SCAN_CONCURRENCY = 8;
 const BINARY_SNIFF_BYTES = 8000;
 
 function isBinaryBuffer(buf) {
@@ -34,77 +41,83 @@ function describeKind(st) {
 // so there the lstat is the only guard.
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
 
-// Reads through a descriptor so the type and size checks apply to the file actually opened,
-// not to whatever the path pointed at a moment earlier.
-function readRegularFile(abs) {
-  let fd;
+// Reads through a handle so the type and size checks apply to the file actually opened, not to
+// whatever the path pointed at a moment earlier.
+async function readRegularFile(abs) {
+  let handle;
   try {
-    fd = openSync(abs, OPEN_FLAGS);
-    const st = fstatSync(fd);
+    handle = await fsp.open(abs, OPEN_FLAGS);
+    const st = await handle.stat();
     if (!st.isFile()) return { kind: describeKind(st) };
     if (st.size > MAX_UNTRACKED_BYTES) return { oversizedBytes: st.size };
-    return { buf: readFileSync(fd) };
+    return { buf: await handle.readFile() };
   } catch {
     return null; // vanished, unreadable, or swapped for a symlink since the lstat
   } finally {
-    if (fd !== undefined) { try { closeSync(fd); } catch { /* nothing left to do */ } }
+    if (handle) { try { await handle.close(); } catch { /* nothing left to do */ } }
   }
 }
 
+// First pass over a path: decide what it is, and how many bytes reading it would cost. Nothing
+// is read here, so this stays cheap enough to run over the whole list.
+//
 // Returns one of:
-//   null                        — vanished or unreadable between listing and reading
-//   { patch, oversized, bytes } — rendered, or a placeholder for binary and oversized files
-//   { skipped: true, kind }     — not a regular file, so never read
-function synthesiseAddedFile(repoRoot, relPath) {
-  const header = `diff --git a/${relPath} b/${relPath}\nnew file mode 100644\n`;
-  const placeholder = `${header}Binary files /dev/null and b/${relPath} differ\n`;
-
-  // A newline in the name would end the header line early and let the rest of the name be read
-  // as patch syntax, so such a file is listed rather than rendered.
-  if (/[\r\n]/.test(relPath)) return { skipped: true, kind: 'newline in name' };
+//   null                            — vanished or unreadable, or a name we will not render
+//   { type: 'symlink', target }
+//   { type: 'regular', size }
+//   { type: 'skipped', kind }
+async function classifyPath(repoRoot, relPath) {
+  // A newline in the name would end the diff header line early and let the rest of the name be
+  // read as patch syntax, so such a file is listed rather than rendered.
+  if (/[\r\n]/.test(relPath)) return { type: 'skipped', kind: 'newline in name' };
 
   const abs = join(repoRoot, relPath);
   let st;
   try {
-    st = lstatSync(abs);
+    st = await fsp.lstat(abs);
   } catch {
     return null;
   }
 
-  // A symlink is shown the way git shows it once added: mode 120000, with the link target as
-  // the content. readlinkSync never opens the target, so a link out of the repository cannot
-  // leak the file it points at.
+  // readlink never opens the target, so a link out of the repository cannot leak the file it
+  // points at.
   if (st.isSymbolicLink()) {
-    let target;
     try {
-      target = readlinkSync(abs);
+      return { type: 'symlink', target: await fsp.readlink(abs) };
     } catch {
       return null;
     }
-    const linkHeader = `diff --git a/${relPath} b/${relPath}\nnew file mode 120000\n`;
-    const bytes = Buffer.byteLength(target);
-    if (/[\r\n]/.test(target)) {
-      return { patch: `${linkHeader}Binary files /dev/null and b/${relPath} differ\n`, oversized: false, bytes };
-    }
-    return {
-      patch: `${linkHeader}--- /dev/null\n+++ b/${relPath}\n@@ -0,0 +1 @@\n+${target}\n\\ No newline at end of file\n`,
-      oversized: false,
-      bytes,
-    };
   }
+  if (!st.isFile()) return { type: 'skipped', kind: describeKind(st) };
+  return { type: 'regular', size: st.size };
+}
 
-  if (!st.isFile()) return { skipped: true, kind: describeKind(st) };
-  // Checked from the stat, so an enormous file is never pulled into memory to be rejected.
-  if (st.size > MAX_UNTRACKED_BYTES) return { patch: placeholder, oversized: true, bytes: st.size };
+function headerFor(relPath, mode) {
+  return `diff --git a/${relPath} b/${relPath}\nnew file mode ${mode}\n`;
+}
 
-  const read = readRegularFile(abs);
+// A symlink is shown the way git shows it once added: mode 120000, with the link target as the
+// content and git's no-newline marker, since a target has no trailing newline.
+function symlinkPatch(relPath, target) {
+  const header = headerFor(relPath, '120000');
+  if (/[\r\n]/.test(target)) return `${header}Binary files /dev/null and b/${relPath} differ\n`;
+  return `${header}--- /dev/null\n+++ b/${relPath}\n@@ -0,0 +1 @@\n+${target}\n\\ No newline at end of file\n`;
+}
+
+// Second pass for a regular file that fits the budget. The size checks run again against the
+// open handle, so a file that grew since it was classified is still caught.
+async function regularFileResult(repoRoot, relPath) {
+  const header = headerFor(relPath, '100644');
+  const placeholder = `${header}Binary files /dev/null and b/${relPath} differ\n`;
+
+  const read = await readRegularFile(join(repoRoot, relPath));
   if (!read) return null;
   if (read.kind) return { skipped: true, kind: read.kind };
-  if (read.oversizedBytes) return { patch: placeholder, oversized: true, bytes: read.oversizedBytes };
+  if (read.oversizedBytes) return { patch: placeholder, oversized: true, bytes: read.oversizedBytes, additions: 0 };
 
   const buf = read.buf;
-  if (isBinaryBuffer(buf)) return { patch: placeholder, oversized: false, bytes: buf.length };
-  if (buf.length === 0) return { patch: header, oversized: false, bytes: 0 }; // new but empty, no hunk
+  if (isBinaryBuffer(buf)) return { patch: placeholder, oversized: false, binary: true, bytes: buf.length, additions: 0 };
+  if (buf.length === 0) return { patch: header, oversized: false, bytes: 0, additions: 0 }; // new but empty, no hunk
 
   const text = buf.toString('utf8');
   const endsWithNewline = text.endsWith('\n');
@@ -115,27 +128,129 @@ function synthesiseAddedFile(repoRoot, relPath) {
     patch: `${header}--- /dev/null\n+++ b/${relPath}\n@@ -0,0 +1,${lines.length} @@\n${body}${noNewline}\n`,
     oversized: false,
     bytes: buf.length,
+    additions: lines.length,
   };
+}
+
+// One path, classified and rendered. Kept exported because it is the unit the tests drive.
+async function synthesiseAddedFile(repoRoot, relPath) {
+  const info = await classifyPath(repoRoot, relPath);
+  if (!info) return null;
+  if (info.type === 'skipped') return { skipped: true, kind: info.kind };
+  if (info.type === 'symlink') {
+    return { patch: symlinkPatch(relPath, info.target), oversized: false, bytes: Buffer.byteLength(info.target), additions: 1 };
+  }
+  if (info.size > MAX_UNTRACKED_BYTES) {
+    return { patch: `${headerFor(relPath, '100644')}Binary files /dev/null and b/${relPath} differ\n`, oversized: true, bytes: info.size, additions: 0 };
+  }
+  return regularFileResult(repoRoot, relPath);
+}
+
+// Runs fn over the list with a fixed number of workers, keeping results in input order.
+async function mapWithLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      out[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 // One patch for the whole untracked list, plus what was left out and why:
 //   oversized: path → byte size, listed but not rendered
 //   skipped:   path → kind, never read
-function collectUntracked(repoRoot, paths) {
-  const parts = [];
+//   truncated: { files, reason } for paths past the scan budget, or null
+//   entries:   one record per rendered path, so a caller can build a file list without the patch
+//
+// Both filesystem passes run concurrently, and the budget is spent by walking the classified
+// list in order, so the same repository always cuts the list at the same place.
+async function collectUntracked(repoRoot, paths) {
+  const considered = paths.slice(0, MAX_UNTRACKED_FILES);
+  let truncated = paths.length > considered.length
+    ? { files: paths.length - considered.length, reason: 'count' }
+    : null;
+
+  const classified = await mapWithLimit(considered, SCAN_CONCURRENCY, (relPath) => classifyPath(repoRoot, relPath));
+
+  // Decide what happens to every path before reading anything, so the byte budget is spent on
+  // the same files every time regardless of how the reads interleave.
   const oversized = new Map();
   const skipped = new Map();
-  for (const relPath of paths) {
-    const result = synthesiseAddedFile(repoRoot, relPath);
-    if (!result) continue;
-    if (result.skipped) {
-      skipped.set(relPath, result.kind);
+  const steps = [];
+  let bytesPlanned = 0;
+  let budgetHit = -1;
+
+  for (let i = 0; i < considered.length; i++) {
+    const relPath = considered[i];
+    const info = classified[i];
+    if (!info) continue;
+    if (info.type === 'skipped') {
+      skipped.set(relPath, info.kind);
+      continue;
+    }
+    if (info.type === 'symlink') {
+      steps.push({ relPath, patch: symlinkPatch(relPath, info.target), bytes: Buffer.byteLength(info.target), additions: 1 });
+      continue;
+    }
+    // Oversized files are never read, so they cost no budget: they render as a placeholder.
+    if (info.size > MAX_UNTRACKED_BYTES) {
+      oversized.set(relPath, info.size);
+      steps.push({ relPath, patch: `${headerFor(relPath, '100644')}Binary files /dev/null and b/${relPath} differ\n`, bytes: info.size, additions: 0, oversized: true });
+      continue;
+    }
+    if (bytesPlanned + info.size > MAX_UNTRACKED_TOTAL_BYTES) {
+      budgetHit = i;
+      break;
+    }
+    bytesPlanned += info.size;
+    steps.push({ relPath, read: true });
+  }
+
+  // Everything from the file that broke the budget onwards is left alone, whatever its type.
+  if (budgetHit >= 0) {
+    truncated = { files: (considered.length - budgetHit) + (truncated ? truncated.files : 0), reason: 'bytes' };
+  }
+
+  const read = await mapWithLimit(steps, SCAN_CONCURRENCY, (step) => (step.read ? regularFileResult(repoRoot, step.relPath) : null));
+
+  const parts = [];
+  const entries = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step.read) {
+      parts.push(step.patch);
+      entries.push({ path: step.relPath, additions: step.additions, bytes: step.bytes, oversized: !!step.oversized, binary: false });
+      continue;
+    }
+    const result = read[i];
+    if (!result) continue;                       // vanished between the two passes
+    if (result.skipped) {                        // swapped for something unreadable in between
+      skipped.set(step.relPath, result.kind);
       continue;
     }
     parts.push(result.patch);
-    if (result.oversized) oversized.set(relPath, result.bytes);
+    if (result.oversized) oversized.set(step.relPath, result.bytes);
+    entries.push({
+      path: step.relPath,
+      additions: result.additions,
+      bytes: result.bytes,
+      oversized: !!result.oversized,
+      binary: !!result.binary,
+    });
   }
-  return { patch: parts.join(''), oversized, skipped };
+
+  return { patch: parts.join(''), oversized, skipped, entries, truncated };
 }
 
-module.exports = { synthesiseAddedFile, collectUntracked, MAX_UNTRACKED_BYTES };
+module.exports = {
+  synthesiseAddedFile,
+  collectUntracked,
+  MAX_UNTRACKED_BYTES,
+  MAX_UNTRACKED_FILES,
+  MAX_UNTRACKED_TOTAL_BYTES,
+};

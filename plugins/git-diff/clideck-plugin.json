@@ -113,6 +113,7 @@
       "type": "number",
       "default": 20000,
       "min": 100,
+      "max": 200000,
       "description": "Diffs larger than this show a placeholder instead of rendering"
     },
     {

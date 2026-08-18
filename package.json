@@ -16,7 +16,9 @@
     "smoke:menu-status": "node tests/providers/menu-status.test.js",
     "smoke:codex-config": "node tests/providers/codex-config.test.js",
     "smoke:codex-hooks": "node tests/providers/codex-hooks.test.js",
-    "smoke:git-diff": "node tests/plugins/git-diff-untracked.test.js"
+    "smoke:git-diff": "node tests/plugins/git-diff-untracked.test.js",
+    "smoke:git-diff-safety": "node tests/plugins/git-diff-safety.test.js",
+    "smoke:git-diff-limits": "node tests/plugins/git-diff-limits.test.js"
   },
   "keywords": [
     "terminal",

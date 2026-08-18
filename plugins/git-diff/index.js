@@ -2,11 +2,13 @@
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 
 const { execFile } = require('child_process');
-const { readFileSync, statSync, copyFileSync, mkdirSync } = require('fs');
+const { readFileSync, statSync, copyFileSync, mkdirSync, promises: fsp } = require('fs');
 const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
 const { collectUntracked } = require('./untracked');
+const { GLOBAL_ARGS, UNTRUSTED_ARGS, diffArgs, numstatArgs, riskyKeys, isValidRefName } = require('./safety');
+const { MAX_PATCH_BYTES, MAX_CHANGES_CEILING, MAX_LINE_CHARS, capLongLines } = require('./budget');
 // highlight.js is not called from here: the browser does the highlighting through diff2html's
 // own bundle. The package is still needed for its theme stylesheets, resolved by path below.
 
@@ -15,7 +17,10 @@ const GIT_TIMEOUT = 15000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 const HIGHLIGHT_MAX_LINES = 6000; // above this the browser is told not to highlight
 const CACHE_MAX = 20;
+const CACHE_MAX_BYTES = 16 * 1024 * 1024;
 const CACHE_TTL = 5 * 60 * 1000;
+const FOLDER_STAT_TIMEOUT = 2000;
+const TRUST_TTL = 60 * 1000;
 
 // GIT_OPTIONAL_LOCKS=0 stops `git diff` taking index.lock to refresh the index stat cache.
 // Without it, polling a folder where an agent is also running git can collide on that lock.
@@ -41,8 +46,18 @@ function runGit(args, cwd) {
   });
 }
 
-async function resolveRepo(cwd) {
-  const top = await runGit(['rev-parse', '--show-toplevel'], cwd);
+// Every git call goes through one of these. The trusted one leaves the repository's own
+// settings alone; the untrusted one switches off what ./safety can switch off. -c has to come
+// before the subcommand, which is why it is prepended here rather than passed by the callers.
+function makeGit(untrusted) {
+  const prefix = untrusted ? [...GLOBAL_ARGS, ...UNTRUSTED_ARGS] : GLOBAL_ARGS;
+  return (args, cwd) => runGit([...prefix, ...args], cwd);
+}
+
+const trustedGit = makeGit(false);
+
+async function resolveRepo(git, cwd) {
+  const top = await git(['rev-parse', '--show-toplevel'], cwd);
   if (!top.ok) {
     if (top.missing) return { ok: false, code: 'no-git', message: 'git was not found on PATH' };
     if (top.timedOut) return { ok: false, code: 'timeout', message: 'git rev-parse timed out' };
@@ -51,59 +66,64 @@ async function resolveRepo(cwd) {
   const repoRoot = top.stdout.trim();
   if (!repoRoot) return { ok: false, code: 'not-a-repo', message: `Not a git repository: ${cwd}` };
 
-  const named = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+  const named = await git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
   let branch = named.ok ? named.stdout.trim() : '';
   if (!branch || branch === 'HEAD') {
-    const short = await runGit(['rev-parse', '--short', 'HEAD'], repoRoot);
+    const short = await git(['rev-parse', '--short', 'HEAD'], repoRoot);
     branch = short.ok && short.stdout.trim() ? `detached at ${short.stdout.trim()}` : 'no commits yet';
   }
   return { ok: true, repoRoot, branch };
 }
 
-async function hasCommits(repoRoot) {
-  const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], repoRoot);
+async function hasCommits(git, repoRoot) {
+  const head = await git(['rev-parse', '--verify', '--quiet', 'HEAD'], repoRoot);
   return head.ok && !!head.stdout.trim();
 }
 
 // Which commit the diff is taken against, and what to call it in the header.
-async function resolveBase(repoRoot, scope, baseBranchSetting) {
-  const committed = await hasCommits(repoRoot);
+async function resolveBase(git, repoRoot, scope, baseBranchSetting) {
+  const committed = await hasCommits(git, repoRoot);
   const localBase = committed ? 'HEAD' : EMPTY_TREE;
   const localLabel = committed ? 'HEAD' : 'empty repo';
 
-  if (scope !== 'base') return { base: localBase, baseLabel: localLabel, baseFallback: false };
-  if (!committed) return { base: localBase, baseLabel: localLabel, baseFallback: true };
+  // The setting reaches git's argv, so a name that is not a ref name is dropped rather than
+  // handed over. The client says so, since silently ignoring it looks like a broken setting.
+  const badSetting = !!baseBranchSetting && !isValidRefName(baseBranchSetting);
+  const wanted = badSetting ? '' : baseBranchSetting;
+
+  if (scope !== 'base') return { base: localBase, baseLabel: localLabel, baseFallback: false, badSetting };
+  if (!committed) return { base: localBase, baseLabel: localLabel, baseFallback: true, badSetting };
 
   const candidates = [];
-  if (baseBranchSetting) {
-    candidates.push(baseBranchSetting);
+  if (wanted) {
+    candidates.push(wanted);
   } else {
-    const originHead = await runGit(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoRoot);
+    const originHead = await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoRoot);
     if (originHead.ok && originHead.stdout.trim()) candidates.push(originHead.stdout.trim());
     candidates.push('origin/main', 'origin/master', 'main', 'master');
   }
 
-  const head = await runGit(['rev-parse', 'HEAD'], repoRoot);
+  const head = await git(['rev-parse', 'HEAD'], repoRoot);
   const headSha = head.ok ? head.stdout.trim() : '';
 
   for (const candidate of candidates) {
-    const exists = await runGit(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], repoRoot);
+    const exists = await git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], repoRoot);
     if (!exists.ok || !exists.stdout.trim()) continue;
-    const mergeBase = await runGit(['merge-base', 'HEAD', candidate], repoRoot);
+    const mergeBase = await git(['merge-base', 'HEAD', candidate], repoRoot);
     if (!mergeBase.ok || !mergeBase.stdout.trim()) continue;
     const base = mergeBase.stdout.trim();
     // On the base branch itself the merge base is HEAD, so this scope shows nothing extra.
-    return { base, baseLabel: candidate, baseFallback: false, baseIsHead: base === headSha };
+    return { base, baseLabel: candidate, baseFallback: false, baseIsHead: base === headSha, badSetting };
   }
   // Nothing to compare against — show uncommitted work instead and say so.
-  return { base: localBase, baseLabel: localLabel, baseFallback: true };
+  return { base: localBase, baseLabel: localLabel, baseFallback: true, badSetting };
 }
 
 // Every worktree attached to this repository, main checkout included. A session started in
 // the main checkout can therefore offer its worktrees as targets, which is the common case
 // when an agent works on a branch in a worktree.
-async function listWorktrees(repoRoot) {
-  const listed = await runGit(['worktree', 'list', '--porcelain'], repoRoot);
+async function listWorktrees(git, repoRoot) {
+  const listed = await git(['worktree', 'list', '--porcelain'], repoRoot);
   if (!listed.ok) return [];
   const trees = [];
   let current = null;
@@ -127,60 +147,190 @@ async function listWorktrees(repoRoot) {
 // The folder to diff. An explicit client choice wins, as long as it is a directory. Otherwise
 // use where the session was spawned. UPSTREAM.md proposes exposing the session's process id so
 // a plugin could follow the shell's real working directory instead.
-function resolveFolder(session, requested) {
+async function resolveFolder(session, requested) {
   if (typeof requested === 'string' && requested) {
-    try {
-      if (statSync(requested).isDirectory()) return { folder: requested, rejected: false };
-    } catch { /* fall through below */ }
+    if (await isDirectory(requested)) return { folder: requested, rejected: false };
     return { folder: session.cwd, rejected: true };
   }
   return { folder: session.cwd, rejected: false };
 }
 
+// An asynchronous stat with a deadline. A path on a dead NFS or autofs mount answers neither
+// way, and the synchronous version would hold the event loop for as long as that takes. The
+// stat itself keeps occupying a threadpool slot after the timeout, which cannot be cancelled,
+// but the server carries on.
+async function isDirectory(path) {
+  let timer;
+  try {
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), FOLDER_STAT_TIMEOUT); });
+    const stat = await Promise.race([fsp.stat(path), timeout]);
+    return !!stat && stat.isDirectory();
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Whether the plugin may hand a folder's own git configuration to git. Diffing a repository
+// runs commands it names in diff.external, diff.<driver>.textconv, filter.<driver>.clean and
+// core.fsmonitor, and this panel re-runs git every few seconds on its own. The session's folder
+// and the worktrees of its repository are trusted: that is where the user's agent already runs.
+// Anything else has its configuration read first, and a folder that names a command needs the
+// user to say go ahead.
+//
+// rev-parse and config run no hooks or filters, so probing is safe. They still go through the
+// untrusted git, which switches off core.fsmonitor.
+async function assessTrust(sessionCwd, folder) {
+  if (!folder || folder === sessionCwd) return { trusted: true, riskyKeys: [] };
+
+  const untrustedGit = makeGit(true);
+  const sessionRepo = await resolveRepo(trustedGit, sessionCwd);
+  if (sessionRepo.ok) {
+    const trees = await listWorktrees(trustedGit, sessionRepo.repoRoot);
+    const own = new Set([sessionRepo.repoRoot, ...trees.map((t) => t.path)]);
+    const top = await untrustedGit(['rev-parse', '--show-toplevel'], folder);
+    if (top.ok && own.has(top.stdout.trim())) return { trusted: true, riskyKeys: [] };
+  }
+
+  const config = await untrustedGit(['config', '--local', '--list', '-z'], folder);
+  return { trusted: false, riskyKeys: config.ok ? riskyKeys(config.stdout) : [] };
+}
+
 // Untracked files are turned into added-file patches by ./untracked, which also reports what it
 // left out: files too large to render, and paths it refused to read at all.
-async function untrackedPatch(repoRoot) {
-  const listed = await runGit(['ls-files', '--others', '--exclude-standard', '-z'], repoRoot);
-  if (!listed.ok) return { patch: '', oversized: new Map(), skipped: new Map() };
+async function untrackedPatch(git, repoRoot) {
+  const listed = await git(['ls-files', '--others', '--exclude-standard', '-z'], repoRoot);
+  if (!listed.ok) return { patch: '', oversized: new Map(), skipped: new Map(), entries: [], truncated: null };
   const paths = listed.stdout.split('\0').filter(Boolean).sort();
   return collectUntracked(repoRoot, paths);
 }
 
-async function buildDiff(cwd, scope, settings) {
-  const repo = await resolveRepo(cwd);
+// The file list when the patch is too large to parse. numstat covers tracked files only, so the
+// untracked side comes from the scan's own records. -z records are "adds\tdels\tpath", except a
+// rename, which is "adds\tdels\t" followed by the old and new paths as separate records, and a
+// binary file, which reports "-" for both counts.
+function parseNumstat(out) {
+  const fields = String(out || '').split('\0');
+  const files = [];
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i];
+    if (!record) continue;
+    const parts = record.split('\t');
+    if (parts.length < 3) continue;
+    const [addRaw, delRaw] = parts;
+    let path = parts.slice(2).join('\t');
+    let oldPath = '';
+    if (!path) {
+      oldPath = fields[++i] || '';
+      path = fields[++i] || '';
+    }
+    files.push({
+      path,
+      oldPath,
+      additions: addRaw === '-' ? 0 : Number(addRaw) || 0,
+      deletions: delRaw === '-' ? 0 : Number(delRaw) || 0,
+      isNew: false,
+      isDeleted: false,
+      isRename: !!oldPath,
+      isBinary: addRaw === '-' && delRaw === '-',
+      isTooBig: false,
+      oversizedBytes: 0,
+      longestLine: 0,
+    });
+  }
+  return files;
+}
+
+async function tooBigFileList(git, repoRoot, base, untrackedEntries) {
+  const numstat = await git(numstatArgs(base), repoRoot);
+  const tracked = numstat.ok ? parseNumstat(numstat.stdout) : [];
+  const untracked = untrackedEntries.map((e) => ({
+    path: e.path,
+    oldPath: '',
+    additions: e.additions || 0,
+    deletions: 0,
+    isNew: true,
+    isDeleted: false,
+    isRename: false,
+    isBinary: !!e.binary,
+    isTooBig: false,
+    oversizedBytes: e.oversized ? e.bytes : 0,
+    longestLine: 0,
+  }));
+  return [...tracked, ...untracked];
+}
+
+function sumTotals(files) {
+  return files.reduce(
+    (acc, f) => ({
+      files: acc.files + 1,
+      additions: acc.additions + (f.additions || 0),
+      deletions: acc.deletions + (f.deletions || 0),
+    }),
+    { files: 0, additions: 0, deletions: 0 },
+  );
+}
+
+async function buildDiff(cwd, scope, settings, opts = {}) {
+  const git = makeGit(!!opts.untrusted);
+  const repo = await resolveRepo(git, cwd);
   if (!repo.ok) return repo;
 
   const { repoRoot, branch } = repo;
-  const { base, baseLabel, baseFallback, baseIsHead } = await resolveBase(repoRoot, scope, String(settings.baseBranch || '').trim());
+  const { base, baseLabel, baseFallback, baseIsHead, badSetting } =
+    await resolveBase(git, repoRoot, scope, String(settings.baseBranch || '').trim());
 
   const context = Number.isFinite(settings.contextLines) ? Math.max(0, Math.min(20, settings.contextLines)) : 3;
-  const tracked = await runGit(
-    ['-c', 'core.quotepath=false', 'diff', '--no-color', '--find-renames', `-U${context}`, base],
-    repoRoot,
-  );
+  const tracked = await git(diffArgs(base, context), repoRoot);
   if (!tracked.ok) {
     if (tracked.timedOut) return { ok: false, code: 'timeout', message: 'git diff timed out' };
     return { ok: false, code: 'git-failed', message: tracked.message || 'git diff failed' };
   }
 
-  const untracked = await untrackedPatch(repoRoot);
+  const untracked = await untrackedPatch(git, repoRoot);
   const patch = tracked.stdout + untracked.patch;
-  const maxChanges = Number.isFinite(settings.maxChanges) ? Math.max(100, settings.maxChanges) : 20000;
+  const patchBytes = Buffer.byteLength(patch);
+  const maxChanges = Number.isFinite(settings.maxChanges)
+    ? Math.max(100, Math.min(MAX_CHANGES_CEILING, settings.maxChanges))
+    : 20000;
+
+  const worktrees = await listWorktrees(git, repoRoot);
+  // Skipped paths contribute no patch text, so they never appear in a parsed file list and have
+  // to travel separately.
+  const skippedEntries = [...untracked.skipped].map(([path, kind]) => ({ path, kind }));
+  const common = {
+    ok: true, repoRoot, branch, base, baseLabel, baseFallback, baseIsHead: !!baseIsHead,
+    baseBranchInvalid: !!badSetting, patch, patchBytes, maxChanges, worktrees, skippedEntries,
+    untrackedTruncated: untracked.truncated || null,
+  };
+
+  // Parsing is where a huge diff costs the server, so the byte check comes before it. The file
+  // list then has to come from somewhere other than the parse.
+  if (patchBytes > MAX_PATCH_BYTES) {
+    const files = await tooBigFileList(git, repoRoot, base, untracked.entries);
+    const totals = sumTotals(files);
+    return {
+      ...common,
+      parsed: [],
+      totals,
+      files,
+      tooBig: { reason: 'bytes', bytes: patchBytes, changes: totals.additions + totals.deletions },
+    };
+  }
+
+  // A change count says nothing about line length, and cost grows with it: a minified bundle is
+  // a few lines of a few hundred kilobytes each. Those files are replaced by git's own binary
+  // placeholder before parsing. The patch kept for Copy patch is the real one, not this.
+  const capped = capLongLines(patch);
+
   // diffMaxChanges is a parse-time option and applies per file, so it caps one enormous file.
-  const parsed = d2h.parse(patch, {
+  const parsed = d2h.parse(capped.patch, {
     diffMaxChanges: maxChanges,
     diffTooBigMessage: () => 'File has too many changes to display',
   });
 
-  const totals = parsed.reduce(
-    (acc, f) => ({
-      files: acc.files + 1,
-      additions: acc.additions + (f.addedLines || 0),
-      deletions: acc.deletions + (f.deletedLines || 0),
-    }),
-    { files: 0, additions: 0, deletions: 0 },
-  );
-
+  const oversized = untracked.oversized;
   const files = parsed.map((f) => {
     const path = f.newName && f.newName !== '/dev/null' ? f.newName : f.oldName;
     return {
@@ -191,28 +341,23 @@ async function buildDiff(cwd, scope, settings) {
       isNew: !!f.isNew,
       isDeleted: !!f.isDeleted,
       isRename: !!f.isRename,
-      // An oversized untracked file uses git's binary placeholder to render, but it is text —
-      // report it separately so the UI does not call it binary.
-      isBinary: !!f.isBinary && !untracked.oversized.has(path),
+      // An oversized untracked file and a file with over-long lines both render through git's
+      // binary placeholder but are text. They are reported separately so the UI can say which
+      // limit it was rather than calling the file binary.
+      isBinary: !!f.isBinary && !oversized.has(path) && !capped.longLines.has(path),
       isTooBig: !!f.isTooBig,
-      oversizedBytes: untracked.oversized.get(path) || 0,
+      oversizedBytes: oversized.get(path) || 0,
+      longestLine: capped.longLines.get(path) || 0,
     };
   });
 
+  const totals = sumTotals(files);
+  const changes = totals.additions + totals.deletions;
   // Separate whole-diff guard: diffMaxChanges never fires on a diff made of thousands of
   // small files, which is exactly the case that would lock up the browser tab.
-  const tooBig = totals.additions + totals.deletions > maxChanges;
+  const tooBig = changes > maxChanges ? { reason: 'changes', bytes: patchBytes, changes } : null;
 
-  const worktrees = await listWorktrees(repoRoot);
-
-  // Skipped paths contribute no patch text, so they never appear in the parsed file list and
-  // have to travel separately.
-  const skippedEntries = [...untracked.skipped].map(([path, kind]) => ({ path, kind }));
-
-  return {
-    ok: true, repoRoot, branch, base, baseLabel, baseFallback, baseIsHead: !!baseIsHead,
-    patch, parsed, totals, files, tooBig, maxChanges, worktrees, skippedEntries,
-  };
+  return { ...common, parsed, totals, files, tooBig };
 }
 
 function renderHtml(built, layout, settings) {
@@ -302,8 +447,12 @@ module.exports = {
 
     // sessionId → last built diff, so a layout toggle re-renders instead of re-running git.
     const cache = new Map();
-    // sessionId → newest requestId, so a superseded poll's reply is dropped.
-    const newest = new Map();
+    // Diffs already being built, so two tabs polling one session share the work rather than
+    // starting a second set of git processes.
+    const inFlight = new Map();
+    // sessionCwd|folder → whether that folder's git configuration may be used, with the keys
+    // that made it unsafe. Cached because it costs two git calls and rarely changes.
+    const trustCache = new Map();
 
     function pruneCache() {
       const now = Date.now();
@@ -311,9 +460,27 @@ module.exports = {
         if (now - entry.at > CACHE_TTL || !api.getSession(id)) cache.delete(id);
       }
       while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
-      for (const id of newest.keys()) {
-        if (!api.getSession(id)) newest.delete(id);
+      // A single large diff can hold more memory than every other entry together, so the cache
+      // is bounded by bytes as well as by count. Oldest first, same as the count rule.
+      let bytes = 0;
+      for (const entry of cache.values()) bytes += entry.bytes;
+      for (const [id, entry] of cache) {
+        if (bytes <= CACHE_MAX_BYTES) break;
+        bytes -= entry.bytes;
+        cache.delete(id);
       }
+      for (const [key, entry] of trustCache) {
+        if (now - entry.at > TRUST_TTL) trustCache.delete(key);
+      }
+    }
+
+    async function trustFor(sessionCwd, folder) {
+      const key = `${sessionCwd}|${folder}`;
+      const hit = trustCache.get(key);
+      if (hit && Date.now() - hit.at < TRUST_TTL) return hit.verdict;
+      const verdict = await assessTrust(sessionCwd, folder);
+      trustCache.set(key, { at: Date.now(), verdict });
+      return verdict;
     }
 
     function cacheKey(settings, folder) {
@@ -339,7 +506,7 @@ module.exports = {
 
     // Errors still carry the folder and the session's own folder, so the selector stays
     // usable — otherwise picking a folder that is not a repository would be a dead end.
-    function fail(msg, code, message, folder) {
+    function fail(msg, code, message, folder, extra = {}) {
       const session = api.getSession(msg.sessionId);
       const choices = [];
       if (session?.cwd) choices.push({ path: session.cwd, label: 'Session folder', kind: 'session' });
@@ -353,10 +520,11 @@ module.exports = {
         folder: folder || session?.cwd || '',
         folders: choices,
         home: homedir(),
+        ...extra,
       });
     }
 
-    function reply(msg, built, layout, session, folder, folderRejected) {
+    function reply(msg, built, layout, session, folder, folderRejected, trusted) {
       api.sendToFrontend('diff', {
         requestId: msg.requestId,
         sessionId: msg.sessionId,
@@ -365,6 +533,7 @@ module.exports = {
         cwd: session.cwd,
         folder,
         folderRejected: !!folderRejected,
+        folderTrusted: trusted !== false,
         folders: folderChoices(session, built, folder),
         home: homedir(),
         repoRoot: built.repoRoot,
@@ -374,38 +543,68 @@ module.exports = {
         baseLabel: built.baseLabel,
         baseFallback: built.baseFallback,
         baseIsHead: built.baseIsHead,
+        baseBranchInvalid: !!built.baseBranchInvalid,
         totals: built.totals,
         files: built.files,
         skippedEntries: built.skippedEntries || [],
-        tooBig: built.tooBig,
+        untrackedTruncated: built.untrackedTruncated || null,
+        tooBig: built.tooBig || null,
+        patchBytes: built.patchBytes || 0,
         maxChanges: built.maxChanges,
+        maxLineChars: MAX_LINE_CHARS,
         highlight: bundleReady && shouldHighlight(built, api.getSettings()),
         html: renderHtml(built, layout, api.getSettings()),
       });
     }
 
+    // Every request gets an answer. A tab that is left waiting stops polling, since its own
+    // request is still outstanding as far as it knows, so replies are never suppressed for
+    // being out of date: the client drops the ones whose requestId is not its own.
     async function handleDiff(msg) {
       const session = api.getSession(msg.sessionId);
       if (!session || !session.cwd) return fail(msg, 'no-session', 'Session is no longer running');
 
-      newest.set(msg.sessionId, msg.requestId);
       const settings = api.getSettings();
       const scope = msg.scope === 'base' ? 'base' : 'uncommitted';
       const layout = msg.layout === 'line-by-line' ? 'line-by-line' : 'side-by-side';
-      const { folder, rejected } = resolveFolder(session, msg.folder);
+      const { folder, rejected } = await resolveFolder(session, msg.folder);
 
+      let trust;
+      try {
+        trust = await trustFor(session.cwd, folder);
+      } catch (e) {
+        return fail(msg, 'git-failed', e.message, folder);
+      }
+      if (!trust.trusted && trust.riskyKeys.length && msg.allowUnsafe !== true) {
+        return fail(
+          msg,
+          'unsafe-config',
+          `This folder is outside the session's repository and its git configuration names commands git would run while diffing it: ${trust.riskyKeys.join(', ')}`,
+          folder,
+          { riskyKeys: trust.riskyKeys },
+        );
+      }
+
+      const key = `${msg.sessionId}|${scope}|${cacheKey(settings, folder)}`;
       let built;
       try {
-        built = await buildDiff(folder, scope, settings);
+        let pending = inFlight.get(key);
+        if (!pending) {
+          pending = buildDiff(folder, scope, settings, { untrusted: !trust.trusted })
+            .finally(() => inFlight.delete(key));
+          inFlight.set(key, pending);
+        }
+        built = await pending;
       } catch (e) {
-        return fail(msg, 'git-failed', e.message);
+        return fail(msg, 'git-failed', e.message, folder);
       }
-      if (newest.get(msg.sessionId) !== msg.requestId) return; // a newer request already went out
       if (!built.ok) return fail(msg, built.code, built.message, folder);
 
       pruneCache();
-      cache.set(msg.sessionId, { scope, folder, key: cacheKey(settings, folder), at: Date.now(), built });
-      reply(msg, built, layout, session, folder, rejected);
+      cache.set(msg.sessionId, {
+        scope, folder, key: cacheKey(settings, folder), at: Date.now(), built, bytes: built.patchBytes || 0,
+      });
+      reply(msg, built, layout, session, folder, rejected, trust.trusted);
     }
 
     api.onFrontendMessage('diff', handleDiff);
@@ -417,12 +616,12 @@ module.exports = {
 
       const scope = msg.scope === 'base' ? 'base' : 'uncommitted';
       const layout = msg.layout === 'line-by-line' ? 'line-by-line' : 'side-by-side';
-      const { folder } = resolveFolder(session, msg.folder);
+      const { folder } = await resolveFolder(session, msg.folder);
       const entry = cache.get(msg.sessionId);
 
       if (entry && entry.scope === scope && entry.key === cacheKey(api.getSettings(), folder)) {
-        newest.set(msg.sessionId, msg.requestId);
-        return reply(msg, entry.built, layout, session, folder, false);
+        const trust = trustCache.get(`${session.cwd}|${folder}`);
+        return reply(msg, entry.built, layout, session, folder, false, trust ? trust.verdict.trusted : undefined);
       }
       return handleDiff(msg);
     });

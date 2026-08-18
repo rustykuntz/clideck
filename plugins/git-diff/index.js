@@ -3,21 +3,21 @@
 //
 // This file is the wiring: it answers the client's messages, holds the caches, and puts the
 // other modules in order. The work itself lives next to it — git.js runs git, untracked.js
-// synthesises patches for untracked files, budget.js says what may be parsed, payload.js shapes
-// the reply the panel receives, and diff2html.js parses and renders the patch. That last one is
-// the only module that touches an npm package.
+// synthesises patches for untracked files, longlines.js caps a file with over-long lines before
+// the parse, payload.js shapes the reply the panel receives, and diff2html.js parses and renders
+// the patch. That last one is the only module that touches an npm package.
 
 const { homedir } = require('os');
 const { promises: fsp } = require('fs');
 const { collectUntracked } = require('./untracked');
-const { MAX_PATCH_BYTES, MAX_LINE_CHARS, capLongLines } = require('./budget');
+const { MAX_LINE_CHARS, capLongLines } = require('./longlines');
 const { diffKey, belongsTo, makeCache } = require('./cache');
 const {
   makeGit, resolveRepo, resolveBase, listWorktrees, assessTrust, diffPatch, listUntracked, numstatFiles,
 } = require('./git');
 const {
-  clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals, tooBigVerdict,
-  shouldHighlight, normaliseScope, normaliseLayout, diffPayload, failPayload,
+  MAX_PATCH_BYTES, clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals,
+  tooBigVerdict, shouldHighlight, normaliseScope, normaliseLayout, diffPayload, failPayload,
 } = require('./payload');
 const {
   parsePatch, renderHtml, installBrowserBundle, highlightStyles, diff2htmlStyles,

@@ -17,7 +17,8 @@
 //
 //   node tests/plugins/git-diff-limits.test.js
 
-const { capLongLines, pathFromHeader, MAX_LINE_CHARS, MAX_PATCH_BYTES } = require('../../plugins/git-diff/budget');
+const { capLongLines, pathFromHeader, MAX_LINE_CHARS } = require('../../plugins/git-diff/longlines');
+const { MAX_PATCH_BYTES } = require('../../plugins/git-diff/payload');
 const { parseNumstat } = require('../../plugins/git-diff/git');
 
 let failed = 0;

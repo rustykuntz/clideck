@@ -7,8 +7,9 @@
 // filesystem or calls the plugin api, and there are no npm dependencies, so the tests drive all
 // of it in a checkout where the plugin has not been installed.
 
-const HIGHLIGHT_MAX_LINES = 6000;    // above this the browser is told not to highlight
-const MAX_CHANGES_CEILING = 200000;  // hard ceiling on the maxChanges setting
+const MAX_PATCH_BYTES = 8 * 1024 * 1024;  // above this the patch is never parsed at all
+const HIGHLIGHT_MAX_LINES = 6000;         // above this the browser is told not to highlight
+const MAX_CHANGES_CEILING = 200000;       // hard ceiling on the maxChanges setting
 
 // Both settings reach code that has to hold: the context count goes into git's argv, and the
 // change limit bounds what the browser is asked to lay out. A missing or nonsense value takes
@@ -174,6 +175,7 @@ function failPayload({ msg, code, message, folder, sessionCwd, home, extra = {} 
 }
 
 module.exports = {
+  MAX_PATCH_BYTES,
   HIGHLIGHT_MAX_LINES,
   MAX_CHANGES_CEILING,
   clampContext,

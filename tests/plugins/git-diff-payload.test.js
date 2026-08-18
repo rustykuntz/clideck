@@ -21,12 +21,11 @@
 //   node tests/plugins/git-diff-payload.test.js
 
 const {
-  HIGHLIGHT_MAX_LINES, MAX_CHANGES_CEILING, clampContext, clampMaxChanges, untrackedFileList,
-  parsedFileList, sumTotals, tooBigVerdict, shouldHighlight, folderChoices, normaliseScope,
-  normaliseLayout, diffPayload, failPayload,
+  MAX_PATCH_BYTES, HIGHLIGHT_MAX_LINES, MAX_CHANGES_CEILING, clampContext, clampMaxChanges,
+  untrackedFileList, parsedFileList, sumTotals, tooBigVerdict, shouldHighlight, folderChoices,
+  normaliseScope, normaliseLayout, diffPayload, failPayload,
 } = require('../../plugins/git-diff/payload');
 const { parseNumstat } = require('../../plugins/git-diff/git');
-const { MAX_PATCH_BYTES } = require('../../plugins/git-diff/budget');
 
 let failed = 0;
 function check(name, cond, detail) {

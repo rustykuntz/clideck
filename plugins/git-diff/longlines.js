@@ -1,4 +1,5 @@
-// What the panel is willing to parse and render, and the one thing a change count cannot catch.
+// Replaces a file whose longest line is over the ceiling with git's binary placeholder, before
+// the patch is parsed.
 //
 // Counting changed lines misses a minified bundle or a one-line JSON blob: two changed lines of
 // several hundred kilobytes each sit far under any change-count limit. Parsing them is cheap
@@ -14,8 +15,7 @@
 // No npm dependencies, so the tests can drive this in a checkout where the plugin has not been
 // installed.
 
-const MAX_PATCH_BYTES = 8 * 1024 * 1024;   // above this the patch is never parsed at all
-const MAX_LINE_CHARS = 20000;              // per line, across every file in the patch
+const MAX_LINE_CHARS = 20000;   // per line, across every file in the patch
 
 // Only the plain header form is treated as a file boundary. The plugin's diff always names a
 // base commit, and git then reports even a conflicted file with an ordinary "diff --git" header,
@@ -98,4 +98,4 @@ function capLongLines(patch, limit = MAX_LINE_CHARS) {
   return { patch: text, longLines };
 }
 
-module.exports = { MAX_PATCH_BYTES, MAX_LINE_CHARS, capLongLines, pathFromHeader };
+module.exports = { MAX_LINE_CHARS, capLongLines, pathFromHeader };

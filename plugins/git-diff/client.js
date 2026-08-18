@@ -461,6 +461,11 @@ function renderDiff(msg) {
   if (oversized.length) {
     notes.push(`${oversized.length} untracked file${oversized.length === 1 ? '' : 's'} too large to render: ${oversized.map((f) => `${f.path} (${formatBytes(f.oversizedBytes)})`).join(', ')}`);
   }
+  // Paths the server would not read: fifos, sockets, device nodes, directories.
+  const skipped = msg.skippedEntries || [];
+  if (skipped.length) {
+    notes.push(`${skipped.length} untracked entr${skipped.length === 1 ? 'y' : 'ies'} skipped, not a regular file: ${skipped.map((s) => `${s.path} (${s.kind})`).join(', ')}`);
+  }
   el.note.hidden = notes.length === 0;
   el.note.textContent = notes.join(' ');
 

@@ -6,14 +6,13 @@ const { readFileSync, statSync, copyFileSync, mkdirSync } = require('fs');
 const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
+const { collectUntracked } = require('./untracked');
 // highlight.js is not called from here: the browser does the highlighting through diff2html's
 // own bundle. The package is still needed for its theme stylesheets, resolved by path below.
 
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const GIT_TIMEOUT = 15000;
 const MAX_BUFFER = 64 * 1024 * 1024;
-const MAX_UNTRACKED_BYTES = 512 * 1024; // larger untracked files are listed, not rendered
-const BINARY_SNIFF_BYTES = 8000;
 const HIGHLIGHT_MAX_LINES = 6000; // above this the browser is told not to highlight
 const CACHE_MAX = 20;
 const CACHE_TTL = 5 * 60 * 1000;
@@ -138,52 +137,13 @@ function resolveFolder(session, requested) {
   return { folder: session.cwd, rejected: false };
 }
 
-function isBinaryBuffer(buf) {
-  return buf.subarray(0, BINARY_SNIFF_BYTES).includes(0);
-}
-
-// Build an added-file patch for an untracked file. Synthesising avoids `git diff --no-index
-// /dev/null` (no such path on Windows) and `git add -N` (which would touch the index).
-// Returns { patch, oversized } so the caller can tell "too large to show" apart from "binary".
-function synthesiseAddedFile(repoRoot, relPath) {
-  const header = `diff --git a/${relPath} b/${relPath}\nnew file mode 100644\n`;
-  const placeholder = `${header}Binary files /dev/null and b/${relPath} differ\n`;
-
-  let buf;
-  try {
-    buf = readFileSync(join(repoRoot, relPath));
-  } catch {
-    return null; // vanished or unreadable between listing and reading
-  }
-  if (buf.length > MAX_UNTRACKED_BYTES) return { patch: placeholder, oversized: true, bytes: buf.length };
-  if (isBinaryBuffer(buf)) return { patch: placeholder, oversized: false, bytes: buf.length };
-  if (buf.length === 0) return { patch: header, oversized: false, bytes: 0 }; // new but empty, no hunk
-
-  const text = buf.toString('utf8');
-  const endsWithNewline = text.endsWith('\n');
-  const lines = (endsWithNewline ? text.slice(0, -1) : text).split('\n');
-  const body = lines.map((l) => `+${l}`).join('\n');
-  const noNewline = endsWithNewline ? '' : '\n\\ No newline at end of file';
-  return {
-    patch: `${header}--- /dev/null\n+++ b/${relPath}\n@@ -0,0 +1,${lines.length} @@\n${body}${noNewline}\n`,
-    oversized: false,
-    bytes: buf.length,
-  };
-}
-
+// Untracked files are turned into added-file patches by ./untracked, which also reports what it
+// left out: files too large to render, and paths it refused to read at all.
 async function untrackedPatch(repoRoot) {
   const listed = await runGit(['ls-files', '--others', '--exclude-standard', '-z'], repoRoot);
-  if (!listed.ok) return { patch: '', oversized: new Map() };
+  if (!listed.ok) return { patch: '', oversized: new Map(), skipped: new Map() };
   const paths = listed.stdout.split('\0').filter(Boolean).sort();
-  const parts = [];
-  const oversized = new Map(); // path → byte size, for files we listed but did not render
-  for (const relPath of paths) {
-    const result = synthesiseAddedFile(repoRoot, relPath);
-    if (!result) continue;
-    parts.push(result.patch);
-    if (result.oversized) oversized.set(relPath, result.bytes);
-  }
-  return { patch: parts.join(''), oversized };
+  return collectUntracked(repoRoot, paths);
 }
 
 async function buildDiff(cwd, scope, settings) {
@@ -245,9 +205,13 @@ async function buildDiff(cwd, scope, settings) {
 
   const worktrees = await listWorktrees(repoRoot);
 
+  // Skipped paths contribute no patch text, so they never appear in the parsed file list and
+  // have to travel separately.
+  const skippedEntries = [...untracked.skipped].map(([path, kind]) => ({ path, kind }));
+
   return {
     ok: true, repoRoot, branch, base, baseLabel, baseFallback, baseIsHead: !!baseIsHead,
-    patch, parsed, totals, files, tooBig, maxChanges, worktrees,
+    patch, parsed, totals, files, tooBig, maxChanges, worktrees, skippedEntries,
   };
 }
 
@@ -412,6 +376,7 @@ module.exports = {
         baseIsHead: built.baseIsHead,
         totals: built.totals,
         files: built.files,
+        skippedEntries: built.skippedEntries || [],
         tooBig: built.tooBig,
         maxChanges: built.maxChanges,
         highlight: bundleReady && shouldHighlight(built, api.getSettings()),

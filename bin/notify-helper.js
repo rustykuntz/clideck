@@ -4,6 +4,8 @@
 // Codex appends the JSON payload as the last argv argument.
 // Port is passed as the first argument by the notify config.
 
+const { requestHook } = require('./hook-url');
+
 const port = parseInt(process.argv[2], 10);
 const raw = process.argv[process.argv.length - 1];
 const clideckId = process.env.CLIDECK_SESSION_ID || '';
@@ -15,9 +17,7 @@ try {
   payload = JSON.stringify({ ...parsed, clideck_id: clideckId || undefined });
 } catch {}
 
-const http = require('http');
-const req = http.request({
-  hostname: 'localhost', port, path: '/hook/codex/stop',
+const req = requestHook('/hook/codex/stop', port, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   timeout: 2000,
 });

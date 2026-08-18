@@ -2,7 +2,7 @@
 // Silent Codex lifecycle hook for CliDeck.
 // Reads Codex hook JSON from stdin, posts to CliDeck, and intentionally prints nothing.
 
-const http = require('http');
+const { requestHook } = require('./hook-url');
 
 const port = parseInt(process.argv[2], 10);
 const route = String(process.argv[3] || '').replace(/[^a-z]/g, '');
@@ -21,10 +21,7 @@ process.stdin.on('end', () => {
   payload.clideck_id = clideckId || undefined;
   payload.source = 'hook';
 
-  const req = http.request({
-    hostname: 'localhost',
-    port,
-    path: `/hook/codex/${route}`,
+  const req = requestHook(`/hook/codex/${route}`, port, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     timeout: 2000,

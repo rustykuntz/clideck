@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const http = require('http');
+const { requestHook } = require('./hook-url');
 
 const port = parseInt(process.argv[2], 10);
 const route = process.argv[3];
@@ -17,10 +17,7 @@ process.stdin.on('end', () => {
     session_id: hook.session_id || process.env.GEMINI_SESSION_ID || '',
     payload: stdin.trim() || undefined,
   });
-  const req = http.request({
-    hostname: 'localhost',
-    port,
-    path: `/hook/gemini/${route}`,
+  const req = requestHook(`/hook/gemini/${route}`, port, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     timeout: 2000,

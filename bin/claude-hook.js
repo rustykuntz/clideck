@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const http = require('http');
+const { requestHook } = require('./hook-url');
 
 const port = parseInt(process.argv[2], 10);
 const route = process.argv[3];
@@ -20,10 +20,7 @@ process.stdin.on('end', () => {
     reason: hook.reason || '',
     payload: stdin.trim() || undefined,
   });
-  const req = http.request({
-    hostname: 'localhost',
-    port,
-    path: `/hook/claude/${route}`,
+  const req = requestHook(`/hook/claude/${route}`, port, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     timeout: 2000,

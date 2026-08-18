@@ -12,16 +12,17 @@
 //   4. its records match parseNumstat's field for field, so both file lists send one shape
 //   5. the settings clamps hold both bounds and fall back to the defaults
 //   6. tooBigVerdict names the limit that was passed, bytes before changes
-//   7. cacheKey changes with every input that invalidates a cached diff
-//   8. shouldHighlight is off when the setting is off and above the line ceiling
-//   9. folderChoices lists the session folder, every worktree, and the folder in use, once each
-//  10. diffPayload and failPayload carry every field the client reads
+//   7. shouldHighlight is off when the setting is off and above the line ceiling
+//   8. folderChoices lists the session folder, every worktree, and the folder in use, once each
+//   9. diffPayload and failPayload carry every field the client reads
+//
+// The cache key moved to cache.js, so its checks are in tests/plugins/git-diff-cache.test.js.
 //
 //   node tests/plugins/git-diff-format.test.js
 
 const {
   HIGHLIGHT_MAX_LINES, clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals,
-  tooBigVerdict, shouldHighlight, cacheKey, folderChoices, normaliseScope, normaliseLayout,
+  tooBigVerdict, shouldHighlight, folderChoices, normaliseScope, normaliseLayout,
   diffPayload, failPayload,
 } = require('../../plugins/git-diff/format');
 const { parseNumstat } = require('../../plugins/git-diff/git');
@@ -155,18 +156,7 @@ check('too big: exactly on either limit is not too big',
 check('too big: past both limits reports bytes, the one the user cannot raise',
   tooBigVerdict({ patchBytes: MAX_PATCH_BYTES + 1, changes: 999999, maxChanges: 20000, maxPatchBytes: MAX_PATCH_BYTES }).reason === 'bytes');
 
-// 7. The cache key. Anything that changes what git is asked for has to change the key.
-const settings = { contextLines: 3, maxChanges: 20000, baseBranch: '' };
-const base = cacheKey(settings, '/repo');
-check('cache key: the same inputs give the same key', cacheKey({ ...settings }, '/repo') === base);
-check('cache key: a different folder is a different key', cacheKey(settings, '/other') !== base);
-check('cache key: more context is a different key', cacheKey({ ...settings, contextLines: 5 }, '/repo') !== base);
-check('cache key: a different change limit is a different key', cacheKey({ ...settings, maxChanges: 500 }, '/repo') !== base);
-check('cache key: a different base branch is a different key', cacheKey({ ...settings, baseBranch: 'develop' }, '/repo') !== base);
-check('cache key: an unset base branch reads the same as an empty one',
-  cacheKey({ contextLines: 3, maxChanges: 20000 }, '/repo') === base, base);
-
-// 8. Whether the browser is asked to highlight.
+// 7. Whether the browser is asked to highlight.
 check('highlight: off when the setting is off',
   shouldHighlight({ additions: 1, deletions: 0 }, { syntaxHighlight: false }) === false);
 check('highlight: on for an ordinary diff',
@@ -176,7 +166,7 @@ check('highlight: on exactly at the line ceiling',
 check('highlight: off one line over the ceiling',
   shouldHighlight({ additions: HIGHLIGHT_MAX_LINES, deletions: 1 }, {}) === false);
 
-// 9. The folder selector. A session started in a main checkout offers its worktrees, which is
+// 8. The folder selector. A session started in a main checkout offers its worktrees, which is
 // the common case when an agent works on a branch in one.
 const trees = [
   { path: '/repo', branch: 'main' },
@@ -210,7 +200,7 @@ check('scope: only "base" means base', normaliseScope('base') === 'base' && norm
 check('layout: only "line-by-line" means unified',
   normaliseLayout('line-by-line') === 'line-by-line' && normaliseLayout('nonsense') === 'side-by-side');
 
-// 10. The messages themselves. Every field named here is read by client.js.
+// 9. The messages themselves. Every field named here is read by client.js.
 const built = {
   ok: true,
   repoRoot: '/repo',
@@ -240,9 +230,10 @@ const payload = diffPayload({
   html: '<div class="d2h-wrapper"></div>',
   home: '/home/someone',
   maxLineChars: 20000,
+  patchKey: 's1|base|/repo/.worktrees/feature|3|20000|',
 });
 const CLIENT_FIELDS = [
-  'requestId', 'sessionId', 'ok', 'sessionName', 'cwd', 'folder', 'folderRejected', 'folderTrusted',
+  'requestId', 'sessionId', 'ok', 'patchKey', 'sessionName', 'cwd', 'folder', 'folderRejected', 'folderTrusted',
   'folders', 'home', 'repoRoot', 'branch', 'scope', 'layout', 'baseLabel', 'baseFallback',
   'baseIsHead', 'baseBranchInvalid', 'totals', 'files', 'skippedEntries', 'untrackedTruncated',
   'tooBig', 'patchBytes', 'maxChanges', 'maxLineChars', 'highlight', 'html',
@@ -252,6 +243,8 @@ check('diff reply: every field the client reads is present',
   CLIENT_FIELDS.filter((f) => !(f in payload)).join(', '));
 check('diff reply: the request is echoed back so a tab can drop another tab\'s reply',
   payload.requestId === 'r1' && payload.sessionId === 's1' && payload.ok === true);
+check('diff reply: the cache entry is named, for Copy patch to quote back',
+  payload.patchKey === 's1|base|/repo/.worktrees/feature|3|20000|', payload.patchKey);
 check('diff reply: scope and layout are the normalised values',
   payload.scope === 'base' && payload.layout === 'line-by-line');
 check('diff reply: the folder list is built from the session folder and the worktrees',

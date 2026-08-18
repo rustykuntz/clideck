@@ -19,7 +19,8 @@
     "smoke:git-diff": "node tests/plugins/git-diff-untracked.test.js",
     "smoke:git-diff-safety": "node tests/plugins/git-diff-safety.test.js",
     "smoke:git-diff-limits": "node tests/plugins/git-diff-limits.test.js",
-    "smoke:git-diff-format": "node tests/plugins/git-diff-format.test.js"
+    "smoke:git-diff-format": "node tests/plugins/git-diff-format.test.js",
+    "smoke:git-diff-cache": "node tests/plugins/git-diff-cache.test.js"
   },
   "keywords": [
     "terminal",

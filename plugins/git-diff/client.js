@@ -413,15 +413,23 @@ function onDiffReply(msg) {
   renderDiff(msg);
 }
 
+// The patch copied is the one behind the diff on screen, named by the key that diff arrived with.
+// Asking by session alone would get whatever was cached for it last, which is another folder's
+// patch whenever a second tab is open on the session.
 function copyPatch() {
   if (!sessionId) return;
+  const patchKey = lastReply?.patchKey;
+  if (!patchKey) { api.toast('Nothing to copy yet, refresh first', { type: 'warn' }); return; }
   pendingPatchRequest = `${TAG}-patch-${++requestSeq}`;
-  api.send('getPatch', { requestId: pendingPatchRequest, sessionId });
+  api.send('getPatch', { requestId: pendingPatchRequest, sessionId, patchKey });
 }
 
 async function onPatchReply(msg) {
   if (msg.requestId !== pendingPatchRequest) return;
   pendingPatchRequest = null;
+  // Stale means the diff was dropped from the server's cache, which is different from a diff with
+  // nothing in it: one needs a refresh, the other has nothing to give.
+  if (msg.code === 'stale') { api.toast('That diff is no longer cached, refresh and copy again', { type: 'warn' }); return; }
   if (!msg.patch) { api.toast('No patch to copy', { type: 'warn' }); return; }
   try {
     await navigator.clipboard.writeText(msg.patch);

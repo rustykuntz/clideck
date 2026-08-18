@@ -94,13 +94,6 @@ function shouldHighlight(totals, settings) {
   return totals.additions + totals.deletions <= HIGHLIGHT_MAX_LINES;
 }
 
-// A cached diff is reusable only for the same folder and the same limits, so those are what the
-// key carries. The scope and the session id are added by the caller, which holds one entry per
-// session.
-function cacheKey(settings, folder) {
-  return `${folder}|${settings.contextLines}|${settings.maxChanges}|${settings.baseBranch || ''}`;
-}
-
 // Folders the client can switch between: where the session started, and every worktree of the
 // repository in view. The folder in use is always present so the selector can always show it.
 function folderChoices(sessionCwd, worktrees, repoRoot, folder) {
@@ -127,11 +120,13 @@ function normaliseLayout(layout) {
   return layout === 'line-by-line' ? 'line-by-line' : 'side-by-side';
 }
 
-function diffPayload({ msg, built, layout, session, folder, folderRejected, trusted, highlight, html, home, maxLineChars }) {
+function diffPayload({ msg, built, layout, session, folder, folderRejected, trusted, highlight, html, home, maxLineChars, patchKey }) {
   return {
     requestId: msg.requestId,
     sessionId: msg.sessionId,
     ok: true,
+    // Names the cache entry this reply was built from, for the panel to quote back with Copy patch.
+    patchKey,
     sessionName: session.name,
     cwd: session.cwd,
     folder,
@@ -188,7 +183,6 @@ module.exports = {
   sumTotals,
   tooBigVerdict,
   shouldHighlight,
-  cacheKey,
   folderChoices,
   normaliseScope,
   normaliseLayout,

@@ -10,20 +10,18 @@ const { homedir } = require('os');
 const { promises: fsp } = require('fs');
 const { collectUntracked } = require('./untracked');
 const { MAX_PATCH_BYTES, MAX_LINE_CHARS, capLongLines } = require('./budget');
+const { diffKey, belongsTo, makeCache } = require('./cache');
 const {
   makeGit, resolveRepo, resolveBase, listWorktrees, assessTrust, diffPatch, listUntracked, numstatFiles,
 } = require('./git');
 const {
   clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals, tooBigVerdict,
-  shouldHighlight, cacheKey, normaliseScope, normaliseLayout, diffPayload, failPayload,
+  shouldHighlight, normaliseScope, normaliseLayout, diffPayload, failPayload,
 } = require('./format');
 const {
   parsePatch, renderHtml, installBrowserBundle, highlightStyles, diff2htmlStyles,
 } = require('./render');
 
-const CACHE_MAX = 20;
-const CACHE_MAX_BYTES = 16 * 1024 * 1024;
-const CACHE_TTL = 5 * 60 * 1000;
 const FOLDER_STAT_TIMEOUT = 2000;
 const TRUST_TTL = 60 * 1000;
 
@@ -124,8 +122,10 @@ module.exports = {
   init(api) {
     const bundleReady = installBrowserBundle(api.pluginDir, (m) => api.log(m));
 
-    // sessionId → last built diff, so a layout toggle re-renders instead of re-running git.
-    const cache = new Map();
+    // Built diffs, keyed by diffKey(): the session, the scope, the folder and the settings that
+    // shaped the patch. A layout toggle re-renders from one instead of re-running git, and Copy
+    // patch reads the patch text out of the entry the panel is showing.
+    const cache = makeCache({ isLive: (id) => !!api.getSession(id) });
     // Diffs already being built, so two tabs polling one session share the work rather than
     // starting a second set of git processes.
     const inFlight = new Map();
@@ -133,21 +133,9 @@ module.exports = {
     // that made it unsafe. Cached because it costs two git calls and rarely changes.
     const trustCache = new Map();
 
-    function pruneCache() {
+    function pruneCaches() {
+      cache.prune();
       const now = Date.now();
-      for (const [id, entry] of cache) {
-        if (now - entry.at > CACHE_TTL || !api.getSession(id)) cache.delete(id);
-      }
-      while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
-      // A single large diff can hold more memory than every other entry together, so the cache
-      // is bounded by bytes as well as by count. Oldest first, same as the count rule.
-      let bytes = 0;
-      for (const entry of cache.values()) bytes += entry.bytes;
-      for (const [id, entry] of cache) {
-        if (bytes <= CACHE_MAX_BYTES) break;
-        bytes -= entry.bytes;
-        cache.delete(id);
-      }
       for (const [key, entry] of trustCache) {
         if (now - entry.at > TRUST_TTL) trustCache.delete(key);
       }
@@ -169,7 +157,11 @@ module.exports = {
       }));
     }
 
-    function reply(msg, built, layout, session, folder, folderRejected, trusted) {
+    // patchKey names the cache entry this reply was built from. The panel sends it back with Copy
+    // patch, so that reads the patch for the diff on screen. Asking by session alone would get
+    // whatever was cached for the session last, which is another folder whenever a second tab is
+    // open on it or two of one tab's requests are in flight.
+    function reply(msg, built, layout, session, folder, folderRejected, trusted, patchKey) {
       const settings = api.getSettings();
       api.sendToFrontend('diff', diffPayload({
         msg,
@@ -179,6 +171,7 @@ module.exports = {
         folder,
         folderRejected,
         trusted,
+        patchKey,
         home: homedir(),
         maxLineChars: MAX_LINE_CHARS,
         highlight: bundleReady && shouldHighlight(built.totals, settings),
@@ -215,7 +208,7 @@ module.exports = {
         );
       }
 
-      const key = `${msg.sessionId}|${scope}|${cacheKey(settings, folder)}`;
+      const key = diffKey(msg.sessionId, scope, folder, settings);
       let built;
       try {
         let pending = inFlight.get(key);
@@ -230,11 +223,9 @@ module.exports = {
       }
       if (!built.ok) return fail(msg, built.code, built.message, folder);
 
-      pruneCache();
-      cache.set(msg.sessionId, {
-        scope, folder, key: cacheKey(settings, folder), at: Date.now(), built, bytes: built.patchBytes || 0,
-      });
-      reply(msg, built, layout, session, folder, rejected, trust.trusted);
+      pruneCaches();
+      cache.set(key, { sessionId: msg.sessionId, built, bytes: built.patchBytes || 0 });
+      reply(msg, built, layout, session, folder, rejected, trust.trusted, key);
     }
 
     api.onFrontendMessage('diff', handleDiff);
@@ -247,20 +238,28 @@ module.exports = {
       const scope = normaliseScope(msg.scope);
       const layout = normaliseLayout(msg.layout);
       const { folder } = await resolveFolder(session, msg.folder);
-      const entry = cache.get(msg.sessionId);
+      // The key states the scope, the folder and the settings the entry was built under, so a hit
+      // is already the right diff and a miss means something changed: re-run git.
+      const key = diffKey(msg.sessionId, scope, folder, api.getSettings());
+      const entry = cache.get(key);
 
-      if (entry && entry.scope === scope && entry.key === cacheKey(api.getSettings(), folder)) {
+      if (entry) {
         const trust = trustCache.get(`${session.cwd}|${folder}`);
-        return reply(msg, entry.built, layout, session, folder, false, trust ? trust.verdict.trusted : undefined);
+        return reply(msg, entry.built, layout, session, folder, false, trust ? trust.verdict.trusted : undefined, key);
       }
       return handleDiff(msg);
     });
 
+    // The panel names the entry it is showing, by the patchKey its diff arrived with. A key naming
+    // another session gets nothing, and an entry already dropped from the cache is reported as
+    // stale, so the panel can tell the user to refresh instead of copying an empty patch.
     api.onFrontendMessage('getPatch', (msg) => {
-      const entry = cache.get(msg.sessionId);
+      const entry = belongsTo(msg.patchKey, msg.sessionId) ? cache.get(msg.patchKey) : null;
       api.sendToFrontend('patch', {
         requestId: msg.requestId,
         sessionId: msg.sessionId,
+        ok: !!entry,
+        code: entry ? '' : 'stale',
         patch: entry ? entry.built.patch : '',
       });
     });

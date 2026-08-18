@@ -17,11 +17,11 @@
 //   6. rebuilding a diff moves its entry to the back of the eviction order
 //   7. an entry stored without a size does not stop the byte cap reaching the ones that hold memory
 //
-//   node tests/plugins/git-diff-cache.test.js
+//   node tests/plugins/git-diff/cache.test.js
 
 const {
   CACHE_MAX, CACHE_MAX_BYTES, CACHE_TTL, diffKey, belongsTo, makeCache,
-} = require('../../plugins/git-diff/cache');
+} = require('../../../plugins/git-diff/cache');
 
 let failed = 0;
 function check(name, cond, detail) {

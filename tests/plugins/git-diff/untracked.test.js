@@ -12,7 +12,7 @@
 //   6. a link target containing a newline is never rendered as patch content, an oversized file
 //      spends no part of the byte budget, and both budgets firing at once report every path left out
 //
-//   node tests/plugins/git-diff-untracked.test.js
+//   node tests/plugins/git-diff/untracked.test.js
 
 const { execFileSync } = require('child_process');
 const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } = require('fs');
@@ -22,7 +22,7 @@ const { join } = require('path');
 const {
   synthesiseAddedFile, collectUntracked,
   MAX_UNTRACKED_BYTES, MAX_UNTRACKED_FILES, MAX_UNTRACKED_TOTAL_BYTES,
-} = require('../../plugins/git-diff/untracked');
+} = require('../../../plugins/git-diff/untracked');
 
 let failed = 0;
 function check(name, cond, detail) {

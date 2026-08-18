@@ -17,7 +17,7 @@
 //      a -c key, since git would read the rest of it as a value
 //   7. isValidRefName rejects anything that would reach git's argv as an option
 //
-//   node tests/plugins/git-diff-safety.test.js
+//   node tests/plugins/git-diff/safety.test.js
 
 const { execFileSync } = require('child_process');
 const { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, chmodSync } = require('fs');
@@ -26,7 +26,7 @@ const { join } = require('path');
 
 const {
   BASE_ARGS, diffArgs, numstatArgs, filterDrivers, filterOverrideArgs, isValidRefName,
-} = require('../../plugins/git-diff/git');
+} = require('../../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {

@@ -18,11 +18,11 @@
 // a parse, so its reader is checked here too, against the record shapes git actually emits, plus the
 // malformed ones: a record with too few fields, and a rename whose follow-on paths never arrived.
 //
-//   node tests/plugins/git-diff-limits.test.js
+//   node tests/plugins/git-diff/limits.test.js
 
-const { capLongLines, pathFromHeader, MAX_LINE_CHARS } = require('../../plugins/git-diff/longlines');
-const { MAX_PATCH_BYTES } = require('../../plugins/git-diff/payload');
-const { parseNumstat } = require('../../plugins/git-diff/git');
+const { capLongLines, pathFromHeader, MAX_LINE_CHARS } = require('../../../plugins/git-diff/longlines');
+const { MAX_PATCH_BYTES } = require('../../../plugins/git-diff/payload');
+const { parseNumstat } = require('../../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -221,7 +221,7 @@ const { execFileSync } = require('child_process');
 const { mkdtempSync, writeFileSync, rmSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
-const { BASE_ARGS, diffArgs } = require('../../plugins/git-diff/git');
+const { BASE_ARGS, diffArgs } = require('../../../plugins/git-diff/git');
 
 const repo = mkdtempSync(join(tmpdir(), 'clideck-git-limits-'));
 try {

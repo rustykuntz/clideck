@@ -10,7 +10,7 @@
 //   4. the argument builders, and the driver-name rule that keeps a name out of a -c key
 //   5. makeGit's prefix, against real git, since the -c arguments have to precede the subcommand
 //
-//   node tests/plugins/git-diff-resolve.test.js
+//   node tests/plugins/git-diff/resolve.test.js
 
 const { mkdtempSync, rmSync } = require('fs');
 const { tmpdir } = require('os');
@@ -19,7 +19,7 @@ const { join } = require('path');
 const {
   EMPTY_TREE, diffArgs, numstatArgs, isValidDriverName, makeGit,
   resolveRepo, resolveBase, listWorktrees,
-} = require('../../plugins/git-diff/git');
+} = require('../../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -294,7 +294,7 @@ async function main() {
       JSON.stringify(trees));
   }
 
-  // 4. The argument builders. Their effect is checked in git-diff-safety.test.js against real git;
+  // 4. The argument builders. Their effect is checked in safety.test.js against real git;
   // what is asserted here is the argv itself, since the context setting and the base both land in it.
   check('diffArgs: the exact argument list, with the base last',
     JSON.stringify(diffArgs('HEAD', 3))
@@ -309,7 +309,7 @@ async function main() {
     JSON.stringify(numstatArgs(EMPTY_TREE)));
 
   // A driver name goes into a -c key, which git splits on the first =, so the rule is checked
-  // directly as well as through filterDrivers in git-diff-safety.test.js.
+  // directly as well as through filterDrivers in safety.test.js.
   for (const good of ['lfs', 'dotted.name', 'A_b-1', 'demo']) {
     check(`isValidDriverName: accepts ${good}`, isValidDriverName(good) === true);
   }

@@ -16,16 +16,16 @@
 //   8. folderChoices lists the session folder, every worktree, and the folder in use, once each
 //   9. diffPayload and failPayload carry every field the client reads
 //
-// The cache key moved to cache.js, so its checks are in tests/plugins/git-diff-cache.test.js.
+// The cache key moved to cache.js, so its checks are in cache.test.js.
 //
-//   node tests/plugins/git-diff-payload.test.js
+//   node tests/plugins/git-diff/payload.test.js
 
 const {
   MAX_PATCH_BYTES, HIGHLIGHT_MAX_LINES, MAX_CHANGES_CEILING, clampContext, clampMaxChanges,
   untrackedFileList, parsedFileList, sumTotals, tooBigVerdict, shouldHighlight, folderChoices,
   normaliseScope, normaliseLayout, diffPayload, failPayload,
-} = require('../../plugins/git-diff/payload');
-const { parseNumstat } = require('../../plugins/git-diff/git');
+} = require('../../../plugins/git-diff/payload');
+const { parseNumstat } = require('../../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {

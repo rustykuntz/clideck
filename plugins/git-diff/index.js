@@ -6,10 +6,9 @@ const { homedir } = require('os');
 const { join, dirname } = require('path');
 const d2h = require('diff2html');
 const { collectUntracked } = require('./untracked');
-const { diffArgs } = require('./safety');
 const { MAX_PATCH_BYTES, MAX_CHANGES_CEILING, MAX_LINE_CHARS, capLongLines } = require('./budget');
 const {
-  makeGit, trustedGit, resolveRepo, resolveBase, listWorktrees, assessTrust, listUntracked, numstatFiles,
+  makeGit, resolveRepo, resolveBase, listWorktrees, assessTrust, diffPatch, listUntracked, numstatFiles,
 } = require('./git');
 // highlight.js is not called from here: the browser does the highlighting through diff2html's
 // own bundle. The package is still needed for its theme stylesheets, resolved by path below.
@@ -88,7 +87,7 @@ async function buildDiff(cwd, scope, settings, opts = {}) {
     await resolveBase(git, repoRoot, scope, String(settings.baseBranch || '').trim());
 
   const context = Number.isFinite(settings.contextLines) ? Math.max(0, Math.min(20, settings.contextLines)) : 3;
-  const tracked = await git(diffArgs(base, context), repoRoot);
+  const tracked = await diffPatch(git, repoRoot, base, context);
   if (!tracked.ok) {
     if (tracked.timedOut) return { ok: false, code: 'timeout', message: 'git diff timed out' };
     return { ok: false, code: 'git-failed', message: tracked.message || 'git diff failed' };

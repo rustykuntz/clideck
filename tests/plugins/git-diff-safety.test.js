@@ -24,7 +24,7 @@ const { join } = require('path');
 
 const {
   GLOBAL_ARGS, UNTRUSTED_ARGS, diffArgs, numstatArgs, riskyKeys, isValidRefName,
-} = require('../../plugins/git-diff/safety');
+} = require('../../plugins/git-diff/git');
 
 let failed = 0;
 function check(name, cond, detail) {

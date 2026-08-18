@@ -147,7 +147,7 @@ const { execFileSync } = require('child_process');
 const { mkdtempSync, writeFileSync, rmSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
-const { GLOBAL_ARGS, diffArgs } = require('../../plugins/git-diff/safety');
+const { GLOBAL_ARGS, diffArgs } = require('../../plugins/git-diff/git');
 
 const repo = mkdtempSync(join(tmpdir(), 'clideck-git-limits-'));
 try {

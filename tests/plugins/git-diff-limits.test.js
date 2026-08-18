@@ -148,7 +148,7 @@ const { execFileSync } = require('child_process');
 const { mkdtempSync, writeFileSync, rmSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
-const { GLOBAL_ARGS, diffArgs } = require('../../plugins/git-diff/git');
+const { BASE_ARGS, diffArgs } = require('../../plugins/git-diff/git');
 
 const repo = mkdtempSync(join(tmpdir(), 'clideck-git-limits-'));
 try {
@@ -167,7 +167,7 @@ try {
   git(['commit', '-qam', 'main']);
   try { git(['merge', 'side']); } catch { /* the conflict is the point */ }
 
-  const conflicted = execFileSync('git', [...GLOBAL_ARGS, ...diffArgs('HEAD', 3)], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const conflicted = execFileSync('git', [...BASE_ARGS, ...diffArgs('HEAD', 3)], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   const cappedConflict = capLongLines(conflicted);
   const longestAfter = Math.max(...cappedConflict.patch.split('\n').map((l) => l.length));
   check('a conflicted file with long lines is capped like any other',

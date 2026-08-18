@@ -13,7 +13,7 @@ const { collectUntracked } = require('./untracked');
 const { MAX_LINE_CHARS, capLongLines } = require('./longlines');
 const { diffKey, belongsTo, makeCache } = require('./cache');
 const {
-  makeGit, resolveRepo, resolveBase, listWorktrees, assessTrust, diffPatch, listUntracked, numstatFiles,
+  makeGit, resolveRepo, resolveBase, listWorktrees, probeFilterDrivers, diffPatch, listUntracked, numstatFiles,
 } = require('./git');
 const {
   MAX_PATCH_BYTES, clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals,
@@ -24,7 +24,7 @@ const {
 } = require('./diff2html');
 
 const FOLDER_STAT_TIMEOUT = 2000;
-const TRUST_TTL = 60 * 1000;
+const DRIVERS_TTL = 60 * 1000;
 
 // The folder to diff. An explicit client choice wins, as long as it is a directory. Otherwise
 // use where the session was spawned. UPSTREAM.md proposes exposing the session's process id so
@@ -55,7 +55,7 @@ async function isDirectory(path) {
 }
 
 async function buildDiff(cwd, scope, settings, opts = {}) {
-  const git = makeGit(!!opts.untrusted);
+  const git = makeGit(opts.drivers);
   const repo = await resolveRepo(git, cwd);
   if (!repo.ok) return repo;
 
@@ -130,25 +130,24 @@ module.exports = {
     // Diffs already being built, so two tabs polling one session share the work rather than
     // starting a second set of git processes.
     const inFlight = new Map();
-    // sessionCwd|folder → whether that folder's git configuration may be used, with the keys
-    // that made it unsafe. Cached because it costs two git calls and rarely changes.
-    const trustCache = new Map();
+    // folder → the filter drivers its own config defines, which every git call for that folder
+    // switches off by name. Cached because it costs a git call per diff and rarely changes.
+    const driversCache = new Map();
 
     function pruneCaches() {
       cache.prune();
       const now = Date.now();
-      for (const [key, entry] of trustCache) {
-        if (now - entry.at > TRUST_TTL) trustCache.delete(key);
+      for (const [key, entry] of driversCache) {
+        if (now - entry.at > DRIVERS_TTL) driversCache.delete(key);
       }
     }
 
-    async function trustFor(sessionCwd, folder) {
-      const key = `${sessionCwd}|${folder}`;
-      const hit = trustCache.get(key);
-      if (hit && Date.now() - hit.at < TRUST_TTL) return hit.verdict;
-      const verdict = await assessTrust(sessionCwd, folder);
-      trustCache.set(key, { at: Date.now(), verdict });
-      return verdict;
+    async function driversFor(folder) {
+      const hit = driversCache.get(folder);
+      if (hit && Date.now() - hit.at < DRIVERS_TTL) return hit.drivers;
+      const drivers = await probeFilterDrivers(folder);
+      driversCache.set(folder, { at: Date.now(), drivers });
+      return drivers;
     }
 
     function fail(msg, code, message, folder, extra = {}) {
@@ -162,7 +161,7 @@ module.exports = {
     // patch, so that reads the patch for the diff on screen. Asking by session alone would get
     // whatever was cached for the session last, which is another folder whenever a second tab is
     // open on it or two of one tab's requests are in flight.
-    function reply(msg, built, layout, session, folder, folderRejected, trusted, patchKey) {
+    function reply(msg, built, layout, session, folder, folderRejected, patchKey) {
       const settings = api.getSettings();
       api.sendToFrontend('diff', diffPayload({
         msg,
@@ -171,7 +170,6 @@ module.exports = {
         session,
         folder,
         folderRejected,
-        trusted,
         patchKey,
         home: homedir(),
         maxLineChars: MAX_LINE_CHARS,
@@ -193,19 +191,21 @@ module.exports = {
       const layout = normaliseLayout(msg.layout);
       const { folder, rejected } = await resolveFolder(session, msg.folder);
 
-      let trust;
+      let drivers;
       try {
-        trust = await trustFor(session.cwd, folder);
+        drivers = await driversFor(folder);
       } catch (e) {
         return fail(msg, 'git-failed', e.message, folder);
       }
-      if (!trust.trusted && trust.riskyKeys.length && msg.allowUnsafe !== true) {
+      // A driver whose name cannot go into a -c key cannot be switched off, and diffing the folder
+      // would run it. Nothing here can make that safe, so the diff stops.
+      if (drivers.rejected.length) {
         return fail(
           msg,
-          'unsafe-config',
-          `This folder is outside the session's repository and its git configuration names commands git would run while diffing it: ${trust.riskyKeys.join(', ')}`,
+          'unfilterable-config',
+          `This folder's git configuration defines a filter driver whose name cannot be overridden safely, so diffing it would run the driver's command: ${drivers.rejected.join(', ')}`,
           folder,
-          { riskyKeys: trust.riskyKeys },
+          { drivers: drivers.rejected },
         );
       }
 
@@ -214,7 +214,7 @@ module.exports = {
       try {
         let pending = inFlight.get(key);
         if (!pending) {
-          pending = buildDiff(folder, scope, settings, { untrusted: !trust.trusted })
+          pending = buildDiff(folder, scope, settings, { drivers: drivers.usable })
             .finally(() => inFlight.delete(key));
           inFlight.set(key, pending);
         }
@@ -226,7 +226,7 @@ module.exports = {
 
       pruneCaches();
       cache.set(key, { sessionId: msg.sessionId, built, bytes: built.patchBytes || 0 });
-      reply(msg, built, layout, session, folder, rejected, trust.trusted, key);
+      reply(msg, built, layout, session, folder, rejected, key);
     }
 
     api.onFrontendMessage('diff', handleDiff);
@@ -244,10 +244,7 @@ module.exports = {
       const key = diffKey(msg.sessionId, scope, folder, api.getSettings());
       const entry = cache.get(key);
 
-      if (entry) {
-        const trust = trustCache.get(`${session.cwd}|${folder}`);
-        return reply(msg, entry.built, layout, session, folder, false, trust ? trust.verdict.trusted : undefined, key);
-      }
+      if (entry) return reply(msg, entry.built, layout, session, folder, false, key);
       return handleDiff(msg);
     });
 

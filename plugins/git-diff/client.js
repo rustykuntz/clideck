@@ -26,7 +26,6 @@ const folderBySession = new Map();      // remembers the choice while the tab st
 let pendingRequest = null;
 let pendingTimer = null;                // clears a request that never came back
 let pendingPatchRequest = null;
-const unsafeAllowed = new Set();        // folders the user chose to diff despite their git config
 let requestSeq = 0;
 let pollTimer = null;
 let collapsed = new Set();
@@ -333,10 +332,7 @@ function request(kind, opts = {}) {
     pendingTimer = null;
     el.refresh.classList.remove('gd-busy');
   }, 20000);
-  api.send(kind, {
-    requestId: pendingRequest, sessionId, scope, layout, folder,
-    allowUnsafe: unsafeAllowed.has(folder),
-  });
+  api.send(kind, { requestId: pendingRequest, sessionId, scope, layout, folder });
 }
 
 function clearPending() {
@@ -455,7 +451,7 @@ function renderError(msg) {
     'no-git': 'git was not found on PATH of the CliDeck server process.',
     'no-session': 'That session is no longer running.',
     timeout: 'git took longer than 15 seconds and was stopped.',
-    'unsafe-config': 'This folder\'s git configuration would run commands.',
+    'unfilterable-config': 'This folder\'s git configuration would run a command that cannot be switched off.',
   };
   stopPolling();
   el.summary.textContent = '';
@@ -464,25 +460,17 @@ function renderError(msg) {
   el.body.innerHTML = `<div class="gd-state gd-error">
     <div class="gd-error-title">${escapeHtml(hints[msg.code] || 'git failed')}</div>
     ${msg.message ? `<pre class="gd-error-detail">${escapeHtml(msg.message)}</pre>` : ''}
-    ${msg.code === 'unsafe-config' ? unsafeConfigActions(msg) : ''}
+    ${msg.code === 'unfilterable-config' ? unfilterableActions(msg) : ''}
   </div>`;
-  if (msg.code === 'unsafe-config') {
-    el.body.querySelector('.gd-allow-unsafe')?.addEventListener('click', () => {
-      unsafeAllowed.add(msg.folder || '');
-      lastReply = null;
-      request('diff');
-      startPolling();   // renderError stopped it, and the user has now chosen to go ahead
-    });
-  }
 }
 
-// Git runs what these keys name whenever it diffs the folder. Three of them are switched off
-// per invocation; a clean filter cannot be, so going ahead means accepting that it runs.
-function unsafeConfigActions(msg) {
-  const keys = (msg.riskyKeys || []).map((k) => `<li>${escapeHtml(k)}</li>`).join('');
-  return `${keys ? `<ul class="gd-error-keys">${keys}</ul>` : ''}
-    <p class="gd-error-note">Pick another folder, or diff it anyway. The panel re-runs git every few seconds while it is open.</p>
-    <button class="gd-btn gd-allow-unsafe" type="button">Diff anyway</button>`;
+// Every other command a folder's config names is switched off per invocation. A filter driver is
+// switched off by name, so a name git would read as something else leaves nothing to do but name
+// the driver and stop.
+function unfilterableActions(msg) {
+  const drivers = (msg.drivers || []).map((d) => `<li>${escapeHtml(d)}</li>`).join('');
+  return `${drivers ? `<ul class="gd-error-keys">${drivers}</ul>` : ''}
+    <p class="gd-error-note">Pick another folder.</p>`;
 }
 
 function renderDiff(msg) {
@@ -524,7 +512,6 @@ function renderDiff(msg) {
     notes.push(`${files} untracked file${files === 1 ? '' : 's'} not shown, past the scan ${reason === 'bytes' ? 'size' : 'file count'} budget.`);
   }
   if (msg.baseBranchInvalid) notes.push('The Base Branch setting is not a valid ref name, so it was ignored.');
-  if (msg.folderTrusted === false) notes.push('This folder is outside the session\'s repository, so its git configuration is used when it is diffed.');
   el.note.hidden = notes.length === 0;
   el.note.textContent = notes.join(' ');
 

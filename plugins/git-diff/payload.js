@@ -120,7 +120,7 @@ function normaliseLayout(layout) {
   return layout === 'line-by-line' ? 'line-by-line' : 'side-by-side';
 }
 
-function diffPayload({ msg, built, layout, session, folder, folderRejected, trusted, highlight, html, home, maxLineChars, patchKey }) {
+function diffPayload({ msg, built, layout, session, folder, folderRejected, highlight, html, home, maxLineChars, patchKey }) {
   return {
     requestId: msg.requestId,
     sessionId: msg.sessionId,
@@ -131,7 +131,6 @@ function diffPayload({ msg, built, layout, session, folder, folderRejected, trus
     cwd: session.cwd,
     folder,
     folderRejected: !!folderRejected,
-    folderTrusted: trusted !== false,
     folders: folderChoices(session.cwd, built.worktrees, built.repoRoot, folder),
     home,
     repoRoot: built.repoRoot,

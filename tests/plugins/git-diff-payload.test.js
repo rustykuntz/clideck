@@ -224,7 +224,6 @@ const payload = diffPayload({
   session: { name: 'agent', cwd: '/repo' },
   folder: '/repo/.worktrees/feature',
   folderRejected: false,
-  trusted: true,
   highlight: true,
   html: '<div class="d2h-wrapper"></div>',
   home: '/home/someone',
@@ -232,7 +231,7 @@ const payload = diffPayload({
   patchKey: 's1|base|/repo/.worktrees/feature|3|20000|',
 });
 const CLIENT_FIELDS = [
-  'requestId', 'sessionId', 'ok', 'patchKey', 'sessionName', 'cwd', 'folder', 'folderRejected', 'folderTrusted',
+  'requestId', 'sessionId', 'ok', 'patchKey', 'sessionName', 'cwd', 'folder', 'folderRejected',
   'folders', 'home', 'repoRoot', 'branch', 'scope', 'layout', 'baseLabel', 'baseFallback',
   'baseIsHead', 'baseBranchInvalid', 'totals', 'files', 'skippedEntries', 'untrackedTruncated',
   'tooBig', 'patchBytes', 'maxChanges', 'maxLineChars', 'highlight', 'html',
@@ -250,10 +249,6 @@ check('diff reply: the folder list is built from the session folder and the work
   payload.folders.length === 3 && payload.folders[0].path === '/repo'
     && payload.folders.some((c) => c.path === '/repo/.worktrees/feature'),
   JSON.stringify(payload.folders));
-check('diff reply: an untrusted folder is reported as untrusted',
-  diffPayload({ msg: {}, built, layout: 'side-by-side', session: { cwd: '/repo' }, folder: '/x', trusted: false, home: '' }).folderTrusted === false);
-check('diff reply: a trust verdict the caller does not have is not a warning',
-  diffPayload({ msg: {}, built, layout: 'side-by-side', session: { cwd: '/repo' }, folder: '/x', trusted: undefined, home: '' }).folderTrusted === true);
 check('diff reply: an unknown scope or layout falls back to the defaults',
   (() => {
     const p = diffPayload({ msg: { scope: 'nonsense' }, built, layout: 'nonsense', session: { cwd: '/repo' }, folder: '/repo', home: '' });
@@ -266,20 +261,20 @@ check('diff reply: skipped entries and the truncation note travel with it',
 
 const failure = failPayload({
   msg: { requestId: 'r2', sessionId: 's1' },
-  code: 'unsafe-config',
-  message: 'names commands: diff.external',
+  code: 'unfilterable-config',
+  message: 'a filter driver that cannot be overridden: a=b',
   folder: '/elsewhere',
   sessionCwd: '/repo',
   home: '/home/someone',
-  extra: { riskyKeys: ['diff.external'] },
+  extra: { drivers: ['a=b'] },
 });
 check('failure: the code and message reach the client',
-  failure.ok === false && failure.code === 'unsafe-config' && failure.message.includes('diff.external'));
+  failure.ok === false && failure.code === 'unfilterable-config' && failure.message.includes('a=b'));
 check('failure: the session folder is still offered, so a bad choice is not a dead end',
   failure.folders.length === 2 && failure.folders[0].path === '/repo' && failure.folders[1].path === '/elsewhere',
   JSON.stringify(failure.folders));
 check('failure: extra fields for this code are carried through',
-  JSON.stringify(failure.riskyKeys) === JSON.stringify(['diff.external']));
+  JSON.stringify(failure.drivers) === JSON.stringify(['a=b']));
 check('failure: the session folder is listed once when it is the folder that failed',
   failPayload({ msg: {}, code: 'not-a-repo', message: 'x', folder: '/repo', sessionCwd: '/repo', home: '' }).folders.length === 1);
 check('failure: no session folder still reports the folder that failed',

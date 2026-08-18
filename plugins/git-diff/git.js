@@ -6,14 +6,16 @@
 //
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 //
-// Nothing reaches git's argv unchecked. The base branch setting is the only value a user types
-// that gets there, and a ref name is what it has to look like.
+// Nothing reaches git's argv unchecked. Two values get there: the base branch setting, which has
+// to look like a ref name, and the filter driver names read out of a folder's config, which have
+// to look like names git will not split into a key and a value of their own.
 //
-// A folder outside the session's repository does not get to run the commands its own config
-// names, as far as git allows. Several config keys name a command git executes during an
-// ordinary diff, and this panel re-runs git every few seconds with no user action beyond opening
-// it, so the arguments below switch off the ones that can be switched off and riskyKeys reports
-// the rest for the user to decide on.
+// No folder's own config gets to name a command git runs, the session's own folder included.
+// Several config keys name a command git executes during an ordinary diff, and this panel
+// re-runs git every few seconds with no user action beyond opening it. BASE_ARGS and the diff
+// flags close all but one of them outright; the exception is a filter driver's clean command,
+// which filterDrivers reads out of the folder's config so filterOverrideArgs can switch it off
+// by name.
 //
 // No npm dependencies, so the tests can drive all of this in a checkout where the plugin has
 // not been installed.
@@ -25,12 +27,10 @@ const GIT_TIMEOUT = 15000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 // Applied to every git call. quotepath=false keeps non-ASCII paths readable in the patch.
-const GLOBAL_ARGS = ['-c', 'core.quotepath=false'];
-
-// Applied on top of the above in a folder outside the session's own repository. Setting
-// core.fsmonitor to nothing stops git running the repository's monitor hook. It is left alone
-// for trusted folders, where it is the user's own setting and worth real speed on a large repo.
-const UNTRUSTED_ARGS = ['-c', 'core.fsmonitor='];
+// Setting core.fsmonitor to nothing stops git running the repository's monitor hook, which
+// GIT_OPTIONAL_LOCKS=0 does not. That gives up the hook's speedup on a large repo even where the
+// setting is the user's own, which is the cost of treating no folder as trusted.
+const BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'core.fsmonitor='];
 
 // --no-ext-diff drops diff.external, --no-textconv drops the textconv drivers. Both cost
 // output a diff panel does not need: an external driver's formatting, and text extracted from
@@ -44,36 +44,62 @@ function numstatArgs(base) {
   return ['diff', '--numstat', '-z', '--no-ext-diff', '--no-textconv', '--find-renames', base];
 }
 
-const RISKY_EXACT = new Set(['diff.external', 'core.fsmonitor', 'core.hookspath']);
-const RISKY_LEAVES = { diff: new Set(['textconv', 'command']), filter: new Set(['clean', 'smudge', 'process']) };
+// A filter driver's clean command is the one execution path no diff flag closes: git runs it to
+// turn a worktree file into blob form, which is what comparing a worktree against a commit needs.
+// No flag switches it off, but naming it does, so the driver names have to be read out of the
+// folder's config first. process is the long-running protocol filter, which serves the clean side
+// as well, so it counts as a driver definition too. smudge does not: it runs on checkout, and
+// nothing here writes to a worktree.
+const FILTER_LEAVES = new Set(['clean', 'process']);
 
-// git config lowercases the section and the last segment but keeps the middle one as written,
-// so a driver called "Demo" stays "Demo" while "CLEAN" arrives as "clean".
-function isRiskyKey(key) {
-  const lower = String(key).toLowerCase();
-  if (RISKY_EXACT.has(lower)) return true;
-  const parts = lower.split('.');
-  if (parts.length < 3) return false;
-  return !!RISKY_LEAVES[parts[0]]?.has(parts[parts.length - 1]);
+// A driver name reaches git's argv inside a -c key, and git splits that on the first =, so a name
+// containing one would set a different key to a value of our choosing: `-c filter.a=b.clean=`
+// sets filter.a to "b.clean=". Anything outside this character set is refused rather than passed
+// on.
+function isValidDriverName(name) {
+  return /^[A-Za-z0-9._-]+$/.test(String(name || ''));
 }
 
 // Reads the output of `git config --local --list -z`, whose records are "key\nvalue" separated
-// by NULs, and returns the keys that name a command. Matching happens here rather than through
-// git config --get-regexp so the patterns stay under our control. --local covers keys pulled in
-// by include.path from the repository's own config file, since git resolves those while parsing
-// it.
+// by NULs, and returns the filter drivers the folder defines, split into the ones that can be
+// switched off and the ones whose name cannot go into argv. Matching happens here rather than
+// through git config --get-regexp so the patterns stay under our control. --local covers keys
+// pulled in by include.path from the repository's own config file, since git resolves those while
+// parsing it.
 //
-// filter.<driver>.clean is reported but cannot be switched off per invocation: git has no flag
-// for it, and it runs whenever a worktree file is compared against a blob. Reporting it is the
-// only handling available, which is why an untrusted folder needs the user to say go ahead.
-function riskyKeys(configListZ) {
-  const found = [];
+// git config lowercases the section and the last segment but keeps the middle one as written, so
+// a driver called "Demo" stays "Demo" while "CLEAN" arrives as "clean". A driver name may contain
+// dots of its own, so everything between the section and the leaf is the name.
+function filterDrivers(configListZ) {
+  const usable = new Set();
+  const rejected = new Set();
   for (const record of String(configListZ || '').split('\0')) {
     if (!record) continue;
     const key = record.split('\n')[0];
-    if (key && isRiskyKey(key)) found.push(key);
+    if (!key) continue;
+    const parts = key.split('.');
+    if (parts.length < 3) continue;
+    if (parts[0].toLowerCase() !== 'filter') continue;
+    if (!FILTER_LEAVES.has(parts[parts.length - 1].toLowerCase())) continue;
+    const name = parts.slice(1, -1).join('.');
+    (isValidDriverName(name) ? usable : rejected).add(name);
   }
-  return found;
+  return { usable: [...usable], rejected: [...rejected] };
+}
+
+// Switches each driver off for one invocation. required=false has to go with it: a required
+// filter that produces no output makes git abort the whole command with "clean filter failed"
+// rather than fall back to the file's own content.
+function filterOverrideArgs(drivers) {
+  const args = [];
+  for (const name of drivers || []) {
+    args.push(
+      '-c', `filter.${name}.clean=`,
+      '-c', `filter.${name}.process=`,
+      '-c', `filter.${name}.required=false`,
+    );
+  }
+  return args;
 }
 
 // The base branch setting goes into git's argv, so it has to be a plausible ref name and not an
@@ -118,15 +144,21 @@ function runGit(args, cwd) {
   });
 }
 
-// Every git call goes through one of these. The trusted one leaves the repository's own
-// settings alone; the untrusted one switches off what ./safety can switch off. -c has to come
-// before the subcommand, which is why it is prepended here rather than passed by the callers.
-function makeGit(untrusted) {
-  const prefix = untrusted ? [...GLOBAL_ARGS, ...UNTRUSTED_ARGS] : GLOBAL_ARGS;
+// Every git call goes through one of these. drivers names the filter drivers found in the
+// folder's own config, which are switched off by name; the rest of the hardening is the same for
+// every folder. -c has to come before the subcommand, which is why the prefix is assembled here
+// rather than passed by the callers.
+function makeGit(drivers = []) {
+  const prefix = [...BASE_ARGS, ...filterOverrideArgs(drivers)];
   return (args, cwd) => runGit([...prefix, ...args], cwd);
 }
 
-const trustedGit = makeGit(false);
+// The filter drivers a folder's own config defines. config reads a file and runs nothing, so this
+// probe is safe to make before any override is in place.
+async function probeFilterDrivers(cwd) {
+  const listed = await makeGit()(['config', '--local', '--list', '-z'], cwd);
+  return listed.ok ? filterDrivers(listed.stdout) : { usable: [], rejected: [] };
+}
 
 async function resolveRepo(git, cwd) {
   const top = await git(['rev-parse', '--show-toplevel'], cwd);
@@ -216,31 +248,6 @@ async function listWorktrees(git, repoRoot) {
   return trees.filter((t) => t.path && !t.bare);
 }
 
-// Whether the plugin may hand a folder's own git configuration to git. Diffing a repository
-// runs commands it names in diff.external, diff.<driver>.textconv, filter.<driver>.clean and
-// core.fsmonitor, and this panel re-runs git every few seconds on its own. The session's folder
-// and the worktrees of its repository are trusted: that is where the user's agent already runs.
-// Anything else has its configuration read first, and a folder that names a command needs the
-// user to say go ahead.
-//
-// rev-parse and config run no hooks or filters, so probing is safe. They still go through the
-// untrusted git, which switches off core.fsmonitor.
-async function assessTrust(sessionCwd, folder) {
-  if (!folder || folder === sessionCwd) return { trusted: true, riskyKeys: [] };
-
-  const untrustedGit = makeGit(true);
-  const sessionRepo = await resolveRepo(trustedGit, sessionCwd);
-  if (sessionRepo.ok) {
-    const trees = await listWorktrees(trustedGit, sessionRepo.repoRoot);
-    const own = new Set([sessionRepo.repoRoot, ...trees.map((t) => t.path)]);
-    const top = await untrustedGit(['rev-parse', '--show-toplevel'], folder);
-    if (top.ok && own.has(top.stdout.trim())) return { trusted: true, riskyKeys: [] };
-  }
-
-  const config = await untrustedGit(['config', '--local', '--list', '-z'], folder);
-  return { trusted: false, riskyKeys: config.ok ? riskyKeys(config.stdout) : [] };
-}
-
 // The patch for tracked files. The argument list is this module's business, so callers ask for
 // a diff rather than assembling one.
 function diffPatch(git, repoRoot, base, context) {
@@ -301,19 +308,18 @@ async function numstatFiles(git, repoRoot, base) {
 
 module.exports = {
   EMPTY_TREE,
-  GLOBAL_ARGS,
-  UNTRUSTED_ARGS,
+  BASE_ARGS,
   diffArgs,
   numstatArgs,
-  isRiskyKey,
-  riskyKeys,
+  isValidDriverName,
+  filterDrivers,
+  filterOverrideArgs,
   isValidRefName,
   makeGit,
-  trustedGit,
+  probeFilterDrivers,
   resolveRepo,
   resolveBase,
   listWorktrees,
-  assessTrust,
   diffPatch,
   listUntracked,
   numstatFiles,

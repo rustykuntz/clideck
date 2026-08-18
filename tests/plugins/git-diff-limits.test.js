@@ -11,9 +11,12 @@
 //   3. the file is reported by path with its longest line length, so the panel can say why
 //   4. renames, new files and multi-file patches are handled
 //   5. the scan itself is cheap enough to run on every diff
+//   6. a content line that reads like a header does not split a file, a mode change is left alone,
+//      and a header line over the ceiling drops the content with it
 //
 // The file list for a patch past that ceiling comes from `git diff --numstat -z` instead of from
-// a parse, so its reader is checked here too, against the record shapes git actually emits.
+// a parse, so its reader is checked here too, against the record shapes git actually emits, plus the
+// malformed ones: a record with too few fields, and a rename whose follow-on paths never arrived.
 //
 //   node tests/plugins/git-diff-limits.test.js
 
@@ -95,6 +98,54 @@ check('unparseable header: passed through rather than mangled',
   capLongLines(odd).patch === odd && capLongLines(odd).longLines.size === 0,
   capLongLines(odd).patch.slice(0, 120));
 
+// A patch of a patch: git prefixes every content line, so a line that reads like a header is not
+// one. Treating it as a file boundary would split the file in two and lose the real content.
+const nested = ['diff --git a/f.patch b/f.patch', 'index 1111111..2222222 100644', '--- a/f.patch', '+++ b/f.patch', '@@ -1,2 +1,2 @@', '+diff --git a/inner b/inner', '-diff --git a/gone b/gone', ''].join('\n');
+const nestedCapped = capLongLines(nested);
+check('a content line that reads like a header is not a file boundary',
+  nestedCapped.patch === nested && (nestedCapped.patch.match(/^diff --git /gm) || []).length === 1,
+  nestedCapped.patch);
+
+// A mode change carries no ---/+++ pair and no hunk, so the whole record is header.
+const modeOnly = ['diff --git a/f.sh b/f.sh', 'old mode 100644', 'new mode 100755', ''].join('\n');
+check('a mode-change-only file is returned unchanged',
+  capLongLines(modeOnly).patch === modeOnly && capLongLines(modeOnly).longLines.size === 0,
+  capLongLines(modeOnly).patch);
+
+// The trailing newline is restored when one was dropped with a file's content, and not invented
+// where there was none.
+const noTrailer = file('edge.txt', ['-a', '+b']);
+check('a patch that does not end in a newline does not gain one',
+  capLongLines(noTrailer).patch === noTrailer, JSON.stringify(capLongLines(noTrailer).patch.slice(-20)));
+
+// The limit is an argument, so a caller can cap harder than the default.
+const modest = `${file('small.txt', [`+${'0'.repeat(39)}`])}\n`;
+check('the limit argument is honoured',
+  capLongLines(modest).longLines.size === 0 && capLongLines(modest, 10).longLines.get('small.txt') === 40,
+  [...capLongLines(modest, 10).longLines]);
+
+// A header the path regexes cannot read, but which still opens a file: the content goes, and with no
+// path there is nothing to report and nothing to name in the placeholder. git only writes this
+// quoted form with core.quotepath on, which BASE_ARGS turns off.
+const quoted = ['diff --git "a/x" "b/x"', 'index 1111111..2222222 100644', '--- "a/x"', '+++ "b/x"', '@@ -1 +1 @@', `+${'z'.repeat(MAX_LINE_CHARS + 1)}`, ''].join('\n');
+const quotedCapped = capLongLines(quoted);
+check('an unreadable header over the ceiling: content replaced by the name-free marker',
+  quotedCapped.patch.includes('GIT binary patch')
+    && !quotedCapped.patch.includes('zzzz')
+    && quotedCapped.longLines.size === 0,
+  quotedCapped.patch);
+
+// Header lines count toward the longest line as well as content lines, so a file whose ---/+++ pair
+// or index line is over the ceiling loses its content even though the content is short. The
+// `diff --git` line itself is never measured and is left as it arrived, which only matters for a
+// path long enough to reach the ceiling on its own — far past what a filesystem allows.
+const longIndex = ['diff --git a/f.txt b/f.txt', `index ${'a'.repeat(MAX_LINE_CHARS)}`, '--- a/f.txt', '+++ b/f.txt', '@@ -1 +1 @@', '+short', ''].join('\n');
+const longIndexCapped = capLongLines(longIndex);
+check('a header line over the ceiling drops the content too, and is reported by path',
+  !longIndexCapped.patch.includes('+short')
+    && longIndexCapped.longLines.get('f.txt') === MAX_LINE_CHARS + 6,
+  [...longIndexCapped.longLines]);
+
 // 5. Cost on the largest patch the panel will ever parse.
 const bigLine = `+${'k'.repeat(2000)}`;
 const chunks = [];
@@ -141,6 +192,28 @@ check('numstat: a tab in the path is kept, not treated as a field break',
 
 check('numstat: no output means no files',
   parseNumstat('').length === 0 && parseNumstat(undefined).length === 0);
+
+const deletedRecord = parseNumstat('0\t12\tgone.js\0');
+check('numstat: a deleted file reports deletions only',
+  deletedRecord[0].deletions === 12 && deletedRecord[0].additions === 0 && deletedRecord[0].isBinary === false,
+  JSON.stringify(deletedRecord));
+
+check('numstat: a count that is not a number reads as zero, not NaN',
+  parseNumstat('x\t3\tf.js\0')[0].additions === 0 && parseNumstat('x\t3\tf.js\0')[0].deletions === 3,
+  JSON.stringify(parseNumstat('x\t3\tf.js\0')));
+
+check('numstat: a record with too few fields is skipped',
+  parseNumstat('1\t2\0').length === 0, JSON.stringify(parseNumstat('1\t2\0')));
+
+// A rename's paths arrive as two records of their own. Output cut short mid-rename leaves nothing to
+// name the file by, and a row with no path is worse in the panel than no row.
+check('numstat: a rename cut short is dropped rather than named nothing',
+  parseNumstat('1\t0\t\0').length === 0
+    && parseNumstat(['1\t0\t', 'old.txt'].join(NUL)).length === 0,
+  JSON.stringify([parseNumstat('1\t0\t\0'), parseNumstat(['1\t0\t', 'old.txt'].join(NUL))]));
+check('numstat: a rename cut short does not take its neighbour with it',
+  parseNumstat(['1\t0\tkeep.txt', '1\t0\t'].join(NUL)).length === 1,
+  JSON.stringify(parseNumstat(['1\t0\tkeep.txt', '1\t0\t'].join(NUL))));
 
 // 6. A conflicted file, since git reports those differently when no base is named. The plugin
 // always names one, so the ordinary header form is what arrives, and the ceiling applies.

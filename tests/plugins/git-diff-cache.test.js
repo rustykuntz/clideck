@@ -15,6 +15,7 @@
 //      folder path contains the separator
 //   5. entries expire by age, by count, by total bytes, and when their session ends
 //   6. rebuilding a diff moves its entry to the back of the eviction order
+//   7. an entry stored without a size does not stop the byte cap reaching the ones that hold memory
 //
 //   node tests/plugins/git-diff-cache.test.js
 
@@ -155,6 +156,22 @@ function fakeClock(start = 1_000_000) {
   check('the byte cap evicts the oldest entry, not the largest',
     cache.get(small) === null && cache.get(huge) !== null, cache.keys());
   check('the byte cap stops once the total fits', cache.size() === 1, cache.keys());
+}
+
+// 5e. An entry stored without a size counts as nothing, so it must not stop the byte cap from
+// reaching the entries that do hold memory.
+{
+  const cache = makeCache();
+  const sizeless = diffKey('s1', 'uncommitted', '/repo/sizeless', SETTINGS);
+  const huge = diffKey('s1', 'uncommitted', '/repo/huge', SETTINGS);
+  const newest = diffKey('s1', 'uncommitted', '/repo/newest', SETTINGS);
+  cache.set(sizeless, { sessionId: 's1', built: built('NO-BYTES') });          // bytes omitted
+  cache.set(huge, { sessionId: 's1', built: built('HUGE'), bytes: CACHE_MAX_BYTES });
+  cache.set(newest, { sessionId: 's1', built: built('NEW'), bytes: 1 });
+  cache.prune();
+  check('an entry stored without a size is kept until the cap is passed',
+    cache.get(sizeless) === null && cache.get(huge) === null && cache.get(newest)?.built.patch === 'NEW',
+    cache.keys());
 }
 
 // 6. A rebuilt diff is the newest entry. Without this, an entry rebuilt on every poll would keep

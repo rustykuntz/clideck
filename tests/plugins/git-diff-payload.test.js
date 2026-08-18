@@ -109,6 +109,10 @@ check('parsed: a file over the per-file change limit is flagged',
 check('parsed: no reports means nothing is called oversized or long',
   parsedFileList(parsed).every((f) => f.oversizedBytes === 0 && f.longestLine === 0),
   JSON.stringify(parsedFileList(parsed).map((f) => [f.path, f.oversizedBytes, f.longestLine])));
+// A parse that reports no new name at all still has to name the file, or the panel draws a blank row.
+check('parsed: a record with no new name is named by its old one',
+  parsedFileList([{ oldName: 'only.js', addedLines: 1, deletedLines: 0 }])[0].path === 'only.js',
+  JSON.stringify(parsedFileList([{ oldName: 'only.js', addedLines: 1, deletedLines: 0 }])));
 
 // 4. Both file lists reach the same client code, so they have to carry the same fields.
 const fromNumstat = parseNumstat('2\t1\tsrc/app.js\0')[0];

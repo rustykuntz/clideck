@@ -281,6 +281,9 @@ function parseNumstat(out) {
       oldPath = fields[++i] || '';
       path = fields[++i] || '';
     }
+    // A rename whose two follow-on records are missing leaves nothing to name the file by, and a
+    // nameless row in the panel's file list is worse than no row at all.
+    if (!path) continue;
     files.push({
       path,
       oldPath,

@@ -9,6 +9,8 @@
 //   4. normal text and binary files still render exactly as before
 //   5. the scan is bounded: past the file count or the byte budget, paths are reported rather
 //      than read, since an unignored node_modules would otherwise be read in full on every poll
+//   6. a link target containing a newline is never rendered as patch content, an oversized file
+//      spends no part of the byte budget, and both budgets firing at once report every path left out
 //
 //   node tests/plugins/git-diff-untracked.test.js
 
@@ -197,6 +199,73 @@ async function main() {
   check('byte budget: the cut is at the same place every time',
     JSON.stringify((await collectUntracked(heavy, heavyPaths.slice().sort())).entries.map((e) => e.path))
       === JSON.stringify(weighed.entries.map((e) => e.path)));
+
+  // A link target is content in the patch, so a newline in it would end the header line early and
+  // let the rest be read as patch syntax. Such a link renders as a placeholder instead.
+  symlinkSync('first\nsecond', join(repo, 'oddtarget'));
+  const oddTarget = await synthesiseAddedFile(repo, 'oddtarget');
+  check('symlink with a newline in its target: placeholder, no hunk',
+    !!oddTarget && oddTarget.patch.includes('new file mode 120000')
+      && oddTarget.patch.includes('Binary files /dev/null and b/oddtarget differ')
+      && !oddTarget.patch.includes('@@') && !oddTarget.patch.includes('second'),
+    oddTarget && oddTarget.patch);
+
+  // An ordinary link is one added line, and costs its target's length rather than a file's size.
+  const linkEntry = (await collectUntracked(repo, ['leak'])).entries[0];
+  check('symlink: recorded as one added line, sized by its target',
+    linkEntry.additions === 1 && linkEntry.bytes === Buffer.byteLength(join(outside, 'secret.txt'))
+      && linkEntry.oversized === false,
+    JSON.stringify(linkEntry));
+
+  // Nothing untracked at all is the common case, and must not produce a stray patch.
+  const none = await collectUntracked(repo, []);
+  check('no untracked files: an empty patch, no entries, nothing truncated',
+    none.patch === '' && none.entries.length === 0 && none.truncated === null
+      && none.oversized.size === 0 && none.skipped.size === 0,
+    JSON.stringify({ patch: none.patch, entries: none.entries.length, truncated: none.truncated }));
+
+  // An oversized file is never read, so it spends no part of the byte budget. Without that, a folder
+  // of large files would truncate the list on the first few paths.
+  const chunky = join(root, 'chunky');
+  mkdirSync(chunky);
+  const chunkySize = MAX_UNTRACKED_BYTES + 1024;
+  const chunkyCount = Math.ceil(MAX_UNTRACKED_TOTAL_BYTES / chunkySize) + 4;
+  const chunkyPaths = [];
+  for (let i = 0; i < chunkyCount; i++) {
+    const name = `c${String(i).padStart(3, '0')}.bin`;
+    writeFileSync(join(chunky, name), 'x'.repeat(chunkySize));
+    chunkyPaths.push(name);
+  }
+  const chunked = await collectUntracked(chunky, chunkyPaths.sort());
+  check('oversized files cost no byte budget: all of them are listed, nothing truncated',
+    chunked.truncated === null
+      && chunked.entries.length === chunkyCount
+      && chunked.oversized.size === chunkyCount
+      && !chunked.patch.includes('xxxx'),
+    `${chunkyCount} files of ${chunkySize} bytes, truncated ${JSON.stringify(chunked.truncated)}`);
+
+  // Both budgets at once: more paths than the count cap, and the ones inside it already past the
+  // byte budget. The count that is reported has to cover everything left out, by either rule.
+  const both = join(root, 'both');
+  mkdirSync(both);
+  const bothChunk = 'y'.repeat(5 * 1024);
+  const bothCount = MAX_UNTRACKED_FILES + 100;
+  const bothPaths = [];
+  for (let i = 0; i < bothCount; i++) {
+    const name = `b${String(i).padStart(5, '0')}.txt`;
+    writeFileSync(join(both, name), bothChunk);
+    bothPaths.push(name);
+  }
+  const bothHit = await collectUntracked(both, bothPaths.sort());
+  check('both budgets: the byte budget is the reason, and the count covers every path left out',
+    bothHit.truncated?.reason === 'bytes'
+      && bothHit.entries.length + bothHit.truncated.files === bothCount
+      && bothHit.truncated.files > 100,
+    `${bothHit.entries.length} rendered, ${JSON.stringify(bothHit.truncated)} of ${bothCount}`);
+  check('both budgets: the paths rendered are the first ones on the list, in order',
+    JSON.stringify(bothHit.entries.map((e) => e.path))
+      === JSON.stringify(bothPaths.slice(0, bothHit.entries.length)),
+    JSON.stringify(bothHit.entries.slice(0, 3).map((e) => e.path)));
 }
 
 main()

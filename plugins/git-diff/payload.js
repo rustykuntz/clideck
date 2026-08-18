@@ -1,15 +1,14 @@
-// The shaping between a built diff and the message the panel receives: the file records, the
-// totals, which limit a diff fell foul of, the folders it can be pointed at, and the payloads
-// themselves. Kept apart from index.js so this layer can be checked without running git or
-// rendering anything.
+// The reply the panel receives, built from a diff that index.js has already assembled: the file
+// records, the totals, which limit a diff fell foul of, the folders it can be pointed at, and the
+// two payloads themselves. Kept apart from index.js so this layer can be checked without running
+// git or rendering anything.
 //
 // Everything here is a plain function over plain data. Nothing runs a subprocess, touches the
 // filesystem or calls the plugin api, and there are no npm dependencies, so the tests drive all
 // of it in a checkout where the plugin has not been installed.
 
-const { MAX_CHANGES_CEILING } = require('./budget');
-
-const HIGHLIGHT_MAX_LINES = 6000; // above this the browser is told not to highlight
+const HIGHLIGHT_MAX_LINES = 6000;    // above this the browser is told not to highlight
+const MAX_CHANGES_CEILING = 200000;  // hard ceiling on the maxChanges setting
 
 // Both settings reach code that has to hold: the context count goes into git's argv, and the
 // change limit bounds what the browser is asked to lay out. A missing or nonsense value takes
@@ -176,6 +175,7 @@ function failPayload({ msg, code, message, folder, sessionCwd, home, extra = {} 
 
 module.exports = {
   HIGHLIGHT_MAX_LINES,
+  MAX_CHANGES_CEILING,
   clampContext,
   clampMaxChanges,
   untrackedFileList,

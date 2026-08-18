@@ -1,7 +1,7 @@
 // Between running git and sending the panel a diff sits a layer of plain shaping: the file
 // records, the totals, which limit the diff fell foul of, the folders it can be pointed at, and
 // the message itself. It used to live inside index.js, where nothing could reach it without
-// loading diff2html. format.js holds it now, with no dependencies, so it is checked directly.
+// loading diff2html. payload.js holds it now, with no dependencies, so it is checked directly.
 //
 // What is asserted here:
 //
@@ -18,15 +18,15 @@
 //
 // The cache key moved to cache.js, so its checks are in tests/plugins/git-diff-cache.test.js.
 //
-//   node tests/plugins/git-diff-format.test.js
+//   node tests/plugins/git-diff-payload.test.js
 
 const {
-  HIGHLIGHT_MAX_LINES, clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals,
-  tooBigVerdict, shouldHighlight, folderChoices, normaliseScope, normaliseLayout,
-  diffPayload, failPayload,
-} = require('../../plugins/git-diff/format');
+  HIGHLIGHT_MAX_LINES, MAX_CHANGES_CEILING, clampContext, clampMaxChanges, untrackedFileList,
+  parsedFileList, sumTotals, tooBigVerdict, shouldHighlight, folderChoices, normaliseScope,
+  normaliseLayout, diffPayload, failPayload,
+} = require('../../plugins/git-diff/payload');
 const { parseNumstat } = require('../../plugins/git-diff/git');
-const { MAX_CHANGES_CEILING, MAX_PATCH_BYTES } = require('../../plugins/git-diff/budget');
+const { MAX_PATCH_BYTES } = require('../../plugins/git-diff/budget');
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -134,7 +134,7 @@ check('context lines: zero is allowed and both bounds hold',
 check('max changes: the default when unset or nonsense',
   clampMaxChanges(undefined) === 20000 && clampMaxChanges(Infinity) === 20000,
   [clampMaxChanges(undefined), clampMaxChanges(Infinity)]);
-check('max changes: floor of 100 and the ceiling from budget.js',
+check('max changes: floor of 100 and the ceiling from payload.js',
   clampMaxChanges(1) === 100 && clampMaxChanges(100) === 100
     && clampMaxChanges(MAX_CHANGES_CEILING + 1) === MAX_CHANGES_CEILING
     && clampMaxChanges(500) === 500,
@@ -287,4 +287,4 @@ check('failure: no session folder still reports the folder that failed',
   failPayload({ msg: {}, code: 'no-session', message: 'x', folder: '', sessionCwd: '', home: '' }).folder === '');
 
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
-console.log('\nall git-diff format checks passed');
+console.log('\nall git-diff payload checks passed');

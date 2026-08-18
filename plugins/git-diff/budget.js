@@ -15,7 +15,6 @@
 // installed.
 
 const MAX_PATCH_BYTES = 8 * 1024 * 1024;   // above this the patch is never parsed at all
-const MAX_CHANGES_CEILING = 200000;        // hard ceiling on the maxChanges setting
 const MAX_LINE_CHARS = 20000;              // per line, across every file in the patch
 
 // Only the plain header form is treated as a file boundary. The plugin's diff always names a
@@ -99,4 +98,4 @@ function capLongLines(patch, limit = MAX_LINE_CHARS) {
   return { patch: text, longLines };
 }
 
-module.exports = { MAX_PATCH_BYTES, MAX_CHANGES_CEILING, MAX_LINE_CHARS, capLongLines, pathFromHeader };
+module.exports = { MAX_PATCH_BYTES, MAX_LINE_CHARS, capLongLines, pathFromHeader };

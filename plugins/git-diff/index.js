@@ -3,8 +3,9 @@
 //
 // This file is the wiring: it answers the client's messages, holds the caches, and puts the
 // other modules in order. The work itself lives next to it — git.js runs git, untracked.js
-// synthesises patches for untracked files, budget.js says what may be parsed, format.js shapes
-// the reply, and render.js is the only module that touches an npm package.
+// synthesises patches for untracked files, budget.js says what may be parsed, payload.js shapes
+// the reply the panel receives, and diff2html.js parses and renders the patch. That last one is
+// the only module that touches an npm package.
 
 const { homedir } = require('os');
 const { promises: fsp } = require('fs');
@@ -17,10 +18,10 @@ const {
 const {
   clampContext, clampMaxChanges, untrackedFileList, parsedFileList, sumTotals, tooBigVerdict,
   shouldHighlight, normaliseScope, normaliseLayout, diffPayload, failPayload,
-} = require('./format');
+} = require('./payload');
 const {
   parsePatch, renderHtml, installBrowserBundle, highlightStyles, diff2htmlStyles,
-} = require('./render');
+} = require('./diff2html');
 
 const FOLDER_STAT_TIMEOUT = 2000;
 const TRUST_TTL = 60 * 1000;

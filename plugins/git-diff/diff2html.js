@@ -1,7 +1,8 @@
-// The diff2html and highlight.js layer: parsing a patch, turning it into HTML, and the two
-// stylesheets and one browser bundle that come out of node_modules. Every npm dependency the
-// plugin has is required here and nowhere else, which is what keeps the rest of the plugin, and
-// its tests, runnable in a checkout where the plugin has not been installed.
+// The diff2html and highlight.js layer, named after the packages it wraps: parsing a patch,
+// turning it into HTML, and the two stylesheets and one browser bundle that come out of
+// node_modules. Every npm dependency the plugin has is required here and nowhere else, which is
+// what keeps the rest of the plugin, and its tests, runnable in a checkout where the plugin has
+// not been installed.
 //
 // highlight.js is never called from the server: the browser does the highlighting through
 // diff2html's own bundle. The package is here for its theme stylesheets.

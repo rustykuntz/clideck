@@ -156,7 +156,7 @@ function flush(id) {
   const buf = outputBuf[id];
   if (!buf?.text) return;
   const clean = stripAnsi(buf.text).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
-  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length > 1);
   buf.text = '';
   if (lines.length) store(id, 'agent', lines.join('\n'));
 }

@@ -726,7 +726,13 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   const refreshJumpLatest = () => updateJumpLatestButton(id, term, jumpLatestBtn);
   term.onScroll(refreshJumpLatest);
   term.onWriteParsed(refreshJumpLatest);
-  attachToTerminal(term, presetId);
+  let replayWrites = 0;
+  const writeChunk = (data, replay = false) => {
+    if (!replay) { term.write(data); return; }
+    replayWrites += 1;
+    term.write(data, () => { replayWrites -= 1; });
+  };
+  attachToTerminal(term, presetId, () => replayWrites > 0);
   const onContextMenu = (e) => {
     if (e.shiftKey) return;
     e.preventDefault();
@@ -751,7 +757,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
       fitted = true;
       fit.fit();
       send({ type: 'resize', id, cols: term.cols, rows: term.rows });
-      for (const chunk of pending) term.write(chunk);
+      for (const chunk of pending) writeChunk(chunk.data, chunk.replay);
       pending = null;
       updatePreview(id);
       refreshJumpLatest();
@@ -774,14 +780,14 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
         return;
       }
       fitted = true;
-      for (const chunk of pending) term.write(chunk);
+      for (const chunk of pending) writeChunk(chunk.data, chunk.replay);
       pending = null;
       updatePreview(id);
       refreshJumpLatest();
     }
   }, 500);
   const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
-  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, onContextMenu, inputLength: 0, inputHasText: false, scrolledUp: false, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, onContextMenu, inputLength: 0, inputHasText: false, scrolledUp: false, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data, replay = false) => { if (!fitted) { pending.push({ data, replay }); return true; } return false; }, writeChunk, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   if (working) setStatus(id, true);
   else renderSessionStatus(state.terms.get(id), statusEl, false); // idle sessions get the zᶻZ icon now, not a blank slot until their first transition
   refreshTerminalInputActions();

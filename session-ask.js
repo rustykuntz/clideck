@@ -1,5 +1,5 @@
 const transcript = require('./transcript');
-const { sendJson, isLoopback, sameProject, projectName, sessionAddress } = require('./http-util');
+const { sendJson, isSameHost, sameProject, projectName, sessionAddress } = require('./http-util');
 
 const MAX_BODY = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -230,7 +230,7 @@ async function askSession(payload, sessionsApi, cfg = {}) {
 
 async function handleHttp(req, res, sessionsApi, getConfig = () => ({})) {
   try {
-    if (!isLoopback(req)) throw jsonError('CliDeck ask only accepts local requests', 403);
+    if (!isSameHost(req)) throw jsonError('CliDeck ask only accepts same-host requests', 403);
     const payload = await readJson(req);
     const result = await askSession(payload, sessionsApi, getConfig() || {});
     sendJson(res, 200, result);

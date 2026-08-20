@@ -3,9 +3,16 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function isLoopback(req) {
-  const addr = req.socket?.remoteAddress || '';
-  return addr === '::1' || addr === '127.0.0.1' || addr.startsWith('127.') || addr.startsWith('::ffff:127.');
+// A local child connecting to a specific interface bind has matching source
+// and destination addresses rather than a loopback source.
+function isSameHost(req) {
+  const normalize = addr => addr.startsWith('::ffff:') ? addr.slice(7) : addr;
+  const remote = normalize(req.socket?.remoteAddress || '');
+  const local = normalize(req.socket?.localAddress || '');
+  return remote === '::1'
+    || remote === '127.0.0.1'
+    || remote.startsWith('127.')
+    || (!!remote && !!local && remote === local);
 }
 
 function sameProject(a, b) {
@@ -22,4 +29,4 @@ function sessionAddress(session, id, projects) {
   return session.projectId ? `@${projectName(projects, session.projectId)}/${name}` : name;
 }
 
-module.exports = { sendJson, isLoopback, sameProject, projectName, sessionAddress };
+module.exports = { sendJson, isSameHost, sameProject, projectName, sessionAddress };

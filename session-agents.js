@@ -1,4 +1,4 @@
-const { sendJson, isLoopback, sameProject, projectName, sessionAddress } = require('./http-util');
+const { sendJson, isSameHost, sameProject, projectName, sessionAddress } = require('./http-util');
 
 function agentRow(id, s, callerId, projects) {
   const project = projectName(projects, s.projectId);
@@ -34,8 +34,8 @@ function listProjectAgents(callerSessionId, sessionsApi, cfg = {}, all = false) 
 
 async function handleHttp(req, res, sessionsApi, getConfig = () => ({})) {
   try {
-    if (!isLoopback(req)) {
-      const err = new Error('CliDeck agents only accepts local requests');
+    if (!isSameHost(req)) {
+      const err = new Error('CliDeck agents only accepts same-host requests');
       err.status = 403;
       throw err;
     }

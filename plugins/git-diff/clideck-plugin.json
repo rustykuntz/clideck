@@ -1,0 +1,127 @@
+{
+  "id": "git-diff",
+  "name": "Git Diff",
+  "version": "1.0.0",
+  "author": "CliDeck",
+  "description": "View the git diff of a session's working folder without leaving CliDeck",
+  "icon": "<svg class=\"w-4 h-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"6\" cy=\"6\" r=\"2.5\"/><circle cx=\"6\" cy=\"18\" r=\"2.5\"/><circle cx=\"18\" cy=\"9\" r=\"2.5\"/><path d=\"M6 8.5v7\"/><path d=\"M18 11.5c0 3.5-3 4.5-6 4.5\"/><path d=\"M15.5 9H8.5\"/></svg>",
+  "install": "npm",
+  "settings": [
+    {
+      "key": "enabled",
+      "label": "Enabled",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "defaultScope",
+      "label": "Default Scope",
+      "type": "select",
+      "default": "uncommitted",
+      "options": [
+        {
+          "value": "uncommitted",
+          "label": "Uncommitted changes"
+        },
+        {
+          "value": "base",
+          "label": "Everything since base branch"
+        }
+      ],
+      "description": "Which scope the diff opens on"
+    },
+    {
+      "key": "defaultLayout",
+      "label": "Default Layout",
+      "type": "select",
+      "default": "side-by-side",
+      "options": [
+        {
+          "value": "side-by-side",
+          "label": "Split"
+        },
+        {
+          "value": "line-by-line",
+          "label": "Unified"
+        }
+      ]
+    },
+    {
+      "key": "baseBranch",
+      "label": "Base Branch",
+      "type": "text",
+      "default": "",
+      "placeholder": "auto-detect",
+      "description": "Branch to compare against in base scope. Empty means detect origin/HEAD, then main, then master"
+    },
+    {
+      "key": "syntaxHighlight",
+      "label": "Syntax Highlighting",
+      "type": "toggle",
+      "default": true,
+      "description": "Colour code in the diff using highlight.js"
+    },
+    {
+      "key": "highlightTheme",
+      "label": "Highlight Theme",
+      "type": "select",
+      "default": "github-dark",
+      "options": [
+        {
+          "value": "github-dark",
+          "label": "GitHub Dark"
+        },
+        {
+          "value": "github-dark-dimmed",
+          "label": "GitHub Dark Dimmed"
+        },
+        {
+          "value": "atom-one-dark",
+          "label": "Atom One Dark"
+        },
+        {
+          "value": "monokai",
+          "label": "Monokai"
+        },
+        {
+          "value": "nord",
+          "label": "Nord"
+        }
+      ]
+    },
+    {
+      "key": "contextLines",
+      "label": "Context Lines",
+      "type": "number",
+      "default": 3,
+      "min": 0,
+      "max": 20,
+      "description": "Unchanged lines shown around each change"
+    },
+    {
+      "key": "pollSeconds",
+      "label": "Auto-refresh Seconds",
+      "type": "number",
+      "default": 3,
+      "min": 0,
+      "max": 60,
+      "description": "How often to re-run git while the diff is open. 0 disables auto-refresh"
+    },
+    {
+      "key": "maxChanges",
+      "label": "Max Changed Lines",
+      "type": "number",
+      "default": 20000,
+      "min": 100,
+      "max": 200000,
+      "description": "Diffs larger than this show a placeholder instead of rendering"
+    },
+    {
+      "key": "hotkey",
+      "label": "Open Key",
+      "type": "text",
+      "default": "F9",
+      "description": "Key to open and close the diff (e.g. F9, Ctrl+Shift+D)"
+    }
+  ]
+}

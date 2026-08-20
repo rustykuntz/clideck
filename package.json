@@ -16,6 +16,7 @@
     "smoke:menu-status": "node tests/providers/menu-status.test.js",
     "smoke:codex-config": "node tests/providers/codex-config.test.js",
     "smoke:codex-hooks": "node tests/providers/codex-hooks.test.js",
+    "smoke:git-diff": "node tests/plugins/git-diff/run.js",
     "smoke:http-util": "node --test tests/http-util.test.js",
     "smoke:transcript": "node --test tests/transcript-short-reply.test.js"
   },

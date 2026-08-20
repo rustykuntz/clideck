@@ -1,0 +1,321 @@
+/* Git Diff — modal chrome only. The diff body itself is styled by diff2html's own
+   stylesheet in its dark colour scheme; the overrides at the bottom just make it sit
+   comfortably inside CliDeck. Plain CSS, because Tailwind only compiles classes it
+   finds under the app's public/ folder. */
+
+.gd-overlay {
+  position: fixed;
+  inset: 0;
+  /* Above the app and the remote modal (260), below the shared folder picker (300) so it
+     opens on top of this one, and below toasts (500). */
+  z-index: 280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+.gd-overlay[hidden] { display: none; }
+
+/* Maximised: fill the browser window, no inset frame. */
+.gd-overlay.gd-max { padding: 0; }
+.gd-overlay.gd-max .gd-panel {
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.gd-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1600px;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: #0f172a;
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  color: #e2e8f0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* --- header --- */
+
+.gd-head {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+  background: rgba(30, 41, 59, 0.5);
+}
+.gd-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gd-head-row + .gd-head-row { margin-top: 10px; }
+
+.gd-icon { display: flex; color: #818cf8; flex: 0 0 auto; }
+.gd-icon svg { width: 16px; height: 16px; }
+
+.gd-session {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+.gd-branch {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: #a5b4fc;
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid rgba(129, 140, 248, 0.25);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* Folder selector: the session's own folder, every worktree of the repository, and an
+   entry that opens the app's directory picker. */
+.gd-folder {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 7px;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.gd-folder:hover { color: #e2e8f0; border-color: rgba(99, 102, 241, 0.5); }
+.gd-folder:focus { border-color: #6366f1; }
+.gd-folder option { background: #1e293b; color: #e2e8f0; }
+
+.gd-controls { flex-wrap: wrap; }
+.gd-spacer { flex: 1 1 auto; }
+
+.gd-summary {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.gd-add { color: #4ade80; }
+.gd-del { color: #f87171; }
+
+/* segmented control */
+.gd-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.8);
+}
+.gd-seg button {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: #94a3b8;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s;
+  white-space: nowrap;
+}
+.gd-seg button + button { border-left: 1px solid rgba(51, 65, 85, 0.8); }
+.gd-seg button:hover { color: #e2e8f0; background: rgba(51, 65, 85, 0.5); }
+.gd-seg button.gd-on { color: #c7d2fe; background: rgba(99, 102, 241, 0.22); }
+
+.gd-btn {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s;
+  white-space: nowrap;
+}
+.gd-btn:hover:not(:disabled) { color: #e2e8f0; background: #334155; }
+.gd-btn:disabled { opacity: 0.4; cursor: default; }
+
+.gd-icon-btn {
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.gd-refresh.gd-busy {
+  color: #818cf8;
+  animation: gd-pulse 1s ease-in-out infinite;
+}
+@keyframes gd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.gd-note {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  font-size: 11px;
+  color: #fcd34d;
+  background: rgba(180, 130, 20, 0.12);
+  border-bottom: 1px solid rgba(180, 130, 20, 0.25);
+}
+.gd-note[hidden] { display: none; }
+
+/* --- body --- */
+
+.gd-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 20px;
+}
+
+.gd-state {
+  padding: 28px 8px;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}
+.gd-error-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+.gd-error-detail {
+  display: inline-block;
+  max-width: 100%;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #f87171;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 7px;
+  white-space: pre-wrap;
+}
+.gd-error-keys {
+  display: inline-block;
+  margin: 10px 0 0;
+  padding: 8px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #fbbf24;
+  text-align: left;
+  list-style: none;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 7px;
+}
+.gd-error-note {
+  max-width: 620px;
+  margin: 10px auto;
+  line-height: 1.5;
+}
+.gd-toobig p {
+  max-width: 620px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.gd-big-list {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+.gd-big-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+}
+.gd-big-path {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #cbd5e1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gd-big-stats {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+/* --- diff2html overrides --- */
+
+/* Its hide/show links need the diff2html-ui bundle we deliberately do not load. */
+.gd-body .d2h-file-switch { display: none; }
+
+/* Header doubles as the per-file collapse control. */
+.gd-body .d2h-file-header { cursor: pointer; }
+.gd-body .d2h-file-header:hover { filter: brightness(1.25); }
+.gd-body .d2h-file-collapse { display: none; }
+
+.gd-body .d2h-file-wrapper.gd-collapsed .d2h-file-diff,
+.gd-body .d2h-file-wrapper.gd-collapsed .d2h-files-diff { display: none; }
+
+.gd-body .d2h-file-list-wrapper.gd-hidden .d2h-file-list,
+.gd-body .d2h-file-list-wrapper.gd-hidden .d2h-file-list-header { display: none; }
+.gd-body .d2h-file-list-wrapper.gd-hidden { border: 0; margin: 0; }
+
+/* Match the app's density: diff2html defaults are a size larger. */
+.gd-body .d2h-wrapper,
+.gd-body .d2h-file-list-wrapper { font-size: 12px; }
+.gd-body .d2h-code-line,
+.gd-body .d2h-code-side-line,
+.gd-body .d2h-code-line-ctn,
+.gd-body .d2h-code-linenumber,
+.gd-body .d2h-code-side-linenumber {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.gd-body .d2h-file-name { font-size: 12px; }
+
+/* Keep each file's header visible while scrolling through its hunks. */
+.gd-body .d2h-file-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* diff2html positions line numbers with `position: absolute` and ships no positioned
+   ancestor of its own, because it assumes the page is the scroll container. Here the
+   scroll container is .gd-body, so without this the numbers resolve against the fixed
+   .gd-overlay outside the scroller and stay put while the code scrolls past them.
+   Giving each file block a containing block inside the scroller pins them to their lines. */
+.gd-body .d2h-file-wrapper,
+.gd-body .d2h-file-diff,
+.gd-body .d2h-files-diff,
+.gd-body .d2h-file-side-diff {
+  position: relative;
+}
+
+/* --- syntax highlighting ---
+   The highlight.js theme paints .hljs with its own page background and padding, which would
+   cover diff2html's added and removed row colours. Only the token colours are wanted. */
+.gd-body .d2h-code-line-ctn.hljs {
+  background: transparent;
+  padding: 0;
+  display: inline;
+}
+/* Keep word-level insert and delete marks readable on top of coloured tokens. */
+.gd-body .d2h-code-line-ctn ins,
+.gd-body .d2h-code-line-ctn del { text-decoration: none; }

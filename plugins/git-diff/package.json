@@ -1,0 +1,8 @@
+{
+  "name": "clideck-plugin-git-diff",
+  "private": true,
+  "dependencies": {
+    "diff2html": "^3.4.56",
+    "highlight.js": "^11.12.0"
+  }
+}

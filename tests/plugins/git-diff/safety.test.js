@@ -16,6 +16,11 @@
 //   6. filterDrivers finds the drivers a real config defines and refuses a name it cannot put in
 //      a -c key, since git would read the rest of it as a value
 //   7. isValidRefName rejects anything that would reach git's argv as an option
+//   8. the diff.* prefix keys change the patch header, and BASE_ARGS pins it back. Those name no
+//      command, but the long-line cap and diff2html both read the header they produce
+//   9. driversFromProbe refuses a listing it could not read, rather than reporting no drivers.
+//      The override is built from the names it returns, so an empty list has to mean "none found"
+//  10. probeFilterDrivers against a folder that is not a repository is refused the same way
 //
 //   node tests/plugins/git-diff/safety.test.js
 
@@ -25,7 +30,8 @@ const { tmpdir } = require('os');
 const { join } = require('path');
 
 const {
-  BASE_ARGS, diffArgs, numstatArgs, filterDrivers, filterOverrideArgs, isValidRefName,
+  BASE_ARGS, diffArgs, numstatArgs, filterDrivers, driversFromProbe, probeFilterDrivers,
+  filterOverrideArgs, isValidRefName,
 } = require('../../../plugins/git-diff/git');
 
 let failed = 0;
@@ -200,6 +206,60 @@ try {
   check('filterOverrideArgs: nothing to override means no arguments',
     filterOverrideArgs([]).length === 0 && filterOverrideArgs(undefined).length === 0);
 
+  // 8. the prefix keys, which decide the header the long-line cap and diff2html read
+  const firstLine = (patch) => JSON.stringify(String(patch).split('\n')[0]);
+  const pinned = /^diff --git a\/f\.txt b\/f\.txt$/m;
+
+  const noprefix = makeRepo('noprefix');
+  git(['config', 'diff.noprefix', 'true'], noprefix);
+  const unpinned = git([...QUOTEPATH_ONLY, ...diffArgs('HEAD', 3)], noprefix);
+  check('diff.noprefix: drops both prefixes when it is not pinned',
+    /^diff --git f\.txt f\.txt$/m.test(unpinned), firstLine(unpinned));
+  const repinned = git([...BASE_ARGS, ...diffArgs('HEAD', 3)], noprefix);
+  check('diff.noprefix: BASE_ARGS puts a/ and b/ back',
+    pinned.test(repinned), firstLine(repinned));
+
+  const mnemonic = makeRepo('mnemonic');
+  git(['config', 'diff.mnemonicPrefix', 'true'], mnemonic);
+  const lettered = git([...QUOTEPATH_ONLY, ...diffArgs('HEAD', 3)], mnemonic);
+  check('diff.mnemonicPrefix: names the sides c/ and w/ when it is not pinned',
+    /^diff --git c\/f\.txt w\/f\.txt$/m.test(lettered), firstLine(lettered));
+  const mnemonicPinned = git([...BASE_ARGS, ...diffArgs('HEAD', 3)], mnemonic);
+  check('diff.mnemonicPrefix: BASE_ARGS puts a/ and b/ back',
+    pinned.test(mnemonicPinned), firstLine(mnemonicPinned));
+
+  // srcPrefix and dstPrefix are recent keys. An older git ignores them, so what this asserts is
+  // the same either way: the header is a/ and b/. The name says which git ran.
+  const custom = makeRepo('prefix-custom');
+  git(['config', 'diff.srcPrefix', 'x/'], custom);
+  git(['config', 'diff.dstPrefix', 'y/'], custom);
+  const customUnpinned = git([...QUOTEPATH_ONLY, ...diffArgs('HEAD', 3)], custom);
+  const honoured = /^diff --git x\/f\.txt y\/f\.txt$/m.test(customUnpinned);
+  const customPinned = git([...BASE_ARGS, ...diffArgs('HEAD', 3)], custom);
+  check(honoured
+    ? 'diff.srcPrefix/dstPrefix: this git honours them, and BASE_ARGS puts a/ and b/ back'
+    : 'diff.srcPrefix/dstPrefix: this git ignores them, and the header is a/ and b/ regardless',
+  pinned.test(customPinned), firstLine(customPinned));
+
+  // 9. what the probe's result means. The override is built from the names it returns, so a
+  // listing we could not read must not arrive as an empty list: that is a folder with no drivers,
+  // which is safe to diff. Both a timeout and a listing past runGit's maxBuffer land here, and a
+  // folder's own config decides how large that listing is.
+  check('driversFromProbe: a successful listing gives the drivers it names',
+    JSON.stringify(driversFromProbe({ ok: true, stdout: 'filter.demo.clean\n/bin/cat' }))
+      === JSON.stringify({ ok: true, usable: ['demo'], rejected: [] }),
+    JSON.stringify(driversFromProbe({ ok: true, stdout: 'filter.demo.clean\n/bin/cat' })));
+  check('driversFromProbe: exit 1 with nothing on either stream is a config with no keys',
+    driversFromProbe({ ok: false, exitCode: 1, stdout: '', stderr: '' }).ok === true);
+  check('driversFromProbe: a timeout is refused',
+    driversFromProbe({ ok: false, exitCode: null, timedOut: true, message: 'git config timed out' }).ok === false);
+  check('driversFromProbe: a listing past maxBuffer is refused, partial output and all',
+    driversFromProbe({ ok: false, exitCode: null, stdout: 'filter.dem', message: 'stdout maxBuffer length exceeded' }).ok === false);
+  check('driversFromProbe: a config git could not parse is refused',
+    driversFromProbe({ ok: false, exitCode: 128, stdout: '', stderr: 'fatal: bad config line 1 in file .git/config' }).ok === false);
+  check('driversFromProbe: no result at all is refused',
+    driversFromProbe(null).ok === false);
+
   // 7. the base branch setting, which reaches rev-parse and merge-base argv
   for (const good of ['main', 'origin/main', 'origin/feature/thing', 'release-1.2', 'v1.0']) {
     check(`isValidRefName: accepts ${good}`, isValidRefName(good));
@@ -211,5 +271,23 @@ try {
   rmSync(root, { recursive: true, force: true });
 }
 
-if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
-console.log('\nall git-diff safety checks passed');
+function report() {
+  if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
+  console.log('\nall git-diff safety checks passed');
+}
+
+// 10. the probe against a folder that is not a repository. --local fails there, so this is the
+// case that shows a failure is reported as one rather than as a folder with no drivers. index.js
+// asks resolveRepo for the message on this path, since "not a repository" is the useful thing to
+// say about such a folder.
+const outside = mkdtempSync(join(tmpdir(), 'clideck-git-safety-outside-'));
+probeFilterDrivers(outside).then((probed) => {
+  check('probeFilterDrivers: a folder that is not a repository is refused, not read as driverless',
+    probed.ok === false, JSON.stringify(probed));
+  rmSync(outside, { recursive: true, force: true });
+  report();
+}, (e) => {
+  check('probeFilterDrivers: a folder that is not a repository is refused, not read as driverless', false, e.message);
+  rmSync(outside, { recursive: true, force: true });
+  report();
+});

@@ -142,11 +142,12 @@ module.exports = {
       }
     }
 
+    // A failed probe is not cached, so a folder is not locked out for the whole TTL by one timeout.
     async function driversFor(folder) {
       const hit = driversCache.get(folder);
       if (hit && Date.now() - hit.at < DRIVERS_TTL) return hit.drivers;
       const drivers = await probeFilterDrivers(folder);
-      driversCache.set(folder, { at: Date.now(), drivers });
+      if (drivers.ok) driversCache.set(folder, { at: Date.now(), drivers });
       return drivers;
     }
 
@@ -196,6 +197,21 @@ module.exports = {
         drivers = await driversFor(folder);
       } catch (e) {
         return fail(msg, 'git-failed', e.message, folder);
+      }
+      // The override is built from the driver names in the folder's config, so a config we cannot
+      // read leaves nothing to switch off and the diff stops. An unreadable config is not the
+      // same as one with no drivers in it, which the probe reports as an empty list.
+      if (!drivers.ok) {
+        // A folder that is not a repository fails the probe too, and that has a message of its
+        // own. Only asked on this path, so an ordinary diff still costs the one probe call.
+        const repo = await resolveRepo(makeGit(), folder);
+        if (!repo.ok) return fail(msg, repo.code, repo.message, folder);
+        return fail(
+          msg,
+          'config-unreadable',
+          `This folder's git configuration could not be read, so the commands it may name cannot be switched off: ${drivers.message}`,
+          folder,
+        );
       }
       // A driver whose name cannot go into a -c key cannot be switched off, and diffing the folder
       // would run it. Nothing here can make that safe, so the diff stops.

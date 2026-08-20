@@ -2,7 +2,7 @@
 // for their output. Kept apart from index.js so the plugin's own code reads as what it does with
 // a diff rather than how it obtains one.
 //
-// Three rules hold throughout.
+// Four rules hold throughout.
 //
 // Nothing here writes to the repository: no add, no index updates, read-only commands only.
 //
@@ -15,7 +15,11 @@
 // re-runs git every few seconds with no user action beyond opening it. BASE_ARGS and the diff
 // flags close all but one of them outright; the exception is a filter driver's clean command,
 // which filterDrivers reads out of the folder's config so filterOverrideArgs can switch it off
-// by name.
+// by name. A folder whose config cannot be read is refused rather than diffed, since the driver
+// names are what the override is built from: driversFromProbe says so, and index.js stops there.
+//
+// No folder's own config gets to change the shape of the patch either. BASE_ARGS pins the a/ and
+// b/ prefixes, which the long-line cap matches on and diff2html parses.
 //
 // No npm dependencies, so the tests can drive all of this in a checkout where the plugin has
 // not been installed.
@@ -30,7 +34,24 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 // Setting core.fsmonitor to nothing stops git running the repository's monitor hook, which
 // GIT_OPTIONAL_LOCKS=0 does not. That gives up the hook's speedup on a large repo even where the
 // setting is the user's own, which is the cost of treating no folder as trusted.
-const BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'core.fsmonitor='];
+//
+// The diff.* keys below name no command, but they decide the header form of the patch: noprefix
+// drops the a/ and b/ prefixes, mnemonicPrefix replaces them with c/ and w/, and the two prefix
+// settings replace them with anything at all. The long-line cap finds a file's name by matching
+// "a/<path> b/<path>", and diff2html parses the same header, so a folder that changes it can
+// leave the panel showing the wrong path. Pinned here rather than trusted. srcPrefix and
+// dstPrefix are recent keys and git ignores config it does not recognise, so an older git takes
+// the first two and is unaffected by the rest. diff.relative would cut the patch down to a
+// subdirectory of the one git runs in, which is the repository root here, so it is pinned too.
+const BASE_ARGS = [
+  '-c', 'core.quotepath=false',
+  '-c', 'core.fsmonitor=',
+  '-c', 'diff.noprefix=false',
+  '-c', 'diff.mnemonicPrefix=false',
+  '-c', 'diff.srcPrefix=a/',
+  '-c', 'diff.dstPrefix=b/',
+  '-c', 'diff.relative=false',
+];
 
 // --no-ext-diff drops diff.external, --no-textconv drops the textconv drivers. Both cost
 // output a diff panel does not need: an external driver's formatting, and text extracted from
@@ -138,6 +159,10 @@ function runGit(args, cwd) {
         stderr: errOut,
         missing: err.code === 'ENOENT',
         timedOut: !!err.killed,
+        // The exit status, for a caller that has to tell git saying "nothing" from git failing.
+        // execFile puts a signal name or an errno string here instead when the process never ran
+        // or was killed, hence the type check.
+        exitCode: typeof err.code === 'number' ? err.code : null,
         message: errOut.trim() || err.message,
       });
     });
@@ -153,11 +178,36 @@ function makeGit(drivers = []) {
   return (args, cwd) => runGit([...prefix, ...args], cwd);
 }
 
+// What a `git config --local --list -z` result means, kept apart from the call so the rule can be
+// tested without a config file that makes git fail.
+//
+// The failure has to be told apart from the absence of any drivers, because the override is built
+// from the names this returns: an empty list looks exactly like a folder with no filter drivers,
+// and diffing that folder is safe. So a result we cannot read reports ok: false and index.js
+// refuses the diff, rather than running git with nothing switched off. Both timeouts and a
+// listing past runGit's maxBuffer arrive here, and a folder's config decides how large that
+// listing is.
+//
+// git config exits 1 with nothing on either stream when there is nothing to list, which is a
+// repository whose local config holds no keys. That is a real answer, not a failure.
+function driversFromProbe(result) {
+  if (!result) return { ok: false, usable: [], rejected: [], message: 'git config did not run' };
+  if (result.ok) return { ok: true, ...filterDrivers(result.stdout) };
+  if (result.exitCode === 1 && !result.stdout && !String(result.stderr || '').trim()) {
+    return { ok: true, usable: [], rejected: [] };
+  }
+  return {
+    ok: false,
+    usable: [],
+    rejected: [],
+    message: String(result.message || result.stderr || '').trim() || 'git config failed',
+  };
+}
+
 // The filter drivers a folder's own config defines. config reads a file and runs nothing, so this
 // probe is safe to make before any override is in place.
 async function probeFilterDrivers(cwd) {
-  const listed = await makeGit()(['config', '--local', '--list', '-z'], cwd);
-  return listed.ok ? filterDrivers(listed.stdout) : { usable: [], rejected: [] };
+  return driversFromProbe(await makeGit()(['config', '--local', '--list', '-z'], cwd));
 }
 
 async function resolveRepo(git, cwd) {
@@ -316,6 +366,7 @@ module.exports = {
   numstatArgs,
   isValidDriverName,
   filterDrivers,
+  driversFromProbe,
   filterOverrideArgs,
   isValidRefName,
   makeGit,

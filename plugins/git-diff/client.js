@@ -452,6 +452,7 @@ function renderError(msg) {
     'no-session': 'That session is no longer running.',
     timeout: 'git took longer than 15 seconds and was stopped.',
     'unfilterable-config': 'This folder\'s git configuration would run a command that cannot be switched off.',
+    'config-unreadable': 'This folder\'s git configuration could not be read, so the commands it may name cannot be switched off.',
   };
   stopPolling();
   el.summary.textContent = '';

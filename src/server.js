@@ -629,6 +629,7 @@ class HeadlessServer {
       rows: entry.rows,
       muted: entry.muted === true,
       live: false,
+      lastActive: entry.lastActive,
       bracketedPaste: false,
       projectId: entry.projectId ?? null,
       ...(entry.lastAgentAt && { lastAgentAt: entry.lastAgentAt }),

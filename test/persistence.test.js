@@ -104,14 +104,15 @@ test('registry and capped terminal history survive reload', () => {
 
 test('dormant sessions replay metadata, final preview, and history and can be removed', async () => {
   const dataDir = temporaryDirectory('clideck-next-dormant-');
-  const seed = new SessionPersistence({ dataDir, debounceMs: 10_000 });
+  const lastActive = '2026-08-01T09:30:00.000Z';
+  const seed = new SessionPersistence({ dataDir, debounceMs: 10_000, now: () => lastActive });
   const session = fakeSession('dormant-session');
   seed.register(session);
   seed.recordFinal(session.id, 'saved final', 4242);
   seed.appendHistory(session.id, '\x1b[32msaved terminal\x1b[0m');
   seed.close();
 
-  const server = new HeadlessServer({ port: 0, dataDir });
+  let server = new HeadlessServer({ port: 0, dataDir });
   let client;
   try {
     const address = await server.listen();
@@ -129,9 +130,18 @@ test('dormant sessions replay metadata, final preview, and history and can be re
     assert.equal(client.messages[0].pid, null);
     assert.equal(client.messages[0].muted, false);
     assert.equal(client.messages[0].lastAgentAt, 4242);
+    assert.equal(client.messages[0].lastActive, lastActive);
     assert.equal(client.messages[1].text, 'saved final');
     assert.equal(client.messages[2].data, '\x1b[32msaved terminal\x1b[0m');
     assert.equal(client.messages[2].replay, true);
+
+    // Opening CliDeck again must preserve when this session was used.
+    client.socket.close();
+    await server.close();
+    server = new HeadlessServer({ port: 0, dataDir });
+    client = await connect((await server.listen()).url);
+    const replayed = await waitFor(client.messages, (event) => event.type === 'session.created');
+    assert.equal(replayed.lastActive, lastActive);
 
     client.socket.send(JSON.stringify({ type: 'prompt', sessionId: session.id, text: 'ignored' }));
     client.socket.send(JSON.stringify({ type: 'input', sessionId: session.id, data: 'ignored' }));

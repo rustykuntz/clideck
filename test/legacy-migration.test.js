@@ -105,3 +105,31 @@ test('migration preserves a valid v2 recovery registry when its primary file is 
   assert.deepEqual(entries[0], recovered);
   assert.equal(entries.length, 2);
 });
+
+test('fresh and already-imported Claude, Gemini and Pi sessions launch with their original native IDs', async (t) => {
+  const f = fixture(t);
+  const old = ['claude-code', 'gemini-cli', 'pi'].map((presetId, index) => ({
+    id: `native-${index}`, name: presetId, cwd: f.home, presetId, sessionToken: `original-${index}`,
+  }));
+  f.write(f.legacyDir, 'sessions.json', old);
+  migrateLegacy(f);
+  for (let restart = 0; restart < 2; restart++) {
+    const server = new HeadlessServer({ port: 0, dataDir: f.dataDir });
+    await server.listen();
+    try {
+      for (const source of old) {
+        const entry = server.persistence.get(source.id);
+        const provider = require('../src/providers').getProvider(entry.provider);
+        assert.equal(entry.transcriptPath, undefined);
+        const options = server.resumeLaunch(provider, entry);
+        assert.equal(options.resumed, true, source.presetId);
+        const launch = provider.createLaunch({ ...options.providerOptions, port: server.port, sessionId: entry.id });
+        try {
+          const flag = entry.provider === 'pi' ? '--session' : '--resume';
+          assert.equal(launch.args[launch.args.indexOf(flag) + 1], source.sessionToken, source.presetId);
+        } finally { launch.cleanup?.(); }
+      }
+    } finally { await server.close(); }
+    assert.equal(migrateLegacy(f), null); // a 2.0.1 migration marker must not prevent the fix
+  }
+});

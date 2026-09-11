@@ -5,7 +5,7 @@ const { pathToFileURL } = require('url');
 
 const PLUGIN_SOURCE = `
 const env = globalThis.process?.env || {};
-const endpoint = (route) => \`http://127.0.0.1:\${env.CLIDECK_NEXT_PORT}/hooks/\${env.CLIDECK_NEXT_SESSION_ID}/\${route}\`;
+const endpoint = (route) => new URL(\`/hooks/\${env.CLIDECK_NEXT_SESSION_ID}/\${route}\`, env.CLIDECK_URL || \`http://127.0.0.1:\${env.CLIDECK_NEXT_PORT}\`).href;
 let primarySession = '';
 let latestText = '';
 let currentModel = null;

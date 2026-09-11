@@ -1,0 +1,12 @@
+{
+  "id": "git-diff",
+  "name": "Git Changes",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "enabledByDefault": true,
+  "description": "See what changed in your project's Git repository, without leaving CliDeck.",
+  "icon": "±",
+  "settings": [
+    { "key": "base-branch", "label": "Base branch", "type": "text", "default": "", "description": "Leave empty to detect main or master automatically." }
+  ]
+}

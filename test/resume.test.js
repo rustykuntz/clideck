@@ -72,7 +72,7 @@ test('dormant resume reuses metadata and falls back to a fresh provider launch w
     server.persistence.register(missingTranscript);
     server.persistence.recordResumeMetadata(missingTranscript.id, { handle: 'missing-native' });
     assert.equal(server.resumeSession(missingTranscript.id).id, missingTranscript.id);
-    assert.equal(Object.hasOwn(captured[1].options.providerOptions, 'resumeHandle'), false);
+    assert.equal(captured[1].options.providerOptions.resumeHandle, 'missing-native');
 
     const codex = { ...registrySession('codex-resume'), provider: { id: 'codex' } };
     server.persistence.register(codex);

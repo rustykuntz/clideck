@@ -144,6 +144,31 @@ sandboxed page under `public/`. A custom viewer registers the namespaced
 kind/MIME pair declared in its manifest and renders inside the existing
 document-tab shell.
 Registrations are automatically removed when the plugin is disabled or fails.
+
+For example, a workspace can open from the terminal actions menu:
+
+```js
+api.registerWorkspace({ id: 'changes', title: 'Git changes', src: '/plugins/git-diff/public/index.html' });
+api.registerAction({
+  id: 'open', label: 'Git changes', placements: ['terminal.header'],
+  run: (context) => api.openWorkspace('changes', { sessionId: context.session.id }),
+});
+```
+
+The page sends `parent.postMessage({ type: 'clideck.ready' }, '*')` and receives
+`clideck.init` with `data.context`, `data.theme`, and `data.visible`. To contact
+its backend, it sends `{ type: 'clideck.send', event: 'diff-request', data: {...} }`.
+Backend `context.reply('diff-result', data)` returns as `clideck.message`, with
+`data.event` and `data.data`. Accept messages only from `parent`. Replies reach
+that browser's frames for the plugin, so use a unique request ID for each page
+and accept only matching replies. The client Worker instead uses `api.send()`
+and `api.onMessage()`.
+
+Setting keys and plugin event names use lowercase letters, digits, and hyphens;
+dots and camelCase are invalid. A page receives `clideck.visible` when its tab is
+shown or hidden, and `clideck.theme` when the theme changes. Pause polling while
+hidden; tabs remain mounted. Git Changes provides a complete workspace example.
+
 Generated audio crosses the Worker boundary as an `ArrayBuffer` and is played
 by one host-owned player through `playAudio()`; `stopAudio()` only stops that
 plugin's clip. This keeps playback controls accessible and consistent without

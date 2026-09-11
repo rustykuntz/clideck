@@ -1,6 +1,6 @@
 # Upgrading to CliDeck 2
 
-Use **CliDeck 2.0.1 or newer** when upgrading from v1. Install with
+Use **CliDeck 2.1.0 or newer** when upgrading from v1. Install with
 `npm install -g clideck`, stop the old CliDeck process, then run `clideck` again.
 Updating npm does not replace a process that is already running.
 
@@ -13,6 +13,10 @@ On startup, CliDeck imports saved v1 sessions, projects, prompts, command settin
 and conversation transcripts from `~/.clideck` into `~/.clideck-next`. Sessions
 appear stopped in the sidebar; resume the ones you need. Native conversation
 histories stay with the original agent CLIs.
+
+Version 2.1.0 also fixes imported sessions opening a fresh conversation when
+CliDeck did not have a cached transcript location. The fix applies to sessions
+already imported by 2.0.1; the import does not need to run again.
 
 This also works if you already opened 2.0.0 and saw an empty workspace. Existing
 v2 sessions and settings are preserved, and legacy entries are added once.

@@ -26,8 +26,9 @@ const geminiProvider = {
     resumeHandle,
     skipTrust,
     agentGuide,
+    serverUrl,
   }) {
-    const settings = createGeminiSettings(port, sessionId, geminiSystemSettings, agentGuide);
+    const settings = createGeminiSettings(port, sessionId, geminiSystemSettings, agentGuide, serverUrl);
     const args = skipTrust ? ['--skip-trust'] : [];
     if (resumeHandle) args.push('--resume', resumeHandle);
     return {

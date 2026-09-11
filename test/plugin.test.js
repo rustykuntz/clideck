@@ -164,8 +164,9 @@ test('release plugins expose the requested fresh defaults without overriding sav
   t.after(() => manager.close());
   await manager.start();
   const plugins = new Map(manager.snapshot().map(plugin => [plugin.id, plugin]));
-  assert.deepEqual([...plugins.keys()].sort(), ['emoji', 'smart-dictation', 'supertonic']);
+  assert.deepEqual([...plugins.keys()].sort(), ['emoji', 'git-diff', 'smart-dictation', 'supertonic']);
   assert.equal(plugins.get('emoji').status, 'ready');
+  assert.equal(plugins.get('git-diff').status, 'ready');
   assert.equal(plugins.get('supertonic').status, 'ready');
   assert.equal(plugins.get('smart-dictation').status, 'disabled');
   assert.deepEqual(plugins.get('supertonic').values, {

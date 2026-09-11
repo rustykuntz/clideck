@@ -1,4 +1,5 @@
 const http = require('http');
+const { serverUrl } = require('./hook-url');
 const { existsSync } = require('fs');
 const { WebSocketServer, WebSocket } = require('ws');
 const { AgentSession } = require('./session');
@@ -39,7 +40,6 @@ const { listSessionAgents, resolveLiveCaller } = require('./session-agents');
 const { servePluginStatic, serveStatic } = require('./static');
 const { ServerLock } = require('./server-lock');
 const { alreadyRunningLine, startupBanner } = require('./startup');
-const { hasNonemptyFile } = require('./transcript-file');
 const { TranscriptStore } = require('./transcript-store');
 const { MAX_UPLOAD_BYTES, UploadError, saveUpload } = require('./upload');
 const { checkCommandAvailability } = require('./availability');
@@ -182,8 +182,8 @@ class HeadlessServer {
     return {
       host: this.host,
       port: this.port,
-      url: `ws://${this.host}:${this.port}`,
-      httpUrl: `http://${this.host}:${this.port}`,
+      url: serverUrl(this.host, this.port).replace(/^http:/, 'ws:'),
+      httpUrl: serverUrl(this.host, this.port),
     };
   }
 
@@ -367,9 +367,10 @@ class HeadlessServer {
   resumeLaunch(provider, entry) {
     const providerOptions = this.providerLaunchOptions(provider.id);
     delete providerOptions.resumeHandle;
+    // Native CLIs resolve their own conversation IDs. A missing cached transcript
+    // path (notably after a v1 import) must never silently turn Resume into New.
     const resumed = Boolean(entry.resumeHandle
-      && (provider.id !== 'custom-command' || provider.canResume)
-      && (!provider.requiresResumeTranscript || hasNonemptyFile(entry.transcriptPath)));
+      && (provider.id !== 'custom-command' || provider.canResume));
     if (resumed) providerOptions.resumeHandle = entry.resumeHandle;
     return { providerOptions, resumed };
   }
@@ -529,7 +530,7 @@ class HeadlessServer {
   }
 
   startSession(options, register, createdFields = {}, throwOnError = false) {
-    const session = new AgentSession(options);
+    const session = new AgentSession({ ...options, serverUrl: this.address().httpUrl });
     this.sessions.set(session.id, session);
     if (register) this.persistence.register(session);
     const onEvent = (event) => {
@@ -1807,9 +1808,9 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   }
   const freshInstall = !existsSync(options.dataDir || DEFAULT_DATA_DIR);
   const lock = new ServerLock({ dataDir: options.dataDir || DEFAULT_DATA_DIR });
-  const acquired = lock.acquire({ host, port, url: `http://${host}:${port}` });
+  const acquired = lock.acquire({ host, port, url: serverUrl(host, port) });
   if (!acquired.ok) {
-    const url = acquired.lock?.url || `http://${host}:${acquired.lock?.port || port}`;
+    const url = acquired.lock?.url || serverUrl(host, acquired.lock?.port || port);
     console.log(alreadyRunningLine(url, process.stdout.isTTY));
     return { alreadyRunning: true, lock: acquired.lock };
   }

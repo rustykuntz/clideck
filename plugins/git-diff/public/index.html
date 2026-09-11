@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Git changes</title>
+<!--
+  The workspace page for Git Changes.
+
+  ⚠️ THIS RUNS IN A SANDBOXED, OPAQUE ORIGIN (`sandbox="allow-scripts allow-forms allow-downloads"` — no
+  allow-same-origin). So it cannot import CliDeck's ES modules, and it does not try to. What it CAN do is load
+  a plain stylesheet, which is why it links the host's own app.css and then emits exactly the class names the
+  host's diff renderer emits (.diff / .diff-grid / .diff-row add|del|ctx|hunk / .diff-gutter / .diff-code).
+  That is the reuse that matters here: one visual language, one set of tokens, no second diff library.
+
+  Everything crosses the boundary by postMessage: `clideck.ready` up, `clideck.init` / `clideck.message` /
+  `clideck.theme` / `clideck.visible` down, and `clideck.send` up to reach the plugin's server half.
+-->
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg-side); color:var(--text); font-family:var(--sans); font-size:13px; display:flex; flex-direction:column; }
+  .bar { display:flex; align-items:center; gap:9px; padding:9px 12px; border-bottom:1px solid var(--border); background:var(--surface-1); flex:0 0 auto; flex-wrap:wrap; }
+  .seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .seg button { appearance:none; border:0; background:transparent; color:var(--dim); font-family:var(--sans); font-size:12px; padding:5px 11px; cursor:pointer; }
+  .seg button.on { background:var(--surface-3); color:var(--text); }
+  .bar select { height:28px; max-width:280px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:var(--sans); font-size:12px; padding:0 8px; }
+  .bar button.act { height:28px; padding:0 11px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; color:var(--dim); font-family:var(--sans); font-size:12px; cursor:pointer; }
+  .bar button.act:hover { background:var(--surface-3); color:var(--text); }
+  .spacer { flex:1 1 auto; }
+  .where { color:var(--faint); font-size:11.5px; font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:42ch; }
+  .scroll { flex:1 1 auto; overflow:auto; min-height:0; }
+  .note { margin:12px; padding:11px 13px; border:1px solid var(--border); border-radius:10px; background:var(--surface-1); color:var(--dim); line-height:1.55; }
+  .note.warn { border-color:color-mix(in srgb, var(--warn) 55%, var(--border)); }
+  .note.bad { border-color:color-mix(in srgb, var(--danger) 55%, var(--border)); color:var(--text); }
+  .note h4 { margin:0 0 5px; font-size:12px; font-weight:600; color:var(--text); }
+  .note ul { margin:5px 0 0; padding-left:18px; }
+  .note li { margin:2px 0; font-family:var(--mono); font-size:11.5px; }
+  .empty { display:grid; place-items:center; height:100%; color:var(--faint); text-align:center; padding:24px; }
+  .empty div { max-width:34ch; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="seg" id="scope">
+      <button type="button" data-scope="uncommitted" class="on">Uncommitted</button>
+      <button type="button" data-scope="base">Since base</button>
+    </div>
+    <select id="folder" title="Which worktree to read" hidden></select>
+    <button type="button" class="act" id="refresh">Refresh</button>
+    <button type="button" class="act" id="copy" hidden>Copy patch</button>
+    <div class="spacer"></div>
+    <div class="where" id="where"></div>
+  </div>
+  <div class="scroll" id="scroll"><div class="empty"><div>Reading this folder…</div></div></div>
+
+<script>
+(() => {
+  "use strict";
+  const REFRESH_MS = 3000;
+  const REPLY_TIMEOUT_MS = 20000;
+
+  const el = (id) => document.getElementById(id);
+  const scopeBar = el('scope'), folderSel = el('folder'), refreshBtn = el('refresh');
+  const copyBtn = el('copy'), whereEl = el('where'), scrollEl = el('scroll');
+
+  // ⚠️ ONE PLUGIN, MANY FRAMES. The host broadcasts a plugin's replies to EVERY frame that plugin owns, so
+  // two panels open on two sessions both see both answers. A plain counter would have them start at r1 each
+  // and eat each other's replies. The token makes a request id unique to THIS page, and only an exact match
+  // is accepted.
+  const TOKEN = (() => {
+    try { return crypto.randomUUID().slice(0, 8); } catch {}
+    return Math.random().toString(36).slice(2, 10);
+  })();
+  let sessionId = '';
+  let scope = 'uncommitted';
+  let folder = '';
+  let visible = true;
+  let inFlight = null;          // requestId of the request we are waiting on
+  let inFlightAt = 0;
+  let seq = 0;
+  let asked = 0;
+  let last = null;              // the newest good result, for Copy
+  let timer = null;
+
+  // ── the bridge ──────────────────────────────────────────────────────────────
+  const up = (message) => { try { parent.postMessage(message, '*'); } catch {} };
+  const ask = (event, data) => up({ type: 'clideck.send', event, data });
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== parent) return;             // only the host speaks here
+    const message = event.data || {};
+    if (message.type === 'clideck.init') {
+      const data = message.data || {};
+      const context = data.context || {};
+      sessionId = context.sessionId || '';
+      theme(data.theme);
+      // The host tells us on init whether we are on screen, because a tab hidden before this page finished
+      // loading never gets the transition.
+      visible = data.visible !== false;
+      mark();
+      if (visible) start();
+    } else if (message.type === 'clideck.theme') {
+      theme(message.data && message.data.theme);
+    } else if (message.type === 'clideck.visible') {
+      // A hidden tab is a live page with live timers. Stop asking; ask once on the way back so what is on
+      // screen is never older than the moment it was looked at.
+      const next = !!(message.data && message.data.visible);
+      if (next === visible) return;
+      visible = next;
+      mark();
+      if (visible) { request(); schedule(); } else { clearTimeout(timer); timer = null; }
+    } else if (message.type === 'clideck.message' && message.data && message.data.event === 'diff-result') {
+      result(message.data.data || {});
+    }
+  });
+  function theme(name) { if (name === 'light' || name === 'dark') document.documentElement.setAttribute('data-theme', name); }
+
+  // ── asking ──────────────────────────────────────────────────────────────────
+  function request() {
+    if (!sessionId) return;
+    // ⚠️ NEVER OVERLAP. A 3s poll over a repo that takes 4s to diff would queue requests forever and the
+    // answers would arrive out of order. One in flight, and a stuck one ages out rather than wedging it.
+    if (inFlight && Date.now() - inFlightAt < REPLY_TIMEOUT_MS) return;
+    inFlight = TOKEN + '-' + (++seq);
+    inFlightAt = Date.now();
+    asked++; mark();
+    ask('diff-request', { requestId: inFlight, sessionId, scope, folder: folder || undefined });
+  }
+  // Reflected into the DOM rather than a global: a gate runs in an isolated world, which shares the DOM but
+  // not this script's variables, so a data attribute is the only honest way to assert on any of this.
+  function mark() {
+    const root = document.documentElement;
+    root.dataset.visible = visible ? 'yes' : 'no';
+    root.dataset.asked = String(asked);
+  }
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (visible) { request(); schedule(); } }, REFRESH_MS);
+  }
+  function start() { request(); schedule(); }
+
+  function result(payload) {
+    // Exact match or nothing: a reply with no id, or another panel's id, is not ours.
+    if (!payload.requestId || payload.requestId !== inFlight) return;
+    inFlight = null;
+    if (payload.ok === false) { last = null; draw(payload); return; }
+    last = payload;
+    draw(payload);
+  }
+
+  // ── drawing ─────────────────────────────────────────────────────────────────
+  function node(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+  let drawnSig = null;
+  function draw(payload) {
+    // ⚠️ A 3s POLL MUST NOT REPAINT WHAT HAS NOT CHANGED. Replacing the DOM every tick tears out any text the
+    // user had selected and puts the scroll position back — you could not read a diff, let alone copy a line
+    // out of it. Nothing about the answer changed, so nothing about the screen should.
+    const sig = JSON.stringify([payload.ok, payload.patch, payload.warnings, payload.repoRoot, payload.branch,
+      payload.baseLabel, payload.baseFallback, payload.error, scope, folder,
+      (payload.worktrees || []).map((w) => w.path + '|' + (w.branch || ''))]);
+    if (sig === drawnSig) return;
+    drawnSig = sig;
+    const parts = [];
+    whereEl.textContent = payload.repoRoot
+      ? payload.repoRoot.split('/').slice(-2).join('/') + (payload.branch ? ' · ' + payload.branch : '')
+      : '';
+    worktrees(payload.worktrees, payload.repoRoot);
+
+    if (payload.ok === false) {
+      copyBtn.hidden = true;
+      const bad = node('div', 'note bad');
+      bad.append(node('h4', null, 'Could not read this folder'), node('div', null, String(payload.error || 'Unknown error.')));
+      scrollEl.replaceChildren(bad);
+      return;
+    }
+
+    const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
+    const patch = String(payload.patch || '');
+
+    // ⚠️ "No changes" IS A CLAIM, and it is false whenever something was left out. A file omitted for size,
+    // a worktree that could not be read — any of those and this says what it could not see instead.
+    if (!patch.trim() && !warnings.length) {
+      copyBtn.hidden = true;
+      const done = node('div', 'empty');
+      done.appendChild(node('div', null, scope === 'base'
+        ? 'Nothing differs from ' + (payload.baseLabel || 'the base branch') + '.'
+        : 'No uncommitted changes in this folder.'));
+      scrollEl.replaceChildren(done);
+      return;
+    }
+
+    if (payload.baseFallback && scope === 'base') {
+      const fell = node('div', 'note');
+      fell.append(node('h4', null, 'Comparing against ' + (payload.baseLabel || 'a detected base')),
+        node('div', null, 'No base branch is set, so this used what it could find. Settings ▸ Plugins ▸ Git Changes sets one.'));
+      parts.push(fell);
+    }
+    if (warnings.length) {
+      const warn = node('div', 'note warn');
+      warn.appendChild(node('h4', null, warnings.length === 1 ? 'One thing was left out' : warnings.length + ' things were left out'));
+      const list = node('ul');
+      for (const w of warnings) list.appendChild(node('li', null, String(w)));
+      warn.appendChild(list);
+      parts.push(warn);
+    }
+    if (patch.trim()) parts.push(renderDiff(patch));
+    else parts.push(node('div', 'note', 'Everything that changed was left out of this preview — see above.'));
+
+    // The button says what it will actually give you. ⚠️ ANY warning means something is missing — a file
+    // omitted for size, an untracked file listed without contents, a special file skipped — so the label
+    // follows warnings.length, not a guess at which words the backend used. A capped preview copied as "the
+    // patch" is a lie that only surfaces when someone tries to apply it.
+    copyBtn.hidden = !patch.trim();
+    copyBtn.textContent = warnings.length ? 'Copy preview' : 'Copy patch';
+
+    scrollEl.replaceChildren(...parts);
+  }
+
+  function worktrees(list, payloadRoot) {
+    const items = Array.isArray(list) ? list.filter((w) => w && w.path) : [];
+    // One worktree is not a choice, and a dropdown with one entry is furniture.
+    if (items.length < 2) { folderSel.hidden = true; return; }
+    const sig = items.map((w) => w.path).join('\n');
+    if (folderSel._sig !== sig) {
+      folderSel._sig = sig;
+      folderSel.replaceChildren();
+      for (const w of items) {
+        const option = document.createElement('option');
+        option.value = w.path;
+        option.textContent = (w.path.split('/').pop() || w.path) + (w.branch ? ' · ' + w.branch : w.detached ? ' · detached' : '') + (w.bare ? ' · bare' : '');
+        folderSel.appendChild(option);
+      }
+    }
+    // ⚠️ DEFAULT TO THE ONE WE ARE ACTUALLY READING. The first worktree is usually the main checkout, and a
+    // session can easily live in another — showing the wrong folder selected is worse than showing none.
+    const want = folder || (typeof payloadRoot === 'string' ? payloadRoot : '');
+    if (want && items.some((w) => w.path === want)) folderSel.value = want;
+    folderSel.hidden = false;
+  }
+
+  // The host's own diff markup, emitted here because a sandboxed page cannot import the host's module. The
+  // class names ARE the contract: app.css paints them, so this stays in step with the rest of the app.
+  function renderDiff(src) {
+    const root = node('div', 'diff');
+    const grid = node('div', 'diff-grid'); root.appendChild(grid);
+    const row = (cls, oldLine, newLine, text) => {
+      const r = node('div', 'diff-row ' + cls);
+      r.append(node('span', 'diff-gutter', oldLine || ''), node('span', 'diff-gutter', newLine || ''), node('span', 'diff-code', text));
+      grid.appendChild(r);
+    };
+    let oln = 0, nln = 0;
+    for (const raw of String(src).replace(/\r\n?/g, '\n').split('\n')) {
+      if (/^(diff |index |old mode|new mode|similarity |rename |deleted file|new file|--- |\+\+\+ )/.test(raw)) {
+        if (/^diff /.test(raw)) row('hunk', '', '', raw.replace(/^diff --git a\/\S+ b\//, ''));
+        continue;
+      }
+      const hunk = raw.match(/^@@\s*-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@(.*)$/);
+      if (hunk) { oln = +hunk[1]; nln = +hunk[2]; row('hunk', '', '', raw); continue; }
+      if (raw[0] === '+') { row('add', '', nln, raw.slice(1)); nln++; }
+      else if (raw[0] === '-') { row('del', oln, '', raw.slice(1)); oln++; }
+      else if (raw[0] === '\\') { row('ctx', '', '', raw); }
+      else { row('ctx', oln, nln, raw[0] === ' ' ? raw.slice(1) : raw); oln++; nln++; }
+    }
+    return root;
+  }
+
+  // ── controls ────────────────────────────────────────────────────────────────
+  scopeBar.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-scope]');
+    if (!button || button.dataset.scope === scope) return;
+    scope = button.dataset.scope;
+    for (const b of scopeBar.querySelectorAll('button')) b.classList.toggle('on', b === button);
+    inFlight = null;                       // the answer in flight is for the other scope
+    drawnSig = null;                       // and the screen must change even if the patch text happens to match
+    request(); schedule();
+  });
+  folderSel.addEventListener('change', () => { folder = folderSel.value; inFlight = null; drawnSig = null; request(); schedule(); });
+  refreshBtn.addEventListener('click', () => { inFlight = null; request(); schedule(); });
+  copyBtn.addEventListener('click', async () => {
+    if (!last || !last.patch) return;
+    const what = copyBtn.textContent === 'Copy preview' ? 'Preview' : 'Patch';
+    if (await copyText(last.patch)) up({ type: 'clideck.toast', kind: 'success', title: what + ' copied' });
+    else up({ type: 'clideck.toast', kind: 'error', title: 'Could not copy', body: 'This panel is sandboxed and the browser refused the clipboard. Select the text and copy it instead.' });
+  });
+  // ⚠️ navigator.clipboard IS USUALLY DENIED IN AN OPAQUE ORIGIN — a sandboxed frame without
+  // allow-same-origin has no permission to grant. The execCommand path still works from inside a real click,
+  // so it is the fallback rather than the other way round, and failure is reported instead of swallowed.
+  async function copyText(text) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; } } catch {}
+    try {
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.setAttribute('readonly', '');
+      box.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+      document.body.appendChild(box);
+      box.select();
+      const ok = document.execCommand('copy');
+      box.remove();
+      return !!ok;
+    } catch { return false; }
+  }
+
+  up({ type: 'clideck.ready' });
+})();
+</script>
+</body>
+</html>

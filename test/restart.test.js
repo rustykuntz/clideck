@@ -181,7 +181,7 @@ process.stdin.resume();
   }
 });
 
-test('restart falls back to a fresh provider launch when native state is unavailable', async () => {
+test('restart preserves the native conversation ID when its transcript path is unavailable', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'clideck-next-restart-fallback-'));
   const server = new HeadlessServer({ port: 0, dataDir });
   const session = {
@@ -219,12 +219,12 @@ test('restart falls back to a fresh provider launch when native state is unavail
       rows: 30,
     });
     assert.equal(starts.length, 1);
-    assert.equal(Object.hasOwn(starts[0].options.providerOptions, 'resumeHandle'), false);
+    assert.equal(starts[0].options.providerOptions.resumeHandle, 'missing-native-context');
     assert.equal(starts[0].options.id, session.id);
     assert.equal(starts[0].options.name, session.name);
     assert.equal(starts[0].options.cwd, session.cwd);
     assert.equal(starts[0].options.theme, 'dark');
-    assert.deepEqual(starts[0].createdFields, { restarted: true, resumed: false });
+    assert.deepEqual(starts[0].createdFields, { restarted: true, resumed: true });
   } finally {
     server.sessions.clear();
     await server.close();

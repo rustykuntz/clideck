@@ -153,7 +153,8 @@ export function initTerminal() {
   store.on("session:update", (id) => { if (id === store.activeId) updateHeader(); });
   store.on("connection", () => { updateHeader(); updateEmpty(); });   // connect lands AFTER reset paints "offline"; with no sessions nothing else ever repaints it
   store.on("chrome", updateEmpty);
-  store.on("reset", () => { closePromptDropdown(); term.reset(); applyActiveTheme(); updateHeader(); updateEmpty(); updateScrollBtn(); });
+  store.on("reset", () => { closePromptDropdown(); term.reset(); applyActiveTheme(); updateHeader(); updateEmpty(); updateScrollBtn(); sentDims.clear(); });
+  store.on("session:remove", (id) => sentDims.delete(id));
 
   // Buffer row numbers stop meaning what they meant after a reflow or a session change, so a selection anchor
   // minted before one is refused rather than adjusted — see getTerminalSelectionSnapshot.
@@ -173,6 +174,13 @@ function focusSession(id) {
   updateHeader();
   if (!s) return;
   term.reset();
+  // ⚠️ THE CACHE IS THIS BROWSER'S MEMORY, NOT THE PTY'S STATE. Another client can resize the same session
+  // while we are looking elsewhere, and the engine does not broadcast that — so on the way back our entry
+  // would still say "already told them 92x28", we would skip, and the pty would stay at the other client's
+  // size while we render ours. Forget what we think we told THIS session on every explicit focus and
+  // re-assert; the engine dedupes against the pty's real size, so a re-assertion that changes nothing costs
+  // nothing. Observer ticks after that still dedupe, which is the whole point of the cache.
+  sentDims.delete(id);
   if (s.outputBuf) writeTerminal(s.outputBuf, true);   // a focus rewrite is replay even when its buffer contains once-live output
   requestAnimationFrame(() => { fit(true); if (!renaming) term.focus(); updateScrollBtn(); probeVisiblePaths(); });   // don't steal focus from an inline rename
 
@@ -598,8 +606,25 @@ function fit(sendResize) {
   if (!isFinite(cols) || !isFinite(rows)) return;
   store.setTermSize(cols, rows);                    // remembered for the session.restart dims
   if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
-  if (sendResize && store.activeId != null) send({ type: "resize", sessionId: store.activeId, cols, rows });
+  // ⚠️ A RESIZE FRAME IS NOT FREE, AND AN UNCHANGED ONE IS DESTRUCTIVE. The engine forwards every resize
+  // straight to the pty (`session.js` resize → TIOCSWINSZ), which raises SIGWINCH in the agent **whether or
+  // not the dimensions changed** — and Codex answers SIGWINCH by repainting with `ESC[2J ESC[3J`, the second
+  // of which ERASES THE SCROLLBACK. That is Or's "I scroll down, start typing, and the line above vanishes":
+  // `fit(true)` runs on session focus, on the terminal tab being shown, and on every ResizeObserver tick, and
+  // it used to send unconditionally — three identical 92x22 frames in one traced session, each one a wipe.
+  //
+  // So the send is guarded by what was last sent FOR THIS SESSION, not by `term.cols`: after a switch the
+  // terminal may already be the right size while that session's pty has never been told.
+  if (!sendResize || store.activeId == null) return;
+  const dims = cols + "x" + rows;
+  if (sentDims.get(store.activeId) === dims) return;
+  sentDims.set(store.activeId, dims);
+  send({ type: "resize", sessionId: store.activeId, cols, rows });
 }
+// Last dims actually sent to the engine, per session. Dropped when a session goes, so a replacement pty is
+// always told once; cleared wholesale on reset, where every pty is new.
+const sentDims = new Map();
+export function __sentDimsForTest() { return sentDims; }
 
 function updateHeader() {
   if (renaming) return;                 // don't clobber the inline name input mid-edit

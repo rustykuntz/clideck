@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const http = require('http');
+const { requestHook } = require('./hook-url');
 
 // Accept the previous arguments for terminals that were already running when
 // CliDeck was updated. New launches keep their hook definitions stable.
@@ -18,10 +18,7 @@ process.stdin.on('data', (chunk) => {
   if (input.length > 100 * 1024) process.exit(0);
 });
 process.stdin.on('end', () => {
-  const request = http.request({
-    hostname: '127.0.0.1',
-    port,
-    path: `/hooks/${sessionId}/${route}`,
+  const request = requestHook(`/hooks/${sessionId}/${route}`, port, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

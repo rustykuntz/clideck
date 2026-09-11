@@ -24,7 +24,7 @@ Open **http://127.0.0.1:4000**. Create a project, open a few sessions, and give 
 names that describe their work. The short tour shows you around.
 
 You can also run `npx clideck@2`. Coming from v1? Read [the upgrade notes](UPGRADING.md)
-first. V2.0.1 imports your legacy sessions, projects, and saved prompts automatically.
+first. The latest v2 imports your legacy sessions, projects, and saved prompts automatically.
 
 ## Agents working together
 
@@ -65,6 +65,7 @@ clideck show walkthrough.mp4
 - Saved prompts with `//` lookup and `{{session_name}}` / `{{project_name}}` fields.
 - Session resume, terminal history, working/idle notifications, and session backups.
 - Light and dark themes, configurable shortcuts, and a plugin SDK.
+- **Git Changes** shows what your agents changed, with branch and worktree comparisons.
 - **Supertonic Voice** reads replies and selected text aloud.
 - **Emoji** support and optional **Smart Dictation** for speaking your prompts.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const http = require('http');
+const { requestHook } = require('./hook-url');
 
 const port = Number(process.argv[2]);
 const sessionId = process.argv[3];
@@ -13,17 +13,14 @@ process.stdin.on('data', (chunk) => {
   input += chunk;
 });
 process.stdin.on('end', () => {
-  const request = http.request({
-    hostname: '127.0.0.1',
-    port,
-    path: `/hooks/${sessionId}/${route}`,
+  const request = requestHook(`/hooks/${sessionId}/${route}`, port, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(input),
     },
     timeout: 2000,
-  });
+  }, process.argv[5] || process.env.CLIDECK_URL);
   request.on('error', () => {});
   request.end(input || '{}');
 });

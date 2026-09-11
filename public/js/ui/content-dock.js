@@ -10,7 +10,7 @@ import { closeContent } from "../ws.js";
 import { h, copyText } from "../util.js";
 import { renderText, renderJson, renderMarkdown, renderDiff, renderChart, renderTestResults, htmlFrame, pdfEmbed, imageEl, videoEl, mermaidEl } from "./content-renderers.js";
 import { registerCoreViewer, viewerFor, isRenderableKind, isPluginKind, iconForKind, onViewersChange } from "./viewer-registry.js";
-import { pluginFrame, isPluginFrame, disposePluginFrame } from "./plugin-frame.js";
+import { pluginFrame, isPluginFrame, disposePluginFrame, setPluginFrameVisible } from "./plugin-frame.js";
 import { hasActions, resolveActions, resolveImmediateActions, runAction, onActionsChange } from "./action-registry.js";
 import { openMenu, closeMenu } from "./menu.js";
 import { registerReadAlongSurface, matchable } from "./read-along.js";
@@ -466,18 +466,22 @@ function renderDock() {
   // `releaseItemNode` is the one path that unmounts a document, and closing is the one thing that calls it.
   const showTerm = activeId === TERMINAL_TAB;
   const mounted = new Set(items.map((it) => it.node).filter(Boolean));
+  // ⚠️ WORK OUT WHAT WILL BE VISIBLE BEFORE HIDING ANYTHING. The sweep below used to hide every frame and then
+  // unhide the active one, so on EVERY render — a rename, a new tab, a status change — the frame on screen was
+  // told false and then true. A plugin that pauses work while hidden would restart it on unrelated renders.
+  const activeItem = showTerm ? null : items.find((it) => it.id === activeId);
+  const visibleNode = activeItem ? bodyFor(activeItem) : null;
   for (const n of [...bodyEl.children]) {
     if (n === termPanel || n === railEl) continue;
-    if (mounted.has(n) || isPluginFrame(n)) n.hidden = true;
+    if (mounted.has(n) || isPluginFrame(n)) { n.hidden = n !== visibleNode; if (isPluginFrame(n)) setPluginFrameVisible(n, n === visibleNode); }
     else n.remove();
   }
   if (termPanel) termPanel.hidden = !showTerm;
-  let active = null;
+  let active = activeItem || null;
   if (!showTerm) {
-    active = items.find((it) => it.id === activeId);
-    if (active) {
-      const node = bodyFor(active); node.hidden = false;
-      if (node.parentNode !== bodyEl) bodyEl.appendChild(node);
+    if (active && visibleNode) {
+      visibleNode.hidden = false; if (isPluginFrame(visibleNode)) setPluginFrameVisible(visibleNode, true);
+      if (visibleNode.parentNode !== bodyEl) bodyEl.appendChild(visibleNode);
     }
   } else onTerminalShown();          // a hidden terminal measures 0, so it must be refit + refocused on return
   paintViewerActions(active);

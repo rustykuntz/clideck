@@ -16,7 +16,7 @@ const COLORFGBG_BY_THEME = {
   dark: '15;0',
 };
 
-function sessionEnvironment(launchEnv, sessionId, port, colorfgbg) {
+function sessionEnvironment(launchEnv, sessionId, port, colorfgbg, serverUrl = `http://127.0.0.1:${port}`) {
   return {
     ...process.env,
     ...launchEnv,
@@ -26,7 +26,7 @@ function sessionEnvironment(launchEnv, sessionId, port, colorfgbg) {
     CLIDECK_NEXT_SESSION_ID: sessionId,
     CLIDECK_SESSION_ID: sessionId,
     CLIDECK_PORT: String(port),
-    CLIDECK_URL: `http://127.0.0.1:${port}`,
+    CLIDECK_URL: serverUrl,
     ...(colorfgbg && { COLORFGBG: colorfgbg }),
   };
 }
@@ -48,6 +48,7 @@ class AgentSession extends EventEmitter {
     this.cols = Number(options.cols || 120);
     this.rows = Number(options.rows || 40);
     this.port = options.port;
+    this.serverUrl = options.serverUrl || `http://127.0.0.1:${this.port}`;
     this.muted = options.muted === true;
     this.lastAgentAt = Number(options.lastAgentAt) || null;
     this.now = options.now || Date.now;
@@ -109,6 +110,7 @@ class AgentSession extends EventEmitter {
       command: this.command,
       cwd: this.cwd,
       port: this.port,
+      serverUrl: this.serverUrl,
       sessionId: this.id,
       hookToken: this.hookToken,
     });
@@ -122,7 +124,7 @@ class AgentSession extends EventEmitter {
         cols: this.cols,
         rows: this.rows,
         cwd: this.cwd,
-        env: sessionEnvironment(launch.env, this.id, this.port, this.colorfgbg),
+        env: sessionEnvironment(launch.env, this.id, this.port, this.colorfgbg, this.serverUrl),
       });
     } catch (error) {
       this.launchCleanup();
@@ -506,8 +508,12 @@ class AgentSession extends EventEmitter {
   resize(cols, rows) {
     if (!this.terminal || this.closed) return;
     this.flushScreen();
-    this.cols = Math.max(20, Number(cols || this.cols));
-    this.rows = Math.max(5, Number(rows || this.rows));
+    const nextCols = Math.max(20, Number(cols || this.cols));
+    const nextRows = Math.max(5, Number(rows || this.rows));
+    // Even an unchanged PTY resize can make Codex clear its scrollback.
+    if (nextCols === this.cols && nextRows === this.rows) return;
+    this.cols = nextCols;
+    this.rows = nextRows;
     this.terminal.resize(this.cols, this.rows);
     this.screen.resize(this.cols, this.rows);
   }

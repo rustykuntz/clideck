@@ -57,7 +57,7 @@ test('Codex hook definitions stay stable across launches while authenticating ea
   assert.notEqual(first.env.CLIDECK_HOOK_TOKEN, second.env.CLIDECK_HOOK_TOKEN);
   for (const [args, input] of [[['start'], '{"turn_id":"new"}'], [[String(port), 'idle', 'old-launch'], '']]) {
     const child = spawn(process.execPath, [join(__dirname, '../src/codex-hook.js'), ...args], {
-      env: { ...process.env, ...first.env, CLIDECK_NEXT_SESSION_ID: 'test-session' },
+      env: { ...process.env, ...first.env, CLIDECK_URL: '', CLIDECK_NEXT_SESSION_ID: 'test-session' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.stdin.end(input);

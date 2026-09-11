@@ -31,7 +31,7 @@ function initialize() {
       const kind = ["success", "warn", "error"].includes(message.kind) ? message.kind : "info";
       toast[kind]({ title: String(message.title || "Plugin"), body: String(message.body || "") });
     } else if (message.type === "clideck.ready") {
-      post(entry, "clideck.init", { context: entry.context, theme: resolvedTheme() });
+      post(entry, "clideck.init", { context: entry.context, theme: resolvedTheme(), visible: entry.visible !== false });
     }
   });
   store.on("plugin:message", (message) => {
@@ -53,11 +53,27 @@ export function pluginFrame(pluginId, source, context, options = {}) {
   const entry = { frame, pluginId, context: context || {}, onClose: options.onClose || null };
   frames.add(entry);
   frame._clideckPluginFrame = true;
-  frame.addEventListener("load", () => post(entry, "clideck.init", { context: entry.context, theme: resolvedTheme() }));
+  // ⚠️ VISIBILITY RIDES THE INIT, not only the transition. A tab hidden before its iframe finished loading
+  // would otherwise have missed its one `false` and polled forever behind a tab nobody was looking at.
+  frame.addEventListener("load", () => post(entry, "clideck.init", { context: entry.context, theme: resolvedTheme(), visible: entry.visible !== false }));
   return frame;
 }
 
 export function isPluginFrame(frame) { return !!(frame && frame._clideckPluginFrame); }
+
+// ⚠️ A DOCUMENT TAB HIDES, IT DOES NOT UNMOUNT — an `<iframe>` re-inserted into the DOM RELOADS, which would
+// throw away whatever the plugin had on screen. So a hidden workspace is still a live page with live timers,
+// and a plugin that polls would keep polling forever behind a tab nobody is looking at. This is the only
+// signal it gets: posted on the transition, never on every render, and only when it actually changes.
+export function setPluginFrameVisible(frame, visible) {
+  for (const entry of frames) {
+    if (entry.frame !== frame) continue;
+    if (entry.visible === visible) return;
+    entry.visible = visible;
+    post(entry, "clideck.visible", { visible });
+    return;
+  }
+}
 export function disposePluginFrame(frame) {
   for (const entry of frames) if (entry.frame === frame) { frames.delete(entry); return true; }
   return false;

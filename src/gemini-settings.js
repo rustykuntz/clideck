@@ -14,11 +14,12 @@ function systemSettingsPath() {
   return '/etc/gemini-cli/settings.json';
 }
 
-function hookCommand(port, sessionId, route, guidePath = '') {
+function hookCommand(port, sessionId, route, guidePath = '', serverUrl = '') {
   const node = process.execPath.replace(/\\/g, '/');
   const script = join(__dirname, 'gemini-hook.js').replace(/\\/g, '/');
   return `"${node}" "${script}" ${port} ${sessionId} ${route}`
-    + (guidePath ? ` ${JSON.stringify(guidePath)}` : '');
+    + (guidePath || serverUrl ? ` ${JSON.stringify(guidePath)}` : '')
+    + (serverUrl ? ` ${JSON.stringify(serverUrl)}` : '');
 }
 
 function withoutCliDeckHooks(definitions = []) {
@@ -28,7 +29,7 @@ function withoutCliDeckHooks(definitions = []) {
   )));
 }
 
-function createGeminiSettings(port, sessionId, sourcePath = systemSettingsPath(), agentGuide = '') {
+function createGeminiSettings(port, sessionId, sourcePath = systemSettingsPath(), agentGuide = '', serverUrl = '') {
   let settings = {};
   try {
     if (sourcePath && existsSync(sourcePath)) {
@@ -48,7 +49,7 @@ function createGeminiSettings(port, sessionId, sourcePath = systemSettingsPath()
         matcher: '*',
         hooks: [{
           type: 'command',
-          command: hookCommand(port, sessionId, route, guidePath),
+          command: hookCommand(port, sessionId, route, guidePath, serverUrl),
           name: `clideck-next-${route}`,
           timeout: 5000,
         }],

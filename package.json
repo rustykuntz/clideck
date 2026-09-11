@@ -1,6 +1,6 @@
 {
   "name": "clideck",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Run AI agents from different providers, let them work with you and each other, and view their work in one place",
   "main": "src/server.js",
   "bin": {
@@ -12,6 +12,7 @@
     "public/",
     "plugin-sdk/",
     "plugins/emoji/",
+    "plugins/git-diff/",
     "plugins/supertonic/",
     "plugins/smart-dictation/",
     "PLUGIN-SDK.md",

@@ -3,13 +3,13 @@ const { join } = require('path');
 const { tmpdir } = require('os');
 const { randomUUID } = require('crypto');
 
-function createClaudeSettings(port, sessionId) {
+function createClaudeSettings(port, sessionId, serverUrl = '') {
   const node = process.execPath.replace(/\\/g, '/');
   const script = join(__dirname, 'claude-hook.js').replace(/\\/g, '/');
   const hook = (route) => ({
     hooks: [{
       type: 'command',
-      command: `"${node}" "${script}" ${port} ${sessionId} ${route}`,
+      command: `"${node}" "${script}" ${port} ${sessionId} ${route}` + (serverUrl ? ` ${JSON.stringify(serverUrl)}` : ''),
       timeout: 5,
     }],
   });
@@ -17,7 +17,7 @@ function createClaudeSettings(port, sessionId) {
     theme: 'auto',
     statusLine: {
       type: 'command',
-      command: `"${node}" "${script}" ${port} ${sessionId} context`,
+      command: `"${node}" "${script}" ${port} ${sessionId} context` + (serverUrl ? ` ${JSON.stringify(serverUrl)}` : ''),
     },
     hooks: {
       UserPromptSubmit: [hook('start')],

@@ -12,6 +12,23 @@ function claudeSession() {
   return new AgentSession({ provider: getProvider('claude-code'), port: 4100 });
 }
 
+test('unchanged terminal sizes never reach the PTY, including another client’s resize', () => {
+  const session = claudeSession();
+  const resizes = [];
+  session.terminal = { resize: (...args) => resizes.push(args) };
+  session.resize(session.cols, session.rows);
+  session.resize(session.cols, session.rows);
+  assert.deepEqual(resizes, []);
+  session.resize(100, 30);
+  session.resize(100, 30);
+  assert.deepEqual(resizes, [[100, 30]]);
+  assert.equal(session.screen.cols, 100);
+  assert.equal(session.screen.rows, 30);
+  session.resize(1, 1);
+  session.resize(2, 2);
+  assert.deepEqual(resizes, [[100, 30], [20, 5]]);
+});
+
 test('session environment advertises v2 CLI identity and endpoint', () => {
   const env = sessionEnvironment({ PROVIDER_VALUE: 'yes' }, 'session-one', 43210, '0;15');
   assert.equal(env.PROVIDER_VALUE, 'yes');

@@ -30,27 +30,32 @@ first. The latest v2 imports your legacy sessions, projects, and saved prompts a
 
 ## Agents working together
 
-Say “ask the reviewer to check my work.” Your agent discovers the reviewer, sends
-the request, and gets the answer back. The reviewer can use a different provider.
+You lead the project: set the direction, try the results, and give feedback.
+Your agents use **CliDeck Ask** to bring in teammates and work through that
+feedback together, even when they use different AI providers. For example:
 
-You talk to your agent as usual. CliDeck handles the conversation between sessions:
+**Building an FPS game**
 
-```mermaid
-sequenceDiagram
-    actor You
-    participant Frontend as Frontend · Codex
-    participant Reviewer as Reviewer · Claude Code
-    You->>Frontend: Ask the reviewer to check my changes
-    Frontend->>Reviewer: Send the review request through CliDeck Ask
-    Reviewer-->>Frontend: Return findings
-    Frontend-->>You: Fix the issue and explain what changed
-```
+1. You tell the character programmer: “Some enemy voices feel out of place.
+   They should sound rougher and fit the game's atmosphere.”
+2. The programmer uses CliDeck Ask to explain what needs to change to the sound
+   agent, who uses its audio tools to create new voices and effects.
+3. The sound agent sends back the new files. The programmer adds them to the
+   game, and you play it again and decide what still needs work.
+
+**Training an image LoRA**
+
+1. You tell the training manager: “The results look good in daylight, but faces
+   look wrong in darker scenes.”
+2. The training manager uses CliDeck Ask to work with the dataset agent on
+   finding and curating more suitable low-light examples.
+3. The dataset agent returns the updated dataset. The training manager runs
+   another training round and brings you comparison images to review.
 
 ![A CliDeck Ask request from the frontend agent arriving in the reviewer's Claude Code terminal](public/clideck-ask.png)
 
-*In this example, Codex asked Claude Code to review the navigation. The reviewer
-found a route-matching bug; Codex fixed it and passed all seven checks. Each agent
-worked in its own terminal, and the reply came back to the agent that asked.*
+*A real Ask exchange: Codex requests a review from Claude Code in another session,
+then uses the reply to fix the issue.*
 
 - **Projects** keep sessions together around a folder.
 - **Session names are addresses** such as `@website/reviewer`. Type `@@` in a

@@ -13,6 +13,7 @@ import { registerCoreViewer, viewerFor, isRenderableKind, isPluginKind, iconForK
 import { pluginFrame, isPluginFrame, disposePluginFrame, setPluginFrameVisible } from "./plugin-frame.js";
 import { hasActions, resolveActions, resolveImmediateActions, runAction, onActionsChange } from "./action-registry.js";
 import { openMenu, closeMenu } from "./menu.js";
+import { toast } from "./toast.js";
 import { registerReadAlongSurface, matchable } from "./read-along.js";
 import { MAX_VIEWER_TEXT, docTextIndex, normalizeWithMap, partAt, textParts, textFingerprint } from "./doc-text.js";
 
@@ -678,7 +679,19 @@ function markdownShell(text, item) {
   bRendered.addEventListener("click", () => { item.mdSource = false; paint(); });
   bSource.addEventListener("click", () => { item.mdSource = true; paint(); });
   seg.append(bRendered, bSource);
-  bar.appendChild(seg);
+  const copy = h("button", "cd-viewer-action md-copy", icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'));
+  copy.type = "button";
+  copy.title = "Copy Markdown"; copy.setAttribute("aria-label", "Copy Markdown");
+  copy.addEventListener("click", async () => {
+    if (copy.disabled) return;
+    copy.disabled = true;
+    try {
+      const copied = await copyText(text);
+      toast({ id: "markdown-copy", type: copied ? "success" : "error",
+        body: copied ? "Markdown copied" : "Could not copy Markdown. Try selecting the text in Source view." });
+    } finally { copy.disabled = false; }
+  });
+  bar.append(seg, copy);
   shell.append(bar, body);
   paint();
   return shell;

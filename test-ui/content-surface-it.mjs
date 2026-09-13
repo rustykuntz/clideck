@@ -66,11 +66,37 @@ try {
   ok("dock has one tab named notes.md", tabs().length === 1 && tabs()[0].querySelector(".cd-tab-name").textContent === "notes.md");
   ok("dock body rendered the markdown (heading)", !!document.querySelector("#pane-body .md h1") && document.querySelector("#pane-body .md h1").textContent === "Hello");
 
+  const copied = [];
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    clipboard: { writeText: async (text) => { copied.push(text); } },
+  } });
+  const copy = document.querySelector(".md-copy");
+  ok("Copy is beside the view switch, with a tooltip and accessible name",
+    copy?.parentNode === document.querySelector(".md-bar") && copy.title === "Copy Markdown"
+    && copy.getAttribute("aria-label") === "Copy Markdown");
+  copy._fire("click"); await flush();
+  ok("Rendered view copies the complete fetched Markdown", copied.at(-1) === PAYLOADS["/content/md1"].text);
+  document.querySelectorAll(".md-seg button")[1]._fire("click");
+  copy._fire("click"); await flush();
+  ok("Source view copies the same Markdown", copied.length === 2 && copied.at(-1) === PAYLOADS["/content/md1"].text);
+  document.querySelectorAll(".md-seg button")[0]._fire("click");
+
   // ── replace-in-place (screenshot-loop analog): same session+tab, swapped body ──
   show({ sessionId: "A", contentId: "md1b", kind: "markdown", name: "notes.md", url: "/content/md2", replaces: "md1" });
   await flush();
   ok("replace kept a single tab", tabs().length === 1);
   ok("replace swapped the body in place", document.querySelector("#pane-body .md h1").textContent === "Updated");
+  const updatedCopy = document.querySelector(".md-copy");
+  updatedCopy._fire("click"); await flush();
+  ok("replacing the preview copies the new source", copied.at(-1) === PAYLOADS["/content/md2"].text);
+  ok("successful copy confirms success", document.querySelector("#toast-markdown-copy").classList.contains("t-success"));
+  navigator.clipboard.writeText = async () => { throw new Error("Clipboard blocked"); };
+  document.execCommand = () => false;
+  updatedCopy._fire("click"); await flush();
+  ok("failed clipboard and fallback report an error and allow retry",
+    document.querySelector("#toast-markdown-copy").classList.contains("t-error") && !updatedCopy.disabled);
+  // Later checks assert there are no unrelated notifications.
+  document.querySelector("#toast-markdown-copy").remove();
 
   // ── a second kind → second tab; switching tabs swaps the body ──
   show({ sessionId: "A", contentId: "chart1", kind: "chart", name: "bars", url: "/content/chart1" });

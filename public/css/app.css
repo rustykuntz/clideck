@@ -1373,7 +1373,7 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
 
 /* ── Rendered | Source toggle ── */
 .md-shell { display:flex; flex-direction:column; min-height:100%; scroll-padding-top:60px; }
-.md-bar { position:sticky; top:0; z-index:2; display:flex; justify-content:flex-end; padding:9px 16px;
+.md-bar { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:9px 16px;
   background:color-mix(in srgb, var(--md-ground, var(--bg)) 90%, transparent); backdrop-filter:blur(6px); border-bottom:1px solid var(--md-rule, var(--border)); }
 .md-seg { display:inline-flex; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; padding:2px; }
 .md-seg button { border:0; background:transparent; color:var(--faint); font:550 11.5px var(--sans); padding:4px 11px; border-radius:6px; cursor:pointer; transition:background .12s, color .12s; }

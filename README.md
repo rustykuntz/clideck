@@ -1,87 +1,53 @@
 # clideck
 
-One place for your AI agents to work with you and each other.
+A local workspace for CLI agents.
+
+Run Claude Code, Codex, Gemini CLI, OpenCode, Pi, and shell sessions in one browser
+window. Group them into projects, follow their progress, and pick up conversations
+where you left off. Each session is the agent's actual terminal, with its own
+tools, configuration, and account.
 
 ![CliDeck's terminal workspace with three projects and six agent sessions](public/clideck-workspace.png)
 
-*Three projects, six sessions, and a Codex agent working with a Claude Code reviewer.*
-
-Put a frontend agent, a backend agent, and a researcher in the same project. They can
-use different AI providers. Tell one to ask another for help, and the request and
-answer travel between their actual terminals. You stay part of the conversation.
-
-CliDeck runs the agent CLIs you already use. No orchestration code to write, and no
-new agent API to wire up.
+*Projects and sessions on the left; the selected agent's terminal on the right.*
 
 ## Quick start
 
-Requires **Node.js 22.12 or newer** and at least one installed agent CLI.
+Requires **Node.js 22.12+** and an installed agent CLI.
 
 ```sh
 npm install -g clideck@2
 clideck
 ```
 
-Open **http://127.0.0.1:4000**. Create a project, open a few sessions, and give them
-names that describe their work. The short tour shows you around.
+Open **http://127.0.0.1:4000**, create a project, and add sessions. Mix providers
+as needed. You can also run `npx clideck@2`.
 
-You can also run `npx clideck@2`. Coming from v1? Read [the upgrade notes](UPGRADING.md)
-first. The latest v2 imports your legacy sessions, projects, and saved prompts automatically.
+## Working with sessions
 
-## Agents working together
+The interface works like a WhatsApp conversation list: message previews, unread
+counts, and activity times let you follow many sessions while working in one.
 
-You lead the project: set the direction, try the results, and give feedback.
-Your agents use **CliDeck Ask** to bring in teammates and work through that
-feedback together, even when they use different AI providers. For example:
+- **Projects.** Group sessions by working folder; drag them between projects.
+- **Live status.** See who is working, idle, or needs your attention. Browser and
+  sound notifications let you know when work finishes.
+- **Resume and history.** Reopen saved sessions, read earlier conversations, and
+  see when stopped sessions were last used. Export session backups for recovery.
+- **Search.** Find sessions and search their conversation text. Filter to unread
+  sessions when catching up.
+- **Saved prompts.** Type `//` to reuse a prompt. `{{session_name}}` and
+  `{{project_name}}` fill in the current context.
+- **Controls.** Light and dark themes and configurable shortcuts.
 
-**Building an FPS game**
+## View the output
 
-1. You tell the character programmer: “Some enemy voices feel out of place.
-   They should sound rougher and fit the game's atmosphere.”
-2. The programmer uses CliDeck Ask to explain what needs to change to the sound
-   agent, who uses its audio tools to create new voices and effects.
-3. The sound agent sends back the new files. The programmer adds them to the
-   game, and you play it again and decide what still needs work.
+Read documents and inspect results in tabs beside the terminal:
 
-**Training an image LoRA**
+- Markdown, plain text, logs, JSON, HTML, and PDFs.
+- Images (PNG, JPEG, GIF, WebP) and video (MP4, WebM).
+- Mermaid diagrams, diffs, charts, and test results.
 
-1. You tell the training manager: “The results look good in daylight, but faces
-   look wrong in darker scenes.”
-2. The training manager uses CliDeck Ask to work with the dataset agent on
-   finding and curating more suitable low-light examples.
-3. The dataset agent returns the updated dataset. The training manager runs
-   another training round and brings you comparison images to review.
-
-![A CliDeck Ask request from the frontend agent arriving in the reviewer's Claude Code terminal](public/clideck-ask.png)
-
-*A real Ask exchange: Codex requests a review from Claude Code in another session,
-then uses the reply to fix the issue.*
-
-- **Projects** keep sessions together around a folder.
-- **Session names are addresses** such as `@website/reviewer`. Type `@@` in a
-  terminal to find them.
-- **CliDeck Ask** carries requests and replies between sessions. Agents can check
-  who is available or steer a session that is already working.
-- **You stay involved** through the terminals, notifications, and questions agents
-  can send back to you.
-
-The agent-facing commands are available inside CliDeck sessions:
-
-```sh
-clideck agents
-clideck ask "@website/reviewer" "Review the changes and report the important issues"
-clideck ask status
-```
-
-## View what they produce
-
-Ask an agent to show its work inside CliDeck. Markdown reports, HTML pages, images,
-videos, PDFs, diagrams, and diffs open in preview tabs beside the terminals. You can
-also drop files onto the tab strip.
-
-![A navigation review report rendered in a CliDeck Markdown preview tab beside the terminal tab](public/clideck-output.png)
-
-*The same review, summarized as a document you can read inside CliDeck.*
+Drop a file onto the tab strip, or ask an agent to show it:
 
 ```sh
 clideck show report.md
@@ -89,52 +55,56 @@ clideck show demo.html
 clideck show walkthrough.mp4
 ```
 
-## Also included
+![A Markdown report open in a CliDeck preview tab beside its terminal tab](public/clideck-output.png)
 
-- Claude Code, Codex, Gemini, OpenCode, Pi, and shell sessions, plus custom commands.
-- Saved prompts with `//` lookup and `{{session_name}}` / `{{project_name}}` fields.
-- Session resume, terminal history, working/idle notifications, and session backups.
-- Light and dark themes, configurable shortcuts, and a plugin SDK.
-- **Git Changes** shows what your agents changed, with branch and worktree comparisons.
-- **Supertonic Voice** reads replies and selected text aloud.
-- **Emoji** support and optional **Smart Dictation** for speaking your prompts.
+## Plugins
 
-Voice models are downloaded when set up; they are not included in the npm package.
-OmniVoice is not part of this release.
+- **Git Changes** — inspect edits, branches, and worktree comparisons.
+- **Supertonic Voice** — listen to replies or selected text. Voice models download during setup.
+- **Emoji** — emoji support in the terminal.
+- **Smart Dictation** — optional voice input for prompts.
 
-## What changed in v2
+You can also build plugins with the [plugin SDK](PLUGIN-SDK.md).
 
-We removed Autopilot because today's agents already have sub-agents. The CLI is
-the right interface for this generation of CLI agents, so CliDeck focuses on
-helping them work across providers with you.
+## Work as a team
 
-We also removed mobile control. Harnesses such as Codex and Claude Code now provide
-their own remote access, and maintaining another mobile control layer no longer
-makes sense for CliDeck.
+**CliDeck Ask** lets agents send requests to other sessions and receive their
+replies, including across providers. You set the direction and review the results.
 
-The focus is projects where you and agents from multiple providers work together,
-with their conversations and outputs in one place.
+In an FPS project, you flag enemy voices that don't fit. The character programmer
+asks the sound agent for replacements and adds them to the game for you to try.
 
-## Running locally
+In a LoRA project, you flag poor results in darker scenes. The training manager
+asks the dataset agent for better examples, retrains, and shows you the comparison.
+
+Type `@@` to find sessions such as `@game/sound`. Agents find teammates with
+`clideck agents` and contact them with `clideck ask`.
+
+![A request from Codex arriving in another session's Claude Code terminal through CliDeck Ask](public/clideck-ask.png)
+
+*A real exchange: Codex asks Claude Code for a review, then uses the reply to fix an issue.*
+
+## Local setup
 
 ```sh
 clideck --port 4200
 clideck --data-dir /path/to/clideck-data
 clideck --help
-clideck --version
 ```
 
-`CLIDECK_PORT` or `PORT` also sets the port. CliDeck v2 binds to loopback only. Its default
-data directory is `~/.clideck-next`, kept separate from v1's `~/.clideck`.
-Agent CLIs use their own accounts and network connections.
+`CLIDECK_PORT` or `PORT` also sets the port. CliDeck binds to localhost and stores
+its data in `~/.clideck-next` by default. Agent CLIs use their own network connections.
 
-For development, run `npm ci`, `npm test`, then `npm start`.
+For development: `npm ci`, `npm test`, then `npm start`.
 
-## Docs
+## Coming from v1
 
-- [Upgrading from v1](UPGRADING.md)
-- [Session backup and recovery](SESSION-BACKUP.md)
-- [Plugin SDK](PLUGIN-SDK.md)
+The latest v2 imports legacy sessions, projects, and saved prompts automatically.
+Read [the upgrade notes](UPGRADING.md) before updating; see
+[session backup and recovery](SESSION-BACKUP.md) for restoring saved work.
+
+Autopilot was removed because agents already have sub-agents; mobile control was
+removed because harnesses provide their own remote access.
 
 ## License
 

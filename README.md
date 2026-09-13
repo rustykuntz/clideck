@@ -2,7 +2,9 @@
 
 One place for your AI agents to work with you and each other.
 
-![CliDeck with a team of agents and a Markdown report open](public/clideck-team.png)
+![CliDeck's terminal workspace with three projects and six agent sessions](public/clideck-workspace.png)
+
+*Three projects, six sessions, and a Codex agent working with a Claude Code reviewer.*
 
 Put a frontend agent, a backend agent, and a researcher in the same project. They can
 use different AI providers. Tell one to ask another for help, and the request and
@@ -31,6 +33,25 @@ first. The latest v2 imports your legacy sessions, projects, and saved prompts a
 Say “ask the reviewer to check my work.” Your agent discovers the reviewer, sends
 the request, and gets the answer back. The reviewer can use a different provider.
 
+You talk to your agent as usual. CliDeck handles the conversation between sessions:
+
+```mermaid
+sequenceDiagram
+    actor You
+    participant Frontend as Frontend · Codex
+    participant Reviewer as Reviewer · Claude Code
+    You->>Frontend: Ask the reviewer to check my changes
+    Frontend->>Reviewer: Send the review request through CliDeck Ask
+    Reviewer-->>Frontend: Return findings
+    Frontend-->>You: Fix the issue and explain what changed
+```
+
+![A CliDeck Ask request from the frontend agent arriving in the reviewer's Claude Code terminal](public/clideck-ask.png)
+
+*In this example, Codex asked Claude Code to review the navigation. The reviewer
+found a route-matching bug; Codex fixed it and passed all seven checks. Each agent
+worked in its own terminal, and the reply came back to the agent that asked.*
+
 - **Projects** keep sessions together around a folder.
 - **Session names are addresses** such as `@website/reviewer`. Type `@@` in a
   terminal to find them.
@@ -52,6 +73,10 @@ clideck ask status
 Ask an agent to show its work inside CliDeck. Markdown reports, HTML pages, images,
 videos, PDFs, diagrams, and diffs open in preview tabs beside the terminals. You can
 also drop files onto the tab strip.
+
+![A navigation review report rendered in a CliDeck Markdown preview tab beside the terminal tab](public/clideck-output.png)
+
+*The same review, summarized as a document you can read inside CliDeck.*
 
 ```sh
 clideck show report.md

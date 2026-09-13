@@ -78,7 +78,8 @@ You can also build plugins with the [plugin SDK](PLUGIN-SDK.md).
 replies, including across providers. You set the direction and review the results.
 
 In an FPS project, you flag enemy voices that don't fit. The character programmer
-asks the sound agent for replacements and adds them to the game for you to try.
+chooses the SFX agent from the team, asks for replacements, and brings the update
+back for you to try.
 
 In a LoRA project, you flag poor results in darker scenes. The training manager
 asks the dataset agent for better examples, retrains, and opens the comparison
@@ -87,7 +88,7 @@ images in CliDeck for your review.
 Type `@@` to find sessions such as `@game/sound`. Agents find teammates with
 `clideck agents` and contact them with `clideck ask`.
 
-![An FPS project: you give feedback on enemy voices, the character programmer asks the sound agent for new takes through CliDeck Ask, and you play the updated game and give more feedback](public/clideck-teamwork.png)
+![An FPS team with map, SFX, visual assets, story, QA, and player agents. Your character programmer chooses SFX for the voice request; SFX replies to the programmer, who brings the update back to you.](public/clideck-teamwork.png)
 
 ## Local setup
 

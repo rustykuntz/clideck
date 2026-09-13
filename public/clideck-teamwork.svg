@@ -1,93 +1,110 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
-  <title id="title">An FPS project: feedback, teamwork, and another playtest</title>
-  <desc id="desc">You tell the character programmer that enemy voices do not fit. The programmer, using Codex, asks the sound agent, using Claude Code, for rougher voices through CliDeck Ask. The sound agent returns new takes. The programmer adds them to the game, and you play it and give more feedback.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="780" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+  <title id="title">The character programmer chooses the SFX agent from the FPS project team</title>
+  <desc id="desc">You report that enemy voices do not fit the game. The character programmer sees teammates for maps, SFX, visual assets, story, QA, and playtesting, and chooses the SFX agent. CliDeck Ask carries the request to SFX. SFX replies that the enemy voices have changed and asks the programmer to check them. The programmer reviews the update and brings it back to you.</desc>
   <defs>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #272c32; }
       .heading { font-size: 24px; font-weight: 650; }
-      .label { font-size: 18px; font-weight: 650; }
-      .body { font-size: 22px; }
-      .note { font-size: 17px; fill: #626a73; }
-      .line { fill: none; stroke: #49515a; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .role { font-size: 21px; font-weight: 650; }
+      .body { font-size: 23px; }
+      .note { font-size: 19px; fill: #626a73; }
+      .small { font-size: 17px; fill: #626a73; }
+      .icon { fill: none; stroke: #49515a; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .request { fill: none; stroke: #bf6544; stroke-width: 3; marker-end: url(#request-arrow); }
+      .reply { fill: none; stroke: #51856a; stroke-width: 3; marker-end: url(#reply-arrow); }
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M2 1 8 5 2 9" fill="none" stroke="#b86142" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <marker id="request-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M2 1 8 5 2 9" fill="none" stroke="#bf6544" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
-    <g id="person" class="line">
-      <circle cx="15" cy="10" r="8"/>
-      <path d="M1 36c0-16 28-16 28 0"/>
-    </g>
-    <g id="terminal" class="line">
-      <rect x="1" y="2" width="32" height="27" rx="5"/>
-      <path d="m8 10 5 5-5 5m10 0h8"/>
-    </g>
+    <marker id="reply-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M2 1 8 5 2 9" fill="none" stroke="#51856a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <g id="person" class="icon"><circle cx="15" cy="10" r="8"/><path d="M1 36c0-16 28-16 28 0"/></g>
+    <g id="terminal" class="icon"><rect x="1" y="2" width="32" height="27" rx="5"/><path d="m8 10 5 5-5 5m10 0h8"/></g>
   </defs>
 
-  <rect x="1" y="1" width="1198" height="618" rx="22" fill="#faf8f3" stroke="#dedad1"/>
-  <text x="38" y="51" font-size="27" font-weight="650">An FPS project</text>
-  <text x="38" y="82" class="note">You give feedback. The team works on it. You try the result.</text>
+  <rect x="1" y="1" width="1398" height="778" rx="22" fill="#faf8f3" stroke="#dedad1"/>
+  <text x="35" y="50" font-size="29" font-weight="650">An FPS project</text>
+  <text x="35" y="84" class="note">The character programmer chooses the teammate who can help with your request.</text>
 
-  <!-- Three scenes, read left to right. -->
-  <rect x="26" y="112" width="338" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
-  <rect x="397" y="112" width="406" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
-  <rect x="836" y="112" width="338" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
+  <!-- The full team is visible; only SFX receives this request. -->
+  <rect x="930" y="112" width="438" height="610" rx="18" fill="#f1efe9" stroke="#dedad1"/>
+  <text x="951" y="147" class="heading">Project team</text>
+  <path d="M748 354H885M885 202V677M885 202h65M885 479h65M885 545h65M885 611h65M885 677h65" fill="none" stroke="#c8c5bd" stroke-width="2" stroke-dasharray="5 6"/>
 
-  <circle cx="59" cy="147" r="15" fill="#ede7de"/>
-  <text x="59" y="153" text-anchor="middle" class="label">1</text>
-  <text x="84" y="155" class="heading">Your direction</text>
-  <circle cx="430" cy="147" r="15" fill="#f6e1d6"/>
-  <text x="430" y="153" text-anchor="middle" class="label">2</text>
-  <text x="455" y="155" class="heading">Agents coordinate</text>
-  <circle cx="869" cy="147" r="15" fill="#e2ebe3"/>
-  <text x="869" y="153" text-anchor="middle" class="label">3</text>
-  <text x="894" y="155" class="heading">Your next playtest</text>
+  <rect x="950" y="173" width="398" height="58" rx="10" fill="#fffefa" stroke="#dcd8cf"/>
+  <use href="#terminal" x="966" y="187"/>
+  <text x="1012" y="210" class="role">Game map programmer</text>
 
-  <use href="#person" x="51" y="202"/>
-  <text x="98" y="223" class="label">You · project lead</text>
-  <path d="M61 259h264q14 0 14 14v105q0 14-14 14H89l-19 17v-17h-9q-14 0-14-14V273q0-14 14-14Z" fill="#f1eee7" stroke="#d5cfc4"/>
-  <text x="65" y="296" class="body">
-    <tspan x="65">“These enemy voices</tspan>
-    <tspan x="65" dy="31">don't fit. They need</tspan>
-    <tspan x="65" dy="31">to sound rougher.”</tspan>
+  <rect x="950" y="250" width="398" height="179" rx="13" fill="#edf4ee" stroke="#51856a" stroke-width="2"/>
+  <use href="#terminal" x="966" y="266"/>
+  <text x="1012" y="285" class="role">SFX agent</text>
+  <text x="1012" y="310" class="small">Claude Code</text>
+  <rect x="1227" y="268" width="103" height="28" rx="14" fill="#dce9df"/>
+  <text x="1278" y="288" text-anchor="middle" font-size="16" font-weight="650">CHOSEN</text>
+  <text x="971" y="348" class="body">
+    <tspan x="971">“I changed these enemy voices.</tspan>
+    <tspan x="971" dy="31">Please check if they're better.”</tspan>
   </text>
-  <use href="#terminal" x="53" y="466"/>
-  <text x="100" y="480" class="label">Character programmer</text>
-  <text x="100" y="506" class="note">takes it from here</text>
+  <path d="M973 402h4m6-7v14m7-19v24m7-16v8m7-12v16m7-8h4m6-10v20m7-15v10m7-13v16m7-8h4" fill="none" stroke="#51856a" stroke-width="2.5" stroke-linecap="round"/>
 
-  <rect x="423" y="183" width="135" height="29" rx="14" fill="#f6e1d6"/>
-  <text x="490" y="203" text-anchor="middle" font-size="16" font-weight="650" fill="#954d34">CliDeck Ask</text>
-  <text x="423" y="248" class="label">Character programmer · Codex</text>
-  <path d="M437 263h325q14 0 14 14v61q0 14-14 14H449l-14 14v-14q-12 0-12-14v-61q0-14 14-14Z" fill="#fcf0e8" stroke="#d9b29c"/>
-  <text x="441" y="299" class="body">
-    <tspan x="441">“Can you make rougher</tspan>
-    <tspan x="441" dy="30">voices for these enemies?”</tspan>
+  <rect x="950" y="450" width="398" height="58" rx="10" fill="#fffefa" stroke="#dcd8cf"/>
+  <use href="#terminal" x="966" y="464"/>
+  <text x="1012" y="487" class="role">Visual assets agent</text>
+  <rect x="950" y="516" width="398" height="58" rx="10" fill="#fffefa" stroke="#dcd8cf"/>
+  <use href="#terminal" x="966" y="530"/>
+  <text x="1012" y="553" class="role">Story agent</text>
+  <rect x="950" y="582" width="398" height="58" rx="10" fill="#fffefa" stroke="#dcd8cf"/>
+  <use href="#terminal" x="966" y="596"/>
+  <text x="1012" y="619" class="role">QA agent</text>
+  <rect x="950" y="648" width="398" height="58" rx="10" fill="#fffefa" stroke="#dcd8cf"/>
+  <use href="#terminal" x="966" y="662"/>
+  <text x="1012" y="685" class="role">Player agent</text>
+
+  <!-- User and programmer remain the same two participants on the way back. -->
+  <rect x="30" y="202" width="300" height="365" rx="17" fill="#fffefa" stroke="#d9d4ca"/>
+  <use href="#person" x="49" y="222"/>
+  <text x="97" y="244" class="heading">You</text>
+  <text x="97" y="270" class="note">Project lead</text>
+  <text x="50" y="315" class="body">
+    <tspan x="50">“Some enemy voices</tspan>
+    <tspan x="50" dy="32">don't fit the game.</tspan>
+    <tspan x="50" dy="32">Can we improve them?”</tspan>
   </text>
-
-  <text x="423" y="405" class="label">Sound agent · Claude Code</text>
-  <path d="M437 420h325q14 0 14 14v61q0 14-14 14h-11v14l-17-14H437q-14 0-14-14v-61q0-14 14-14Z" fill="#eaf1ec" stroke="#b3c7b8"/>
-  <text x="441" y="456" class="body">
-    <tspan x="441">“Here are three new takes.”</tspan>
-  </text>
-  <path d="M444 482h4m5-6v12m6-16v20m6-13v6m6-11v16m6-8v1m6-7v14m6-18v22m6-14v6m6-10v14m6-7h4" fill="none" stroke="#47725a" stroke-width="2.5" stroke-linecap="round"/>
-  <text x="527" y="488" class="note">enemy-voices.wav</text>
-
-  <use href="#terminal" x="858" y="201"/>
-  <text x="904" y="221" class="label">Character programmer</text>
-  <path d="M869 242h269q14 0 14 14v94q0 14-14 14H897l-18 16v-16h-10q-14 0-14-14v-94q0-14 14-14Z" fill="#fcf0e8" stroke="#d9b29c"/>
-  <text x="874" y="279" class="body">
-    <tspan x="874">“New voices are in</tspan>
-    <tspan x="874" dy="30">the game. Try them.”</tspan>
-  </text>
-
-  <use href="#person" x="858" y="407"/>
-  <text x="904" y="429" class="label">You</text>
-  <path d="M869 449h269q14 0 14 14v61q0 14-14 14h-11v13l-16-13H869q-14 0-14-14v-61q0-14 14-14Z" fill="#f1eee7" stroke="#d5cfc4"/>
-  <text x="874" y="483" class="body">
-    <tspan x="874">“Better. Make the</tspan>
-    <tspan x="874" dy="30">boss a little deeper.”</tspan>
+  <path d="M50 411h259" stroke="#e2ded5"/>
+  <text x="50" y="444" class="small">BACK TO YOU</text>
+  <text x="50" y="482" class="body">
+    <tspan x="50">“The voices are updated.</tspan>
+    <tspan x="50" dy="32">Give them another try.”</tspan>
   </text>
 
-  <path d="M368 332h24" fill="none" stroke="#b86142" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <path d="M807 332h24" fill="none" stroke="#b86142" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <text x="600" y="600" text-anchor="middle" class="note">Different providers, separate sessions, one project.</text>
+  <rect x="434" y="202" width="314" height="365" rx="17" fill="#fffefa" stroke="#cfa98f" stroke-width="2"/>
+  <use href="#terminal" x="454" y="222"/>
+  <text x="454" y="291" class="heading">Character programmer</text>
+  <text x="499" y="244" class="note">Codex</text>
+  <text x="454" y="330" class="note">Chooses the SFX agent:</text>
+  <text x="454" y="368" class="body">
+    <tspan x="454">“Can you update these</tspan>
+    <tspan x="454" dy="32">enemy voices?”</tspan>
+  </text>
+  <path d="M454 428h274" stroke="#e2ded5"/>
+  <text x="454" y="469" class="note">
+    <tspan x="454">Reviews the SFX update</tspan>
+    <tspan x="454" dy="29">and brings it back to you.</tspan>
+  </text>
+
+  <!-- Numbered arrows make the round trip explicit without a protocol diagram. -->
+  <text x="380" y="287" text-anchor="middle" font-size="18" font-weight="650">1 · Feedback</text>
+  <path d="M335 306h93" class="request"/>
+  <text x="380" y="469" text-anchor="middle" font-size="18" font-weight="650">4 · Update</text>
+  <path d="M428 488h-93" class="reply"/>
+
+  <rect x="779" y="218" width="141" height="31" rx="15" fill="#f6e1d6"/>
+  <text x="849" y="240" text-anchor="middle" font-size="18" font-weight="650">CliDeck Ask</text>
+  <text x="849" y="286" text-anchor="middle" font-size="18" font-weight="650">2 · Request</text>
+  <path d="M754 306h190" class="request"/>
+  <text x="849" y="389" text-anchor="middle" font-size="18" font-weight="650">3 · Reply</text>
+  <path d="M944 409H754" class="reply"/>
+
+  <text x="700" y="755" text-anchor="middle" class="note">CliDeck Ask carries requests and replies between your agents, across providers.</text>
 </svg>

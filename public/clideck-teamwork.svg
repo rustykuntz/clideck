@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">An FPS project: feedback, teamwork, and another playtest</title>
+  <desc id="desc">You tell the character programmer that enemy voices do not fit. The programmer, using Codex, asks the sound agent, using Claude Code, for rougher voices through CliDeck Ask. The sound agent returns new takes. The programmer adds them to the game, and you play it and give more feedback.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #272c32; }
+      .heading { font-size: 24px; font-weight: 650; }
+      .label { font-size: 18px; font-weight: 650; }
+      .body { font-size: 22px; }
+      .note { font-size: 17px; fill: #626a73; }
+      .line { fill: none; stroke: #49515a; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M2 1 8 5 2 9" fill="none" stroke="#b86142" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <g id="person" class="line">
+      <circle cx="15" cy="10" r="8"/>
+      <path d="M1 36c0-16 28-16 28 0"/>
+    </g>
+    <g id="terminal" class="line">
+      <rect x="1" y="2" width="32" height="27" rx="5"/>
+      <path d="m8 10 5 5-5 5m10 0h8"/>
+    </g>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="618" rx="22" fill="#faf8f3" stroke="#dedad1"/>
+  <text x="38" y="51" font-size="27" font-weight="650">An FPS project</text>
+  <text x="38" y="82" class="note">You give feedback. The team works on it. You try the result.</text>
+
+  <!-- Three scenes, read left to right. -->
+  <rect x="26" y="112" width="338" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
+  <rect x="397" y="112" width="406" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
+  <rect x="836" y="112" width="338" height="459" rx="17" fill="#fffefa" stroke="#ddd8cf"/>
+
+  <circle cx="59" cy="147" r="15" fill="#ede7de"/>
+  <text x="59" y="153" text-anchor="middle" class="label">1</text>
+  <text x="84" y="155" class="heading">Your direction</text>
+  <circle cx="430" cy="147" r="15" fill="#f6e1d6"/>
+  <text x="430" y="153" text-anchor="middle" class="label">2</text>
+  <text x="455" y="155" class="heading">Agents coordinate</text>
+  <circle cx="869" cy="147" r="15" fill="#e2ebe3"/>
+  <text x="869" y="153" text-anchor="middle" class="label">3</text>
+  <text x="894" y="155" class="heading">Your next playtest</text>
+
+  <use href="#person" x="51" y="202"/>
+  <text x="98" y="223" class="label">You · project lead</text>
+  <path d="M61 259h264q14 0 14 14v105q0 14-14 14H89l-19 17v-17h-9q-14 0-14-14V273q0-14 14-14Z" fill="#f1eee7" stroke="#d5cfc4"/>
+  <text x="65" y="296" class="body">
+    <tspan x="65">“These enemy voices</tspan>
+    <tspan x="65" dy="31">don't fit. They need</tspan>
+    <tspan x="65" dy="31">to sound rougher.”</tspan>
+  </text>
+  <use href="#terminal" x="53" y="466"/>
+  <text x="100" y="480" class="label">Character programmer</text>
+  <text x="100" y="506" class="note">takes it from here</text>
+
+  <rect x="423" y="183" width="135" height="29" rx="14" fill="#f6e1d6"/>
+  <text x="490" y="203" text-anchor="middle" font-size="16" font-weight="650" fill="#954d34">CliDeck Ask</text>
+  <text x="423" y="248" class="label">Character programmer · Codex</text>
+  <path d="M437 263h325q14 0 14 14v61q0 14-14 14H449l-14 14v-14q-12 0-12-14v-61q0-14 14-14Z" fill="#fcf0e8" stroke="#d9b29c"/>
+  <text x="441" y="299" class="body">
+    <tspan x="441">“Can you make rougher</tspan>
+    <tspan x="441" dy="30">voices for these enemies?”</tspan>
+  </text>
+
+  <text x="423" y="405" class="label">Sound agent · Claude Code</text>
+  <path d="M437 420h325q14 0 14 14v61q0 14-14 14h-11v14l-17-14H437q-14 0-14-14v-61q0-14 14-14Z" fill="#eaf1ec" stroke="#b3c7b8"/>
+  <text x="441" y="456" class="body">
+    <tspan x="441">“Here are three new takes.”</tspan>
+  </text>
+  <path d="M444 482h4m5-6v12m6-16v20m6-13v6m6-11v16m6-8v1m6-7v14m6-18v22m6-14v6m6-10v14m6-7h4" fill="none" stroke="#47725a" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="527" y="488" class="note">enemy-voices.wav</text>
+
+  <use href="#terminal" x="858" y="201"/>
+  <text x="904" y="221" class="label">Character programmer</text>
+  <path d="M869 242h269q14 0 14 14v94q0 14-14 14H897l-18 16v-16h-10q-14 0-14-14v-94q0-14 14-14Z" fill="#fcf0e8" stroke="#d9b29c"/>
+  <text x="874" y="279" class="body">
+    <tspan x="874">“New voices are in</tspan>
+    <tspan x="874" dy="30">the game. Try them.”</tspan>
+  </text>
+
+  <use href="#person" x="858" y="407"/>
+  <text x="904" y="429" class="label">You</text>
+  <path d="M869 449h269q14 0 14 14v61q0 14-14 14h-11v13l-16-13H869q-14 0-14-14v-61q0-14 14-14Z" fill="#f1eee7" stroke="#d5cfc4"/>
+  <text x="874" y="483" class="body">
+    <tspan x="874">“Better. Make the</tspan>
+    <tspan x="874" dy="30">boss a little deeper.”</tspan>
+  </text>
+
+  <path d="M368 332h24" fill="none" stroke="#b86142" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M807 332h24" fill="none" stroke="#b86142" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="600" y="600" text-anchor="middle" class="note">Different providers, separate sessions, one project.</text>
+</svg>

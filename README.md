@@ -87,9 +87,7 @@ images in CliDeck for your review.
 Type `@@` to find sessions such as `@game/sound`. Agents find teammates with
 `clideck agents` and contact them with `clideck ask`.
 
-![A request from Codex arriving in another session's Claude Code terminal through CliDeck Ask](public/clideck-ask.png)
-
-*A real exchange: Codex asks Claude Code for a review, then uses the reply to fix an issue.*
+![An FPS project: you give feedback on enemy voices, the character programmer asks the sound agent for new takes through CliDeck Ask, and you play the updated game and give more feedback](public/clideck-teamwork.png)
 
 ## Local setup
 

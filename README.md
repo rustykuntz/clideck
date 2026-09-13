@@ -5,7 +5,8 @@ A local workspace for CLI agents.
 Run Claude Code, Codex, Gemini CLI, OpenCode, Pi, and shell sessions in one browser
 window. Group them into projects, follow their progress, and pick up conversations
 where you left off. Each session is the agent's actual terminal, with its own
-tools, configuration, and account.
+tools, configuration, and account. Agents can open their work directly in CliDeck
+for you to review as they go.
 
 ![CliDeck's terminal workspace with three projects and six agent sessions](public/clideck-workspace.png)
 
@@ -39,21 +40,26 @@ counts, and activity times let you follow many sessions while working in one.
   `{{project_name}}` fill in the current context.
 - **Controls.** Light and dark themes and configurable shortcuts.
 
-## View the output
+## See what agents produce
 
-Read documents and inspect results in tabs beside the terminal:
+Agents can create reports, pages, images, and other artifacts and automatically
+open them in CliDeck as part of their work. Results appear in tabs beside the
+terminal, ready for you to inspect and give feedback. Supported previews include:
 
 - Markdown, plain text, logs, JSON, HTML, and PDFs.
 - Images (PNG, JPEG, GIF, WebP) and video (MP4, WebM).
 - Mermaid diagrams, diffs, charts, and test results.
 
-Drop a file onto the tab strip, or ask an agent to show it:
+Agents open these with `clideck show`:
 
 ```sh
 clideck show report.md
 clideck show demo.html
 clideck show walkthrough.mp4
 ```
+
+They can update the same preview as they revise their work. You can also drop
+files onto the tab strip yourself.
 
 ![A Markdown report open in a CliDeck preview tab beside its terminal tab](public/clideck-output.png)
 
@@ -75,7 +81,8 @@ In an FPS project, you flag enemy voices that don't fit. The character programme
 asks the sound agent for replacements and adds them to the game for you to try.
 
 In a LoRA project, you flag poor results in darker scenes. The training manager
-asks the dataset agent for better examples, retrains, and shows you the comparison.
+asks the dataset agent for better examples, retrains, and opens the comparison
+images in CliDeck for your review.
 
 Type `@@` to find sessions such as `@game/sound`. Agents find teammates with
 `clideck agents` and contact them with `clideck ask`.

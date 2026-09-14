@@ -40,9 +40,13 @@ try {
   // ── gating ──────────────────────────────────────────────────────────────
   initTour();
   config(undefined);                       // key ABSENT
-  await sleep(700);
-  ok("an ABSENT onboarding key never auto-runs the tour", !isTourOpen() || __tourForTest().mode !== "tour");
-  closeTour();
+  await sleep(1750);
+  ok("an ABSENT onboarding key gets the tour invitation, not an automatic tour",
+    __tourForTest()?.mode === "tip" && __tourForTest()?.id === TIP_GUIDED_TOUR);
+  q("tour-quiet")._fire("click");
+  config(store.onboarding);
+  await sleep(1750);
+  ok("dismissing the invitation and receiving another config shows no second tip this load", !isTourOpen());
 
   // The decision is made once per load, so each further case drives the entry point directly — which is also
   // what stops this suite from depending on the order its own cases run in.
@@ -180,16 +184,21 @@ try {
   config({ completed: true, seenTips: [] });
   ws.clear();
   const first = maybeShowTip();
-  ok("an existing user gets a tip, not a tour", first === TIP_ABOUT_ME && __tourForTest().mode === "tip");
+  ok("an existing user gets a tip, not a tour", first === TIP_GUIDED_TOUR && __tourForTest().mode === "tip");
   ok("a tip is one stop, and says so", __tourForTest().total === 1 && q("tour-eyebrow").textContent === "New");
   ok("its quiet action reads 'Got it'", q("tour-quiet").textContent === "Got it");
   q("tour-quiet")._fire("click");
   ok("acknowledging sends ONLY the new id — the engine unions, so a delta cannot clobber history",
-    onboardingSent() && onboardingSent().seenTips.length === 1 && onboardingSent().seenTips[0] === TIP_ABOUT_ME && onboardingSent().completed === undefined);
-  ok("the store already reflects it, so the next tip is a different one", store.seenTips.includes(TIP_ABOUT_ME));
+    onboardingSent() && onboardingSent().seenTips.length === 1 && onboardingSent().seenTips[0] === TIP_GUIDED_TOUR && onboardingSent().completed === undefined);
+  ok("the store already reflects it, so the next tip is a different one", store.seenTips.includes(TIP_GUIDED_TOUR));
 
   const second = maybeShowTip();
-  ok("the next unseen tip is next, never the one just dismissed", second === TIP_GUIDED_TOUR);
+  ok("About me follows a seen tour invitation, never repeating it", second === TIP_ABOUT_ME);
+  q("tour-quiet")._fire("click");
+  ok("with both acknowledged there is nothing to show", maybeShowTip() === null);
+
+  config({ completed: true, seenTips: [TIP_ABOUT_ME, "future-tip"] });
+  ok("a seen profile does not suppress an unseen tour invitation", maybeShowTip() === TIP_GUIDED_TOUR);
   ws.clear();
   q("tour-primary")._fire("click");               // the tip's call to action
   ok("a tip's action marks it seen too", store.seenTips.includes(TIP_GUIDED_TOUR) && onboardingSent().seenTips[0] === TIP_GUIDED_TOUR);
@@ -199,14 +208,14 @@ try {
   ok("with everything seen there is nothing to show", maybeShowTip() === null && !isTourOpen());
 
   // ── replay must not un-see anything ─────────────────────────────────────
-  config({ completed: true, seenTips: [TIP_ABOUT_ME, TIP_GUIDED_TOUR] });
+  config({ completed: true, seenTips: [TIP_ABOUT_ME, TIP_GUIDED_TOUR, "future-tip"] });
   ws.clear();
   startTour({ replay: true });
   ok("a replay runs the full six stops regardless of completed", isTourOpen() && __tourForTest().total === 6);
   ok("starting a replay writes NOTHING — history is not touched on the way in", ws.last("config.update") === null);
   for (let i = 0; i < 5; i++) acts().next._fire("click");
   acts().next._fire("click");                     // Done
-  ok("finishing a replay still never removes a seen id", store.seenTips.includes(TIP_ABOUT_ME) && store.seenTips.includes(TIP_GUIDED_TOUR));
+  ok("finishing a replay still never removes a seen id", store.seenTips.includes(TIP_ABOUT_ME) && store.seenTips.includes(TIP_GUIDED_TOUR) && store.seenTips.includes("future-tip"));
   ok("…and the patch it sends only ever ADDS ids", onboardingSent().seenTips.every((id) => [TIP_ABOUT_ME, TIP_GUIDED_TOUR].includes(id)));
   ok("after a replay there is still no tip to show", maybeShowTip() === null);
 
@@ -277,6 +286,21 @@ try {
   closeTour(); await sleep(240);
   ok("closing releases that flag", !document.body.classList.contains("tour-active"));
   ok("and takes its card with it", !card());
+
+  // Each module instance represents a new page load; inspect and close that same instance.
+  for (const [name, onboarding, mode, id] of [
+    ["fresh", { completed: false, seenTips: [] }, "tour", "projects"],
+    ["existing", { completed: true, seenTips: [] }, "tip", TIP_GUIDED_TOUR],
+    ["later", { completed: true, seenTips: [TIP_GUIDED_TOUR] }, "tip", TIP_ABOUT_ME],
+  ]) {
+    const page = await import(`../public/js/ui/tour.js?tip-order-${name}`);
+    page.initTour();
+    config(onboarding);
+    await sleep(mode === "tour" ? 600 : 1750);
+    ok(`${name} load starts with ${id}`, page.__tourForTest()?.mode === mode && page.__tourForTest()?.id === id);
+    page.closeTour(); await sleep(240);
+  }
+
 } catch (error) {
   ok("suite ran to completion", false);
   console.log(error && error.stack || error);

@@ -92,15 +92,8 @@ const STOPS = [
 // ── feature tips ────────────────────────────────────────────────────────────
 // Shown one per app load, in order, and only when the id is not already in seenTips. A new feature appends an
 // entry; nobody is ever shown a tip twice, and nothing replays because a version changed.
+// Introduce the workspace before optional profile setup when both tips are unseen.
 const TIPS = [
-  {
-    id: TIP_ABOUT_ME,
-    anchor: () => byId("settings-btn"),
-    title: "Tell agents who you are",
-    body: "An optional profile now lives in Settings ▸ General — your name, time zone and notes, shared with supported agents when a session starts.",
-    fallback: "Settings ▸ General now has About me: an optional name, time zone and notes, shared with supported agents when a session starts.",
-    cta: { label: "Open About me", run: () => { openSettingsAt("general"); scrollTo(settingsSection("about")); } },
-  },
   {
     id: TIP_GUIDED_TOUR,
     anchor: () => byId("settings-btn"),
@@ -108,6 +101,14 @@ const TIPS = [
     body: "Six quick stops around the deck — projects, sessions, how agents ask each other for work, the tabs their output opens in, notifications and agent launch options. Settings ▸ General has it whenever you want it.",
     fallback: "Settings ▸ General ▸ Take the tour walks through the deck in six quick stops.",
     cta: { label: "Take the tour", run: () => startTour({ replay: true }) },
+  },
+  {
+    id: TIP_ABOUT_ME,
+    anchor: () => byId("settings-btn"),
+    title: "Tell agents who you are",
+    body: "An optional profile now lives in Settings ▸ General — your name, time zone and notes, shared with supported agents when a session starts.",
+    fallback: "Settings ▸ General now has About me: an optional name, time zone and notes, shared with supported agents when a session starts.",
+    cta: { label: "Open About me", run: () => { openSettingsAt("general"); scrollTo(settingsSection("about")); } },
   },
 ];
 

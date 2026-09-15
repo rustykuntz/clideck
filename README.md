@@ -33,7 +33,8 @@ counts, and activity times let you follow many sessions while working in one.
 - **Live status.** See who is working, idle, or needs your attention. Browser and
   sound notifications let you know when work finishes.
 - **Resume and history.** Reopen saved sessions, read earlier conversations, and
-  see when stopped sessions were last used. Export session backups for recovery.
+  see when stopped sessions were last used. Back up your setup and restore selected
+  settings, projects or sessions.
 - **Search.** Find sessions and search their conversation text. Filter to unread
   sessions when catching up.
 - **Saved prompts.** Type `//` to reuse a prompt. `{{session_name}}` and

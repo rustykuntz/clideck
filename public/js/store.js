@@ -178,7 +178,7 @@ function applyEvent(ev) {
       // ABSENT vs present-but-empty is the whole gate here, so it is preserved rather than defaulted to {}.
       onboarding = (c.onboarding && typeof c.onboarding === "object" && !Array.isArray(c.onboarding)) ? { ...c.onboarding } : null;
       engineVersion = typeof c.version === "string" ? c.version : engineVersion;   // forward-compat (engine may add it)
-      emit("config"); return;
+      emit("config", ev); return;
     }
     case "availability.result": {                                        // requester-only {providers:[{id,available,version,error}], commands:[...]}
       availability = { providers: byId(ev.providers), commands: byId(ev.commands), at: Date.now() };

@@ -64,7 +64,8 @@ function isKnownControlType(type) {
 }
 
 function hasValidControlFields(message) {
-  if (message.type === 'config.get' || message.type === 'checkAvailability') return true;
+  if (message.type === 'config.get') return hasValidRequestId(message);
+  if (message.type === 'checkAvailability') return true;
   if (message.type === 'plugins.refresh' || message.type === 'plugin.openFolder') {
     return hasValidRequestId(message);
   }

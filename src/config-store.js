@@ -202,7 +202,11 @@ class ConfigStore {
     if (patch.onboarding !== undefined) {
       document.onboarding = mergeOnboarding(this.document.onboarding, patch.onboarding);
     }
-    if (jsonSize(document) > MAX_CONFIG_BYTES) {
+    return this.replace(document);
+  }
+
+  replace(document) {
+    if (!isValidConfigPatch(document)) {
       const error = new Error('Config exceeds the size limit.');
       error.code = 'config_too_large';
       throw error;
@@ -210,7 +214,7 @@ class ConfigStore {
     const temporary = `${this.path}.${process.pid}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`);
     renameSync(temporary, this.path);
-    this.document = document;
+    this.document = clone(document);
     return this.get();
   }
 }

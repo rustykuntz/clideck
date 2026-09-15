@@ -224,6 +224,21 @@ class SessionPersistence {
     this.registryTimer.unref?.();
   }
 
+  // Restore definitions only. Never register over a session: register clears its history.
+  importMissing(values) {
+    const entries = values.map(normalizeEntry);
+    if (entries.some((entry) => !entry)) throw new Error('Invalid sessions in backup.');
+    const added = entries.filter((entry) => !this.entries.has(entry.id));
+    for (const entry of added) this.entries.set(entry.id, entry);
+    try {
+      this.saveRegistry();
+    } catch (error) {
+      for (const entry of added) this.entries.delete(entry.id);
+      throw error;
+    }
+    return added.map(cloneEntry);
+  }
+
   register(session) {
     const timestamp = this.now();
     const entry = {

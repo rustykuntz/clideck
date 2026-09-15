@@ -3,7 +3,7 @@
 // (createElement) so it's introspectable. Config keys ride the store's config projections; custom-agent edits
 // save 500ms-debounced (no config.update flood); availability drives the per-agent health.
 import { store } from "../store.js";
-import { h, esc, debounce } from "../util.js";
+import { h, esc } from "../util.js";
 import { updateConfig, checkAvailability, refreshPlugins, installPlugin, removePlugin, openPluginFolder, setPluginEnabled, updatePluginSettings } from "../ws.js";
 import { openFolderPicker } from "./folder-picker.js";
 import { openMenu, closeMenu, isMenuOpen } from "./menu.js";
@@ -14,6 +14,7 @@ import { previewHtml } from "./theme-picker.js";
 import { themePref, setThemePref, onThemePref, THEME_PREFS, THEME_LABELS } from "../theme.js";
 import { getPrefs, setPref, onPrefs, enableBrowser, notifyPermission, previewSound, SOUND_OPTS, DISPATCH_OPTS, MINWORK_OPTS } from "../notify.js";
 import { pluginClientError, onPluginHostChange } from "./plugin-host.js";
+import { backupControls, isRestoreOpen, isBackupBusy } from "./backup-restore.js";
 import { hotkeyComboFromEvent, hotkeyConflict, hotkeyCodeFromEvent, isFunctionKey } from "./hotkeys.js";
 
 const CLOSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -55,6 +56,7 @@ export function openSettings() {
   offs.push(onPrefs(() => { if (cat === "notifications") renderBody(); }));
   offs.push(store.on("config", () => {
     renderFooter();
+    if (isBackupBusy() || isRestoreOpen()) return;
     if (cat === "agents") { syncProviderControls(); return; }   // agents keeps its in-flight edits
     // A debounced About me save comes back as a config echo. Rebuilding the pane under a caret would drop the
     // user mid-word, so an echo that lands while they are still typing in that section is a no-op for the body.
@@ -73,7 +75,7 @@ export function openSettings() {
 export function openSettingsAt(category) {
   const wanted = CATS.some((c) => c.id === category) ? category : "general";
   if (!overlay) { cat = wanted; openSettings(); return; }
-  if (cat !== wanted) { flushSave(); flushAbout(); cmds = null; cat = wanted; render(); }
+  if (cat !== wanted) { flushSettingsEdits(); cmds = null; cat = wanted; render(); }
 }
 export function closeSettings() { close(); }
 export function isSettingsOpen() { return !!overlay; }
@@ -108,7 +110,7 @@ function renderNav() {
   els.navList.replaceChildren();
   for (const c of CATS) {
     const b = h("button", "set-cat" + (c.id === cat ? " on" : "")); b.type = "button"; b.textContent = c.label;
-    b.addEventListener("click", () => { if (cat !== c.id) { flushSave(); flushAbout(); cmds = null; cat = c.id; render(); } });
+    b.addEventListener("click", () => { if (cat !== c.id) { flushSettingsEdits(); cmds = null; cat = c.id; render(); } });
     els.navList.appendChild(b);
   }
 }
@@ -158,38 +160,6 @@ function section(title, key, note) {
   s.appendChild(head);
   return s;
 }
-// A row whose control DOES something rather than storing a preference. It stays a real link — right-click and
-// Save As still work, and it survives without JS — but the click is intercepted, because `download` saves
-// WHATEVER comes back: a route that fails either writes its error body out as if it were the file, or (as a
-// 404 does) writes nothing and says nothing. Neither is acceptable for a backup, where the whole value is the
-// user's belief that they have one. So: ask, check the status, and only then hand the bytes to the browser
-// with the engine's own filename.
-function actionRow(title, sub, label, href) {
-  const r = h("div", "set-row");
-  const lbl = h("div", "set-row-lbl"); lbl.append(h("div", "set-row-t", title)); if (sub) lbl.append(h("div", "set-row-s", sub));
-  const action = h("a", "set-action", label); action.setAttribute("href", href); action.setAttribute("download", "");
-  let busy = false;
-  action.addEventListener("click", async (event) => {
-    if (typeof fetch !== "function") return;                  // no fetch: let the plain link do its job
-    event.preventDefault();
-    if (busy) return;
-    busy = true; action.setAttribute("aria-busy", "true");
-    try {
-      const response = await fetch(href);
-      if (!response.ok) throw new Error("The engine answered " + response.status + ".");
-      const blob = await response.blob();
-      const named = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") || "");
-      const url = URL.createObjectURL(blob);
-      const save = h("a", ""); save.href = url; save.download = named ? named[1] : "clideck-backup.json";
-      document.body.appendChild(save); save.click(); save.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (error) {
-      import("./toast.js").then(({ toast }) => toast.error({ title, body: "Couldn't download a backup. " + (error && error.message || "") }));
-    } finally { busy = false; action.removeAttribute("aria-busy"); }
-  });
-  r.append(lbl, action); return r;
-}
-
 // ── General ─────────────────────────────────────────────────────────────────
 function renderGeneral() {
   renderAboutMe();
@@ -198,11 +168,10 @@ function renderGeneral() {
   const field = h("div", "set-field");
   field.append(h("label", "set-field-l", "Default working directory"));
   const row = h("div", "set-path-row");
-  const input = h("input", "set-input mono"); input.value = store.defaultCwd || ""; input.placeholder = "/Users/you/projects — blank = engine default"; input.spellcheck = false; input.autocomplete = "off";
+  const input = h("input", "set-input mono"); input.value = cwdDraft == null ? (store.defaultCwd || "") : cwdDraft; input.placeholder = "/Users/you/projects — blank = engine default"; input.spellcheck = false; input.autocomplete = "off";
   const browse = h("button", "set-browse", FOLDER); browse.type = "button"; browse.title = "Browse folders"; browse.setAttribute("aria-label", "Browse folders");
-  const saveCwd = debounce(() => updateConfig({ defaultCwd: input.value.trim() }), 500);
-  input.addEventListener("input", saveCwd);
-  browse.addEventListener("click", () => openFolderPicker(input.value.trim(), (p) => { input.value = p; updateConfig({ defaultCwd: p }); }));
+  input.addEventListener("input", () => { cwdDraft = input.value; clearTimeout(cwdTimer); cwdTimer = setTimeout(flushCwd, 500); });
+  browse.addEventListener("click", () => openFolderPicker(input.value.trim(), (p) => { input.value = p; cwdDraft = p; flushCwd(); }));
   row.append(input, browse); field.append(row);
   field.append(h("div", "set-hint", "New sessions start here unless you pick another folder."));
   sec.append(field);
@@ -213,10 +182,13 @@ function renderGeneral() {
   els.body.append(beh);
 
   // Say what is in the file, in the row. A backup nobody understands the scope of is a backup nobody trusts.
-  const data = section("Session management", "data");
-  data.append(actionRow("Download a backup",
-    "Your sessions and project definitions, as a dated JSON file. Agent transcripts and stored credentials are not included.",
-    "Download", "/api/session/backup"));
+  const data = section("Backup & restore", "data");
+  const backupRow = h("div", "set-row backup-row");
+  const backupLabel = h("div", "set-row-lbl");
+  backupLabel.append(h("div", "set-row-t", "Workspace backup"),
+    h("div", "set-row-s", "Settings, projects and sessions. Project files and native agent conversations are not included."));
+  backupRow.append(backupLabel, backupControls(prepareBackup));
+  data.append(backupRow);
   els.body.append(data);
 
   const started = section("Getting started", "started");
@@ -591,6 +563,34 @@ function serialize() {
 function allValid(list) { return list.every((c) => c.label && c.command && /^[A-Za-z0-9_-]{1,100}$/.test(c.id)); }
 // A hand-rolled debounce (not util.debounce) so teardown can FLUSH a pending edit before nulling cmds.
 let saveTimer = null;
+let cwdTimer = null, cwdDraft = null;
+const pendingPluginEdits = new Map();
+function flushCwd() {
+  clearTimeout(cwdTimer); cwdTimer = null;
+  if (cwdDraft == null) return;
+  const value = cwdDraft.trim(); cwdDraft = null;
+  updateConfig({ defaultCwd: value });
+}
+function flushSettingsEdits() {
+  flushSave(); flushAbout(); flushCwd();
+  for (const commit of [...pendingPluginEdits.values()]) commit();
+}
+async function prepareBackup() {
+  flushSettingsEdits();
+  if (unsaved) throw new Error("Finish or correct your CLI agent edits before continuing.");
+  const waiting = new Set(quietSettingRequests);
+  if (pluginBusy?.requestId) waiting.add(pluginBusy.requestId);
+  if (!waiting.size) return;
+  await new Promise((resolve, reject) => {
+    const off = store.on("plugin:result", (result) => {
+      if (!waiting.delete(result.requestId)) return;
+      if (!result.success) { clearTimeout(timer); off(); reject(new Error(result.error || "A plugin setting could not be saved.")); }
+      else if (!waiting.size) { clearTimeout(timer); off(); resolve(); }
+    });
+    const timer = setTimeout(() => { off(); reject(new Error("Plugin settings are still saving. Please try again.")); }, 8000);
+  });
+}
+
 // A pending About me edit must reach the engine before the pane that holds it goes away — the same reason
 // flushSave exists for command edits. Nothing to flush unless a field was actually touched.
 function flushAbout() {
@@ -845,7 +845,11 @@ function pluginSetting(plugin, definition) {
   const control = input; // wrappers add preview/browse chrome later; values always belong to the native control
   const commit = () => { let next = control.value; if (definition.type === "number") { next = Number(next); if (!Number.isFinite(next)) return; } if (definition.type === "secret" && !next) return; save(next); };
   if (["select", "dynamic-select", "number", "color"].includes(definition.type)) input.addEventListener("change", () => { stopPluginPreview(); commit(); });
-  else { let timer = null; input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(commit, 450); }); }
+  else {
+    let timer = null;
+    const flush = () => { clearTimeout(timer); pendingPluginEdits.delete(control); commit(); };
+    input.addEventListener("input", () => { clearTimeout(timer); pendingPluginEdits.set(control, flush); timer = setTimeout(flush, 450); });
+  }
   if (definition.type === "secret" && plugin.configured && plugin.configured[definition.key]) {
     const wrap = h("div", "plg-secret"); const clear = h("button", "plg-clear", "Clear saved secret"); clear.type = "button";
     clear.setAttribute("aria-label", "Clear " + definition.label); clear.onclick = () => { input.value = ""; input.placeholder = "Not configured"; clear.disabled = true; clear.textContent = "Cleared"; save(""); };
@@ -971,12 +975,11 @@ function renderAppearance() {
 function paintBig(el, id) { const t = getTheme(id); el.innerHTML = '<div class="set-theme-preview" style="background:' + t.theme.background + ';color:' + t.theme.foreground + '">' + previewHtml(t.theme) + '</div><div class="set-theme-cur">Current: <b>' + esc(t.name) + "</b></div>"; }
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
-function onKey(e) { if (e.key === "Escape") { const recorder = e.target && e.target.closest && e.target.closest("[data-hotkey-recorder]"); if ((recorder && recorder.getAttribute("aria-pressed") === "true") || isMenuOpen() || document.body.classList.contains("tour-active")) return; close(); } }   // an active recorder/sub-menu/tour owns Escape before Settings
+function onKey(e) { if (e.key === "Escape") { if (isRestoreOpen()) return; const recorder = e.target && e.target.closest && e.target.closest("[data-hotkey-recorder]"); if ((recorder && recorder.getAttribute("aria-pressed") === "true") || isMenuOpen() || document.body.classList.contains("tour-active")) return; close(); } }   // an active recorder/sub-menu/tour owns Escape before Settings
 function close() {
   if (!overlay) return;
   stopPluginPreview();
-  flushSave();   // persist any pending debounced command edit BEFORE teardown nulls cmds (else it saves []=wipe)
-  flushAbout();  // …and any About me edit still inside its debounce, before the draft is dropped
+  flushSettingsEdits(); // Save drafts before their controls are removed.
   document.removeEventListener("keydown", onKey, true);
   offs.forEach((off) => off()); offs = [];
   closeMenu();   // close any open icon/add sub-menu popover

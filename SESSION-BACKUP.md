@@ -1,13 +1,26 @@
-# Session backup and recovery
+# Backup and restore
 
-Settings → General → Session management downloads a dated JSON file containing
-CliDeck's current session registry and project definitions. It includes session
-names, working directories and native resume references, including dormant sessions.
+Open **Settings → General → Backup & restore**. **Backup** downloads one dated JSON
+file with your settings, projects and session definitions, including stopped sessions.
+It also includes this browser's appearance preferences and recent picker choices.
 
-This is a same-machine session-reference backup, not a complete machine backup.
-It does not include native Codex/Claude/other agent histories, CliDeck transcripts,
-terminal scrollback, viewer files, custom command definitions, or credentials.
-Keep the native agent data and working directories to resume conversations.
+Choose **Restore**, open the file, and tick what you want to bring back. Everything
+starts selected. You can restore all settings, individual settings sections, whole
+projects, or individual sessions. A session brings its project and any required
+custom command or terminal theme with it.
+
+Existing projects and sessions are kept when their IDs match. Missing sessions are
+added stopped, ready to resume when you choose. Selected settings are applied;
+saved prompts, custom commands and custom themes are merged by ID, keeping unrelated
+entries. Older session-only CliDeck backups can also be restored here.
+
+The file contains configuration and native resume references. It does not copy
+project files, agent conversations, terminal scrollback or viewer files. Working
+directories stay as saved; moving to another machine still requires those folders
+and the providers' own history to continue existing conversations. Plugins must
+already be installed. Plugin secrets and provider login files are not included;
+custom commands and their environment values are, so keep the backup private.
+Browser notification and microphone permissions remain under the browser's control.
 
 ## Automatic recovery
 
@@ -21,18 +34,5 @@ with an empty registry and overwrite the saved state. Startup also preserves
 unrecognized transcript and viewer-payload files, since they may be newer than the
 recovered registry. Explicit session/content deletion still removes its own data.
 
-## Restoring a downloaded backup
-
-There is no in-app import in this version. To restore manually:
-
-1. Stop the CliDeck engine. Preserve a copy of its current data directory first.
-2. Check that the downloaded file has `format: "clideck-session-backup"` and
-   `version: 1`. Save its `sessions` array as `sessions.json` in the data directory.
-3. To restore project grouping, merge the backup's `projects` array into the
-   `projects` field of `config.json`. Preserve the other configuration fields.
-4. Restart CliDeck. Recovered sessions appear dormant; resume the ones you need.
-
-Copying only these files to another computer does not copy the native conversations
-or projects they refer to. For custom-command sessions, retain their command settings
-as well. Avoid importing registry entries into a running engine: it owns the current
-state and will save over external edits.
+Avoid editing the registry while CliDeck is running: the engine owns it and saves
+over external edits. Use Restore for downloaded backups.

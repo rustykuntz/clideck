@@ -1,78 +1,120 @@
-// IT — Settings ▸ General ▸ Session management. The row stays a real link (Save As still works, and it
-// survives without JS), but the click is guarded: `download` saves WHATEVER comes back, so a failing route
-// either writes its error body out as if it were the backup or writes nothing at all and says nothing. For a
-// backup, whose whole value is the user's belief that they have one, neither may pass silently.
-// The file itself is the engine's to build: the client mirrors config in slices and never sees plugin
-// secrets, so a client-assembled backup would quietly omit half of it.
+// Focused Backup/Restore UI integration: saved-config barrier, file handling, selection, and browser prefs.
 import { installFakeDom, installFakeWs } from "./fakedom.mjs";
-installFakeDom();
-installFakeWs();
-Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel", userAgent: "", clipboard: {} } });
-
-const mk = (tag, id, parent = document.body) => { const el = document.createElement(tag); el.id = id; parent.appendChild(el); return el; };
-for (const id of ["tab-all", "tab-unread", "search", "search-clear", "notify-btn", "prompts-btn", "settings-btn", "unread-cnt", "conn", "conn-text", "save-ind", "proj-btn"]) mk("button", id);
-
-const { openSettings } = await import("../public/js/ui/settings.js");
-const checks = [];
-const ok = (name, pass) => { checks.push([name, !!pass]); console.log((pass ? "  ok   " : "  FAIL ") + name); };
-const sleep = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
-
-openSettings();
-await sleep();
-
-const headings = [...document.querySelectorAll(".set-sec-h")].map((node) => node.textContent);
-ok("General carries a Session management section, after the preferences it is not one of",
-  headings.includes("Session management") && headings.indexOf("Session management") > headings.indexOf("Behavior"));
-
-const action = document.querySelector(".set-action");
-ok("the control is a real link, not a button that fakes one", action && action.tag === "a" && action.textContent === "Download");
-ok("it points at the engine's backup route and still works as a plain Save As",
-  action.getAttribute("href") === "/api/session/backup" && action.hasAttribute("download"));
-
-const row = action.parentNode;
-ok("the row says what the file is", row.querySelector(".set-row-t").textContent === "Download a backup");
-// A backup nobody understands the scope of is a backup nobody trusts, so the row states both halves: what is
-// in it, and what is deliberately not.
-const sub = row.querySelector(".set-row-s").textContent;
-ok("and it states the scope in the row: what is included, and what is not",
-  /sessions and project definitions/i.test(sub) && /dated JSON/i.test(sub)
-  && /transcripts/i.test(sub) && /credentials are not included/i.test(sub));
-
-// ── the click is guarded, because a failed download must never look like a backup ────────────────────────
-const saves = [];
-const realCreate = document.createElement.bind(document);
-document.createElement = (tag) => { const node = realCreate(tag); if (tag === "a") saves.push(node); return node; };
-globalThis.URL = { createObjectURL: () => "blob:backup", revokeObjectURL() {} };
-let asked = null;
-const clickAction = async () => { saves.length = 0; action._fire("click"); await sleep(10); };
-
-globalThis.fetch = async (url) => {
-  asked = url;
-  return { ok: true, status: 200, headers: { get: () => 'attachment; filename="clideck-sessions-2026-09-05.json"' }, blob: async () => ({ size: 135 }) };
+const dom = installFakeDom();
+const ws = installFakeWs();
+Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel", clipboard: {} } });
+Object.defineProperty(localStorage, "length", { get: () => Object.keys(localStorage._s).length });
+localStorage.key = (i) => Object.keys(localStorage._s)[i] ?? null;
+const { store } = await import("../public/js/store.js");
+const { connectWs } = await import("../public/js/ws.js");
+const { openSettings, isSettingsOpen, openPluginSettings, openSettingsAt } = await import("../public/js/ui/settings.js");
+const { openRestore, isRestoreOpen, collectBrowserPrefs, applyBrowserPrefs } = await import("../public/js/ui/backup-restore.js");
+const { toast } = await import("../public/js/ui/toast.js");
+const toasts = []; toast.error = (v) => toasts.push(v);
+const sleep = (ms = 15) => new Promise(r => setTimeout(r, ms));
+let passed = 0, failed = 0;
+const ok = (name, value) => { console.log((value ? "PASS " : "FAIL ") + name); value ? passed++ : failed++; };
+let config = { onboarding: { completed: true, seenTips: ["guided-tour", "about-me"] } }, reply = true;
+const originalSend = WebSocket.prototype.send;
+WebSocket.prototype.send = function(raw) {
+  originalSend.call(this, raw); const message = JSON.parse(raw);
+  if (message.type === "config.update") config = { ...config, ...message.config };
+  if (message.type === "config.get" && reply) setTimeout(() => store.applyEvent({ type: "config", config, requestId: message.requestId }), 0);
 };
-await clickAction();
-ok("clicking asks the engine before anything is written", asked === "/api/session/backup");
-const saved = saves.find((node) => node.download);
-ok("a good answer is saved under the engine's own filename",
-  saved && saved.download === "clideck-sessions-2026-09-05.json" && saved.href === "blob:backup");
-
-const toasts = [];
-const toastModule = await import("../public/js/ui/toast.js");
-for (const kind of ["error", "info", "success", "warn"]) toastModule.toast[kind] = (options) => toasts.push([kind, options]);
-globalThis.fetch = async () => ({ ok: false, status: 503, headers: { get: () => "" }, blob: async () => ({}) });
-await clickAction();
-await sleep(10);
-ok("a refusing engine writes NO file at all", !saves.some((node) => node.download));
-ok("and says so, with the status, instead of failing silently",
-  toasts.length === 1 && toasts[0][0] === "error" && /Couldn.t download a backup/.test(toasts[0][1].body) && /503/.test(toasts[0][1].body));
-
-toasts.length = 0;
-globalThis.fetch = async () => { throw new Error("Network is down."); };
-await clickAction();
-await sleep(10);
-ok("an unreachable engine is reported the same way, never as a saved file",
-  !saves.some((node) => node.download) && toasts.length === 1 && /Network is down/.test(toasts[0][1].body));
-document.createElement = realCreate;
-
-if (checks.some(([, pass]) => !pass)) process.exitCode = 1;
-else console.log(`\n${checks.length}/${checks.length} session backup checks passed`);
+let reloads = 0; location.reload = () => reloads++;
+const downloads = [];
+const create = document.createElement.bind(document);
+document.createElement = tag => { const el = create(tag); if (tag === "a") downloads.push(el); return el; };
+URL.createObjectURL = () => "blob:backup"; URL.revokeObjectURL = () => {};
+const q = s => document.querySelector(s);
+const change = (name, checked) => { const el = q('input[aria-label="' + name + '"]'); el.checked = checked; el._fire("change"); };
+const escape = () => dom.docFire("keydown", { key: "Escape", preventDefault() {}, stopImmediatePropagation() {} });
+const preview = {
+  createdAt: "2026-09-15T00:00:00Z",
+  settings: [{ id: "appearance", label: "Appearance" }, { id: "about", label: "About me" }],
+  projects: [{ id: "p1", name: "Game", path: "/game", exists: true, sessions: [{ id: "s1", name: "Programmer", provider: "codex", cwd: "/game", exists: true }, { id: "s2", name: "Sound", provider: "claude", cwd: "/game", exists: false }] }],
+  sessions: [{ id: "s3", name: "Notes", cwd: "/notes", provider: "shell" }], warnings: ["Folder /game is unavailable."],
+};
+let requests = [], failRequest = false, restoreWarnings = [];
+globalThis.fetch = async (url, options) => {
+  const body = JSON.parse(options.body); requests.push({ url, body });
+  if (failRequest) return { ok: false, status: 400, json: async () => ({ error: "Invalid backup file." }) };
+  if (url.endsWith("/preview")) return { ok: true, json: async () => preview };
+  if (url.endsWith("/restore")) return { ok: true, json: async () => ({ restored: { settings: 1, projects: 0, sessions: 1 }, skipped: 1, browser: { "clideck.theme": "light", "unrelated": "bad" }, warnings: restoreWarnings }) };
+  return { ok: true, headers: { get: () => 'attachment; filename="clideck-backup-2026-09-15.json"' }, blob: async () => new Blob([JSON.stringify(config)]) };
+};
+const file = { name: "workspace.json", size: 100, text: async () => JSON.stringify({ format: "clideck-backup", version: 1 }) };
+try {
+  connectWs(); await sleep(); openSettings(); await sleep();
+  ok("Backup and Restore share the existing General data section", q('[data-sec="data"] .set-sec-h').textContent === "Backup & restore" && q('.backup-actions').querySelectorAll('button').length === 2);
+  ok("Restore uses a native JSON file picker", q('.backup-actions input').type === "file" && q('.backup-actions input').accept.includes(".json"));
+  localStorage.setItem("clideck.theme", "dark"); localStorage.setItem("clideck.sidebarW", "360");
+  localStorage.setItem("clideck.picker.emoji.emojis.recent", '["wave"]'); localStorage.setItem("private-key", "not included");
+  ok("browser backup includes only known settings", Object.keys(collectBrowserPrefs()).length === 3 && !collectBrowserPrefs()["private-key"]);
+  const about = q('[data-sec="about"] input'); about.value = "Sam"; about._fire("input");
+  const cwd = q('[data-sec="defaults"] input'); cwd.value = "/workspace"; cwd._fire("input");
+  reply = false;
+  q('.backup-actions button')._fire("click"); await sleep();
+  const barrier = ws.last("config.get");
+  ok("Backup flushes About me and working-directory edits before its barrier", config.about.name === "Sam" && config.defaultCwd === "/workspace" && !!barrier.requestId);
+  store.applyEvent({ type: "config", config, requestId: "somebody-else" }); await sleep();
+  ok("unrelated config echoes do not start the download", requests.length === 0);
+  store.applyEvent({ type: "config", config, requestId: barrier.requestId }); await sleep(); reply = true;
+  ok("Backup posts browser preferences only after its own reply", requests[0]?.url === "/api/session/backup" && requests[0].body.browser["clideck.theme"] === "dark");
+  ok("file downloads under the server filename", downloads.some(n => n.download === "clideck-backup-2026-09-15.json"));
+  failRequest = true; const before = downloads.length;
+  q('.backup-actions button')._fire("click"); await sleep(40);
+  ok("failed Backup downloads nothing and explains the error", downloads.length === before && toasts.at(-1)?.body === "Invalid backup file.");
+  failRequest = false;
+  store.applyEvent({ type: "plugins", plugins: [{ id: "echo", name: "Echo", version: "1.0.0", enabled: true, status: "ready", settings: [{ key: "prefix", label: "Prefix", type: "text", default: "" }], values: { prefix: "old" }, configured: {} }] });
+  openPluginSettings("echo");
+  const prefix = q('#plugin-setting-echo-prefix'); prefix.value = "new"; prefix._fire("input");
+  openSettingsAt("general");
+  const pluginWrite = ws.last("plugin.settings.update");
+  ok("leaving Plugins flushes the pending text edit", pluginWrite?.settings.prefix === "new");
+  const beforePluginBackup = requests.length;
+  q('.backup-actions button')._fire("click"); await sleep();
+  ok("Backup waits for the pending plugin save", requests.length === beforePluginBackup);
+  store.applyEvent({ type: "plugin.result", requestId: "unrelated", success: true }); await sleep();
+  ok("unrelated plugin replies cannot release Backup", requests.length === beforePluginBackup);
+  store.applyEvent({ type: "plugin.result", requestId: pluginWrite.requestId, success: true }); await sleep(40);
+  ok("the matching saved plugin reply releases Backup", requests.length === beforePluginBackup + 1);
+  const opener = q('.backup-actions').querySelectorAll('button')[1]; opener.focus();
+  await openRestore(file, async () => {}, opener);
+  ok("everything starts checked", [...document.querySelectorAll('.restore-choice input')].every(n => n.checked));
+  ok("existing items stay selectable and say they are kept", q('.restore-kept').textContent === "Already here — kept" && !q('input[aria-label="Programmer"]').disabled);
+  ok("warnings from preview are visible", q('.restore-warning').textContent.includes("/game"));
+  change("Settings", false); change("Projects", false);
+  ok("parent deselects all descendants and disables empty restore", q('.restore-modal .fp-select').disabled && !q('input[aria-label="Sound"]').checked);
+  change("Sound", true); change("Appearance", true);
+  ok("subset marks ancestors partially selected", q('input[aria-label="Game"]').indeterminate && q('input[aria-label="Projects"]').indeterminate && q('input[aria-label="Settings"]').indeterminate);
+  q('.restore-modal .fp-select')._fire("click"); await sleep(40);
+  const sent = requests.find(r => r.url.endsWith("/restore")).body.selection;
+  ok("restore sends only selected settings and whole sessions", JSON.stringify(sent) === JSON.stringify({ settings: ["appearance"], projects: [], sessions: ["s2"] }));
+  ok("success applies selected known preferences then reloads", reloads === 1 && localStorage.getItem("clideck.theme") === "light" && localStorage.getItem("clideck.sidebarW") === null && localStorage.getItem("unrelated") === null && localStorage.getItem("private-key") === "not included");
+  escape();
+  ok("closing a committed restore reloads", reloads === 2);
+  await openRestore(file, async () => {}, opener); escape();
+  ok("Escape closes only Restore and returns focus", !isRestoreOpen() && isSettingsOpen() && document.activeElement === opener);
+  failRequest = true; await openRestore(file);
+  ok("invalid backup explains failure without offering Restore", q('.restore-error').textContent === "Invalid backup file." && q('.restore-modal .fp-select').disabled);
+  escape(); failRequest = false;
+  await openRestore({ ...file, text: async () => "{" });
+  ok("malformed JSON has clear feedback", q('.restore-error').textContent.includes("not valid backup JSON")); escape();
+  let readOversize = false;
+  await openRestore({ ...file, size: 9 * 1024 * 1024, text: async () => { readOversize = true; return "{}"; } });
+  ok("oversized files rejected before reading", !readOversize && q('.restore-error').textContent.includes("8 MB")); escape();
+  await openRestore(file); failRequest = true;
+  q('.restore-modal .fp-select')._fire("click"); await sleep(40);
+  ok("failed Restore keeps selections for retry and does not reload", q('input[aria-label="Sound"]').checked && !q('.restore-modal .fp-select').disabled && reloads === 2); escape(); failRequest = false;
+  restoreWarnings = ["Plugin is not installed; settings skipped."];
+  await openRestore(file); q('.restore-modal .fp-select')._fire("click"); await sleep(40);
+  const countBeforeDone = requests.length;
+  ok("successful partial result keeps warnings readable", q('.restore-warning').textContent === restoreWarnings[0] && q('.restore-modal .fp-select').textContent === "Done");
+  q('.restore-modal .fp-select')._fire("click"); await sleep();
+  ok("Done reloads without sending Restore again", requests.length === countBeforeDone && reloads === 3); escape();
+  localStorage.setItem("clideck.theme", "dark"); applyBrowserPrefs({}, []);
+  ok("old backups with no settings leave browser preferences alone", localStorage.getItem("clideck.theme") === "dark");
+} catch (error) { console.error(error); failed++; }
+console.log(`${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

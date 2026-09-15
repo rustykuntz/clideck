@@ -48,6 +48,7 @@ const { createCustomCommandProvider, parseCommand } = require('./custom-command'
 const { PluginManager } = require('./plugin-manager');
 const { createAgentSessionGuide } = require('./agent-session-guide');
 const { PluginHttp } = require('./plugin-http');
+const { MAX_BACKUP_BYTES, createBackup, previewBackup, restoreBackup } = require('./backup');
 
 const HOOK_ROUTE_RE = /^\/hooks\/([^/]+)\/(start|stop|idle|session-start|session-end|menu|context)$/;
 const MAX_SHOW_REQUEST_BYTES = MAX_CONTENT_BYTES * 6 + 16 * 1024;
@@ -55,12 +56,22 @@ const MAX_SHOW_REQUEST_BYTES = MAX_CONTENT_BYTES * 6 + 16 * 1024;
 function readJson(req, limit = 100 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let bytes = 0;
+    let tooLarge = false;
     req.setEncoding('utf8');
     req.on('data', (chunk) => {
+      if (tooLarge) return;
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > limit) {
+        tooLarge = true;
+        body = '';
+        reject(new Error('Request too large.'));
+        return;
+      }
       body += chunk;
-      if (body.length > limit) reject(new Error('request too large'));
     });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch (error) {
@@ -341,7 +352,11 @@ class HeadlessServer {
     const provider = customCommand
       ? createCustomCommandProvider(customCommand)
       : getProvider(entry.provider);
-    if (entry.commandId && !customCommand) return null;
+    if (entry.commandId && !customCommand) {
+      this.broadcastSessionError(id, { code: 'command_unavailable', operation: 'session.resume',
+        message: 'This session’s CLI agent command is missing or disabled. Restore its CLI Agents settings or enable the command in Settings.' });
+      return null;
+    }
     if (!provider) return null;
     const { providerOptions } = this.resumeLaunch(provider, entry);
     return this.startSession({
@@ -826,9 +841,10 @@ class HeadlessServer {
     }
   }
 
-  sendConfig(socket) {
+  sendConfig(socket, requestId = '') {
     this.sendControlResult(socket, {
       type: 'config', config: this.configForClient(this.configStore.get()),
+      ...(typeof requestId === 'string' && requestId && { requestId }),
     });
   }
 
@@ -1065,7 +1081,7 @@ class HeadlessServer {
       return;
     }
     if (message.type === 'config.get') {
-      this.sendConfig(socket);
+      this.sendConfig(socket, message.requestId);
       return;
     }
     if (message.type === 'config.update') {
@@ -1249,6 +1265,44 @@ class HeadlessServer {
 
   async handleHttp(req, res) {
     const pathname = String(req.url || '').split('?')[0];
+    if (req.method === 'POST' && ['/api/session/backup', '/api/session/restore/preview', '/api/session/restore'].includes(pathname)) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (!isLoopbackAddress(req.socket?.remoteAddress)
+        || !isAllowedWebSocketOrigin(req.headers.origin, req.headers.host, this.host)
+        || req.headers['sec-fetch-site'] === 'cross-site') {
+        sendJson(res, 403, { error: 'local_only' });
+        return;
+      }
+      if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) {
+        sendJson(res, 415, { error: 'Send a JSON backup.' });
+        return;
+      }
+      try {
+        const body = await readJson(req, MAX_BACKUP_BYTES + 64 * 1024);
+        if (pathname === '/api/session/backup') {
+          const backup = createBackup(this, body.browser);
+          res.setHeader('Content-Disposition', `attachment; filename="clideck-backup-${backup.createdAt.replace(/[:.]/g, '-')}.json"`);
+          sendJson(res, 200, backup);
+        } else if (pathname.endsWith('/preview')) {
+          sendJson(res, 200, previewBackup(this, body.backup));
+        } else {
+          if (this.restoringBackup) { sendJson(res, 409, { error: 'A restore is already in progress.' }); return; }
+          this.restoringBackup = true;
+          try {
+            const result = restoreBackup(this, body.backup, body.selection);
+            if (body.selection.settings.includes('plugins')) {
+              try { await this.pluginManager.applySavedSettings(); }
+              catch { result.warnings.push('Plugin settings were saved. Restart CliDeck to apply them.'); }
+            }
+            sendJson(res, 200, result);
+          } finally { this.restoringBackup = false; }
+        }
+      } catch (error) {
+        sendJson(res, 400, { error: error instanceof SyntaxError ? 'This file is not valid JSON.' : error.message });
+      }
+      return;
+    }
     if (req.method === 'GET' && pathname === '/api/session/backup') {
       if (!isLoopbackAddress(req.socket?.remoteAddress)
         || !isAllowedWebSocketOrigin(req.headers.origin, req.headers.host, this.host)

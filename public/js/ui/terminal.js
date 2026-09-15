@@ -3,6 +3,7 @@
 // term.write(). Focusing a session resets the terminal and rewrites its buffer.
 // No composer — the terminal IS the input surface.
 import { store } from "../store.js";
+import { installScrollbackPreservation } from "../terminal-scrollback.js";
 import { send, renameSession, openContentPath } from "../ws.js";
 import { sessionFace } from "../providers-ui.js";
 import { esc, shortId, debounce, copyText, inlineRename, askAddress, SESSION_NAME_MAX, limitSessionName } from "../util.js";
@@ -80,6 +81,7 @@ export function initTerminal() {
     macOptionIsMeta: true, drawBoldTextInBrightColors: true,
   });
   term.open(mount);
+  installScrollbackPreservation(term);
   onTheme(applyActiveTheme);                    // app light/dark flip re-applies the active session's theme (mode default may change)
   store.on("config", applyActiveTheme);         // a theme-library config change re-colours the open terminal live
   registerLinks();
@@ -606,15 +608,9 @@ function fit(sendResize) {
   if (!isFinite(cols) || !isFinite(rows)) return;
   store.setTermSize(cols, rows);                    // remembered for the session.restart dims
   if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
-  // ⚠️ A RESIZE FRAME IS NOT FREE, AND AN UNCHANGED ONE IS DESTRUCTIVE. The engine forwards every resize
-  // straight to the pty (`session.js` resize → TIOCSWINSZ), which raises SIGWINCH in the agent **whether or
-  // not the dimensions changed** — and Codex answers SIGWINCH by repainting with `ESC[2J ESC[3J`, the second
-  // of which ERASES THE SCROLLBACK. That is Or's "I scroll down, start typing, and the line above vanishes":
-  // `fit(true)` runs on session focus, on the terminal tab being shown, and on every ResizeObserver tick, and
-  // it used to send unconditionally — three identical 92x22 frames in one traced session, each one a wipe.
-  //
-  // So the send is guarded by what was last sent FOR THIS SESSION, not by `term.cols`: after a switch the
-  // terminal may already be the right size while that session's pty has never been told.
+  // Avoid redundant resize requests: agents may clear history when their size changes.
+  // Guard by what was sent FOR THIS SESSION, not term.cols: after a switch the terminal
+  // may already be the right size while that session's pty has never been told.
   if (!sendResize || store.activeId == null) return;
   const dims = cols + "x" + rows;
   if (sentDims.get(store.activeId) === dims) return;

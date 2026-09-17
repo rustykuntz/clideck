@@ -1,7 +1,6 @@
-// The guided walkthrough (six stops) and the "only what you have not seen" feature tips.
+// The guided walkthrough (seven stops) and the "only what you have not seen" feature tips.
 //
-// ONE presentation mechanism, two entry points. A tip is a one-stop tour, so there is a single card, a single
-// spotlight and a single set of animations to keep polished — not a tour engine plus a separate nag surface.
+// One card and spotlight serve the walkthrough, unseen feature tips and user-requested help.
 //
 // ⚠️ Deliberately NOT built on menu.js. That popover is a SINGLETON that closes on outside-click and scroll,
 // and every stop here points at a control which itself opens a menu.js popover (New project, New session, the
@@ -34,16 +33,16 @@ const SETTLE_MS = 460;      // an opening overlay ANIMATES its box; re-measure u
 
 const byId = (id) => document.getElementById(id);
 
-// ── the six stops ───────────────────────────────────────────────────────────
+// ── the seven stops ───────────────────────────────────────────────────────────
 // `enter` puts the app into the state the stop describes (opens Settings, switches category). It runs the same
 // code the user's own click runs — no stop stages a fake app.
 const STOPS = [
   {
     id: "projects",
     anchor: () => byId("proj-btn"),
-    title: "Projects are folders",
-    body: "A project is a folder plus the sessions you run in it. New sessions run in this folder.",
-    fallback: "Projects live at the top of the sidebar. A project is a folder, and new sessions run in it.",
+    title: "Agents in a project",
+    body: "Agents in a project share a folder and can send each other tasks and replies, even across providers, without you relaying messages.",
+    fallback: "Agents in a project share a folder and can send each other tasks and replies, even across providers, without you relaying messages.",
     enter: () => closeSettings(),
   },
   {
@@ -54,11 +53,18 @@ const STOPS = [
     fallback: "The + button beside the project list starts a session: pick an agent and it opens in a real terminal.",
   },
   {
+    id: "prompts",
+    anchor: () => byId("prompts-btn"),
+    title: "Saved prompts",
+    body: "Save project introductions, links and instructions in Prompts, then type // in any terminal to find and reuse them.",
+    fallback: "Save project introductions, links and instructions in Prompts, then type // in any terminal to find and reuse them.",
+  },
+  {
     id: "ask",
     anchor: () => byId("th-name"),
-    title: "Agents work with you and each other",
-    body: "Say “ask the reviewer to check my work.” Your agent sends the request and gets the answer back, even across AI providers. Type @@ to find session addresses.",
-    fallback: "Start a second session, then say “ask the reviewer to check my work.” Your agent sends the request and gets the answer back, even across AI providers. Type @@ to find session addresses.",
+    title: "Ask another agent",
+    body: "Type @@ to choose another agent, then tell your agent what to ask it; the agents handle the request and reply.",
+    fallback: "Open two agent sessions, then type @@ in one to choose the other and tell your agent what to ask it.",
     enter: () => closeSettings(),
   },
   {
@@ -98,8 +104,8 @@ const TIPS = [
     id: TIP_GUIDED_TOUR,
     anchor: () => byId("settings-btn"),
     title: "There is a tour now",
-    body: "Six quick stops around the deck — projects, sessions, how agents ask each other for work, the tabs their output opens in, notifications and agent launch options. Settings ▸ General has it whenever you want it.",
-    fallback: "Settings ▸ General ▸ Take the tour walks through the deck in six quick stops.",
+    body: "Seven quick stops cover projects, sessions, saved prompts, asking agents, previews, notifications and launch options; replay them in Settings ▸ General.",
+    fallback: "Settings ▸ General ▸ Take the tour walks through the deck in seven quick stops.",
     cta: { label: "Take the tour", run: () => startTour({ replay: true }) },
   },
   {
@@ -112,7 +118,7 @@ const TIPS = [
   },
 ];
 
-let live = null;      // { mode:'tour'|'tip', stops, index, els, … } while a card is on screen
+let live = null;      // { mode:'tour'|'tip'|'help', stops, index, els, … } while a card is on screen
 let autoRan = false;  // the automatic decision is made ONCE per page load, on the first config frame
 
 // ── persistence ─────────────────────────────────────────────────────────────
@@ -133,6 +139,7 @@ function markTipSeen(id) {
 
 // ── entry points ────────────────────────────────────────────────────────────
 export function initTour() {
+  byId("team-help-btn")?.addEventListener("click", openAskHelp);
   store.on("config", () => {
     if (autoRan) return;
     autoRan = true;
@@ -153,6 +160,14 @@ export function initTour() {
 export function startTour(opts = {}) {
   close();
   begin({ mode: "tour", stops: STOPS, index: Math.min(Math.max(0, opts.from | 0), STOPS.length - 1) });
+}
+
+// User-requested help reuses the Ask stop without changing onboarding or seen tips.
+export function openAskHelp() {
+  close();
+  const ask = STOPS.find((stop) => stop.id === "ask");
+  const body = resolveAnchor(ask) ? ask.body : ask.fallback;
+  begin({ mode: "help", stops: [{ ...ask, body, anchor: () => byId("team-help-btn") }], index: 0 });
 }
 
 export function maybeShowTip() {
@@ -222,11 +237,20 @@ function render() {
   live.anchor = resolveAnchor(stop);
   if (live.anchor) scrollTo(live.anchor);
 
+  const wording = live.anchor ? stop.body : (stop.fallback || stop.body);
+  const body = text("tour-body", wording);
+  // Only the Ask shortcut needs emphasis; all surrounding copy stays literal text.
+  const shortcut = stop.id === "ask" ? wording.indexOf("@@") : -1;
+  if (shortcut >= 0) {
+    const key = el("kbd", "tour-key"); key.textContent = "@@";
+    body.replaceChildren(document.createTextNode(wording.slice(0, shortcut)), key,
+      document.createTextNode(wording.slice(shortcut + 2)));
+  }
   const content = el("div", "tour-content");
   content.append(
-    text("tour-eyebrow", tour ? "Getting started · " + (live.index + 1) + " of " + live.stops.length : "New"),
+    text("tour-eyebrow", tour ? "Getting started · " + (live.index + 1) + " of " + live.stops.length : live.mode === "help" ? "CliDeck Ask" : "New"),
     text("tour-title", stop.title),
-    text("tour-body", live.anchor ? stop.body : (stop.fallback || stop.body)),
+    body,
   );
   els.content.replaceWith(content);
   els.content = content;
@@ -240,7 +264,7 @@ function render() {
 
   live.settleUntil = Date.now() + SETTLE_MS;   // the surface a stop just opened is still animating its box
   settle();
-  els.next.focus({ preventScroll: true });
+  (els.next.hidden ? els.skip : els.next).focus({ preventScroll: true });
 }
 
 function go(delta) {
@@ -263,7 +287,7 @@ function go(delta) {
 function finish() {
   if (!live) return;
   if (live.mode === "tip") markTipSeen(live.stops[live.index].id);
-  else saveCompleted();
+  else if (live.mode === "tour") saveCompleted();
   close();
 }
 
@@ -380,8 +404,14 @@ function watchOverlays() {
   if (typeof MutationObserver !== "function") return;
   const sync = () => {
     if (!live) return;
-    const busy = !!document.querySelector(".menu") || document.body.classList.contains("cd-modal-open");
+    const hadLibrary = live.els.root.classList.contains("tour-library-open");
+    const libraryOpen = !!document.querySelector(".pl-overlay");
+    const busy = overlaid();
     live.els.root.classList.toggle("tour-faded", busy);
+    live.els.root.classList.toggle("tour-library-open", libraryOpen);
+    if (hadLibrary && !libraryOpen && document.activeElement === document.body) {
+      (live.els.next.hidden ? live.els.skip : live.els.next).focus({ preventScroll: true });
+    }
   };
   live.observer = new MutationObserver(sync);
   live.observer.observe(document.body, { childList: true, subtree: false, attributes: true, attributeFilter: ["class"] });
@@ -391,7 +421,7 @@ function watchOverlays() {
 // A surface opened ON TOP of the card owns dismissal until it is gone — a menu.js popover, or any modal that
 // raises cd-modal-open. Finishing the tour underneath one would leave the user staring at a popover whose
 // context just vanished.
-function overlaid() { return !!document.querySelector(".menu") || document.body.classList.contains("cd-modal-open"); }
+function overlaid() { return !!document.querySelector(".menu, .pl-overlay") || document.body.classList.contains("cd-modal-open"); }
 
 function onKey(e) {
   if (!live) return;

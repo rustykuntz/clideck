@@ -31,6 +31,11 @@ const P = [{ id: "p1", name: "Long one", text: "line\n".repeat(40) }, { id: "p2"
 
 try {
   connectWs(); await sleep(5);
+  seed([]);
+  openPromptLibrary(); await sleep(5);
+  ok("the empty library explains reusable project context", document.querySelector(".pl-empty-big").textContent === "Saved prompts" && /project introductions, links and instructions/.test(document.querySelector(".pl-empty-sub").innerHTML) && /<kbd>\/\/<\/kbd>/.test(document.querySelector(".pl-empty-sub").innerHTML));
+  ok("the create action names what it creates", document.querySelector(".pl-newbtn").textContent.includes("New prompt"));
+  openPromptLibrary(); await sleep(200);
   seed(P);
   openPromptLibrary(); await sleep(5);
   ok("the library opens", !!modal());

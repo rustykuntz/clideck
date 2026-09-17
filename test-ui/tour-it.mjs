@@ -14,14 +14,14 @@ import { installFakeDom, installFakeWs } from "./fakedom.mjs";
 const dom = installFakeDom();
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel", userAgent: "", clipboard: {} } });
 const ws = installFakeWs();
-for (const id of ["settings-btn", "theme-btn", "proj-btn", "new-btn", "th-name"]) { const el = document.createElement("button"); el.id = id; document.body.appendChild(el); }
+for (const id of ["settings-btn", "theme-btn", "proj-btn", "new-btn", "th-name", "prompts-btn", "team-help-btn"]) { const el = document.createElement("button"); el.id = id; document.body.appendChild(el); }
 // The tab strip the preview stop points at. It lives inside the hidden right pane in the real app, which is why
 // its DEFAULT here (no box) is the case that matters: a first-run user has no session and must still be taught.
 { const el = document.createElement("div"); el.id = "pane-tabs"; document.body.appendChild(el); }
 
 const { connectWs } = await import("../public/js/ws.js");
 const { store } = await import("../public/js/store.js");
-const { initTour, startTour, closeTour, maybeShowTip, isTourOpen, __tourForTest, TIP_ABOUT_ME, TIP_GUIDED_TOUR } = await import("../public/js/ui/tour.js");
+const { initTour, startTour, closeTour, maybeShowTip, openAskHelp, isTourOpen, __tourForTest, TIP_ABOUT_ME, TIP_GUIDED_TOUR } = await import("../public/js/ui/tour.js");
 
 const checks = [];
 const ok = (name, pass) => { checks.push([name, !!pass]); console.log((pass ? "  ok   " : "  FAIL ") + name); };
@@ -58,21 +58,20 @@ try {
   config(undefined);
   ok("an absent key projects as NULL, distinguishable from an empty object", store.onboarding === null && store.onboardingCompleted === false);
 
-  // ── the six stops ───────────────────────────────────────────────────────
+  // ── the seven stops ───────────────────────────────────────────────────────
   // ⚠️ There is NO About me stop. Or cut it (09-09): the pane explains itself with four words beside its own
   // title, and a walkthrough that spends a sixth of itself saying "this is a name field" is a walkthrough
   // people skip. about-me-it.mjs owns that note now.
   startTour({});
   ok("the tour opens a card", !!card() && isTourOpen());
-  ok("it starts at stop 1 of 6", __tourForTest().index === 0 && __tourForTest().total === 6);
+  ok("it starts at stop 1 of 7", __tourForTest().index === 0 && __tourForTest().total === 7);
   const order = [];
-  for (let i = 0; i < 6; i++) { order.push(__tourForTest().id); if (i < 5) acts().next._fire("click"); }
-  // ⚠️ ORDER IS THE ARGUMENT. Teamwork and the tabs their work opens in come THIRD and FOURTH — right after the
-  // user has a session — because that is the story. The settings stops are housekeeping and follow.
-  ok("the six stops are the six the brief asks for, in order",
-    order.join(",") === "projects,session,ask,preview,notifications,agents", order.join(","));
-  ok("…and asking comes straight after starting a session, before any settings stop",
-    order.indexOf("ask") === order.indexOf("session") + 1 && order.indexOf("preview") === order.indexOf("ask") + 1
+  for (let i = 0; i < 7; i++) { order.push(__tourForTest().id); if (i < 6) acts().next._fire("click"); }
+  // Saved prompts follow session creation; teamwork and previews still precede settings.
+  ok("the seven stops are the seven the brief asks for, in order",
+    order.join(",") === "projects,session,prompts,ask,preview,notifications,agents", order.join(","));
+  ok("…and saved prompts follow starting a session, then asking comes before settings",
+    order.indexOf("prompts") === order.indexOf("session") + 1 && order.indexOf("ask") === order.indexOf("prompts") + 1 && order.indexOf("preview") === order.indexOf("ask") + 1
     && order.indexOf("preview") < order.indexOf("notifications"));
   ok("…and About me is not one of them", !order.includes("about"));
   ok("the last stop's primary action reads Done, not Next", acts().next.textContent === "Done");
@@ -80,8 +79,8 @@ try {
 
   // Back really walks back, and the counter follows.
   backBtn()._fire("click");
-  ok("Back returns to the previous stop", __tourForTest().index === 4 && __tourForTest().id === "notifications");
-  ok("the eyebrow counts the stop the user is on", q("tour-eyebrow").textContent === "Getting started · 5 of 6");
+  ok("Back returns to the previous stop", __tourForTest().index === 5 && __tourForTest().id === "notifications");
+  ok("the eyebrow counts the stop the user is on", q("tour-eyebrow").textContent === "Getting started · 6 of 7");
   startTour({});
   ok("a restarted tour hides Back on stop 1", backBtn() === undefined || backBtn().hidden === true);
 
@@ -90,20 +89,20 @@ try {
   // while it goes. Querying inside that window hands the test a node the tour is no longer looking at, so the
   // box it sets is measured on nobody. Let the old one go first.
   closeTour(); await sleep(240);
-  startTour({ from: 4 });
-  ok("stop 5 opens the real Settings surface at Notifications", !!document.querySelector(".set-overlay") && !!document.querySelector('[data-sec="delivery"]'));
+  startTour({ from: 5 });
+  ok("stop 6 opens the real Settings surface at Notifications", !!document.querySelector(".set-overlay") && !!document.querySelector('[data-sec="delivery"]'));
   // ⚠️ With every rect 0×0 the stop is unanchored, so "anchored is false" here would be true no matter WHICH
   // node the stop names. Give the Delivery section a box and the claim becomes about the anchor resolving to
   // that section — the pixels are the browser gate's job.
   const deliverySec = document.querySelector('[data-sec="delivery"]');
   ok("with no measurable box the stop falls back rather than spotlighting a corner", __tourForTest().anchored === false);
   deliverySec._rect = { left: 200, top: 120, width: 400, height: 260, right: 600, bottom: 380 };
-  startTour({ from: 4 });
-  ok("…and once that section has a box, stop 5 anchors to IT", __tourForTest().anchored === true && q("tour-spot").style.left === "194px" && q("tour-spot").style.width === "412px");
+  startTour({ from: 5 });
+  ok("…and once that section has a box, stop 6 anchors to IT", __tourForTest().anchored === true && q("tour-spot").style.left === "194px" && q("tour-spot").style.width === "412px");
   ok("the notification stop names BOTH cues in one sentence — idle, and one agent sending work to another",
     /goes idle/i.test(q("tour-body").textContent) && /another agent/i.test(q("tour-body").textContent));
   acts().next._fire("click");
-  ok("stop 6 switches the same surface to CLI Agents", !!document.querySelector('[data-sec="builtin"]'));
+  ok("stop 7 switches the same surface to CLI Agents", !!document.querySelector('[data-sec="builtin"]'));
   // Walking BACK out of the settings stops has to put the app away again, or the team stops are explained over
   // a pane that covers the very thing they point at.
   backBtn()._fire("click"); backBtn()._fire("click");
@@ -119,35 +118,36 @@ try {
   ok("…and says you can open one yourself by dropping onto the tab strip",
     /drop/i.test(q("tour-body").textContent) && /tab strip/i.test(q("tour-body").textContent));
   closeTour(); await sleep(240);
-  startTour({ from: 2 });
+  startTour({ from: 3 });
   ok("the ask stop is out in the app, not behind Settings", !document.querySelector(".set-overlay"));
   ok("with no live session, the ask stop is unanchored", __tourForTest().anchored === false);
   // ⚠️ MEANING, NOT WORDING. These used to pin whole clauses verbatim, which made every copy edit a test
   // failure and taught nobody anything. Or shortened this stop from 58 words to 28 on 09-10; what has to
   // survive is the CLAIM, so each check below names one claim and nothing about how it is phrased.
   ok("…and says something useful anyway, not the anchored wording",
-    /Start a second session/.test(q("tour-body").textContent));
+    /Open two agent sessions/.test(q("tour-body").textContent));
   // ⚠️ This is the stop the whole app is FOR, and it is the one nobody understood. It has to say three things
-  // in plain words: a name is an address, you ask in your own sentence, and the other agent answers back.
-  ok("the ask stop points at @@ for the addresses to use", /@@/.test(q("tour-body").textContent) && /address/i.test(q("tour-body").textContent));
-  ok("…gives the exact sentence someone would type", /ask the reviewer to check my work/i.test(q("tour-body").textContent));
-  ok("…and says the answer comes back", /answer back/i.test(q("tour-body").textContent));
+  // in plain words: choose an agent, say what to ask, and the agents handle the exchange.
+  ok("the ask stop renders @@ as an inline keyboard token", q("tour-body").querySelector("kbd.tour-key")?.textContent === "@@");
+  ok("…explains choosing the other agent and what to ask", /choose the other/.test(q("tour-body").textContent) && /tell your agent what to ask it/.test(q("tour-body").textContent));
+  ok("…without assuming the user has a reviewer role", !/reviewer/i.test(q("tour-body").textContent));
   // Across vendors — and NOT a promise that any of it happens by itself: the sentence is something you TELL an
   // agent. ⚠️ "they can also ask YOU a question" was CUT by Or on 09-09 and must not come back. It was briefly
   // reinstated in a shorter form and removed again: the title and the you-address the example is written in
   // already say the user is part of the team.
-  ok("…that it works across providers", /across AI providers/i.test(q("tour-body").textContent));
+
   ok("…and the retired 'they can ask YOU a question' clause has NOT crept back", !/question to you/i.test(q("tour-body").textContent));
   ok("an unanchored stop is flagged so the spotlight can drop its ring", q("tour").classList.contains("tour-unanchored"));
   closeTour(); await sleep(240);
   box(document.getElementById("th-name"));
   box(document.getElementById("pane-tabs"));
-  startTour({ from: 2 });
+  startTour({ from: 3 });
   ok("give the session name a real box and the ask stop anchors", __tourForTest().anchored === true);
   ok("…and switches to the anchored wording, which no longer tells you to start anything",
-    !/Start a second session/.test(q("tour-body").textContent) && /^Say /.test(q("tour-body").textContent.trim()));
-  ok("the anchored wording keeps the example and how to find the others",
-    /ask the reviewer to check my work/i.test(q("tour-body").textContent) && /@@/.test(q("tour-body").textContent));
+    !/Open two agent sessions/.test(q("tour-body").textContent) && /^Type @@ /.test(q("tour-body").textContent.trim()));
+  ok("the anchored wording keeps the shortcut token and lets the user choose",
+    /choose another agent/.test(q("tour-body").textContent) && q("tour-key")?.textContent === "@@");
+  ok("the active-session wording says the reply comes back", /agents handle the request and reply/.test(q("tour-body").textContent));
   acts().next._fire("click");
   ok("…and the preview stop anchors to the tab strip once there is one", __tourForTest().id === "preview" && __tourForTest().anchored === true);
   ok("its wording asks for the output in words a user would use, and says where it lands",
@@ -155,6 +155,39 @@ try {
   backBtn()._fire("click");
   ok("the spotlight tracks that box", q("tour-spot").style.left === "94px" && q("tour-spot").style.width === "52px");
   ok("the unanchored flag is gone", !q("tour").classList.contains("tour-unanchored"));
+
+  // The Prompts stop teaches reuse and yields Escape to the actual library.
+  startTour({ from: 2 });
+  ok("saved prompts have their own stop after starting a session", __tourForTest().id === "prompts" && /project introductions/.test(q("tour-body").textContent) && /\/\//.test(q("tour-body").textContent));
+  box(document.getElementById("prompts-btn")); startTour({ from: 2 });
+  ok("saved prompts anchor to the existing library button", __tourForTest().anchored && q("tour-spot").style.left === "94px");
+  const { openPromptLibrary } = await import("../public/js/ui/prompts.js");
+  openPromptLibrary(); await sleep();
+  dom.docFire("keydown", { key: "Escape", preventDefault() {}, stopPropagation() {} });
+  await sleep(200);
+  ok("Escape closes Prompts while keeping the tour on its stop", __tourForTest()?.id === "prompts" && !document.querySelector(".pl-overlay"));
+
+  // Help is explicitly requested, one card, and entirely separate from persistence.
+  closeTour(); await sleep(240);
+  const helpLink = box(document.getElementById("team-help-btn"));
+  for (const completed of [false, true]) {
+    store.setOnboarding({ completed, seenTips: ["future-tip"] });
+    const before = JSON.stringify(store.onboarding); ws.clear();
+    helpLink.focus(); helpLink._fire("click");
+    ok(`help opens only Ask (completed=${completed})`, __tourForTest()?.mode === "help" && __tourForTest()?.id === "ask" && __tourForTest()?.total === 1);
+    ok("help is not labelled New and focuses its visible dismiss button", q("tour-eyebrow").textContent === "CliDeck Ask" && document.activeElement === q("tour-quiet") && q("tour-primary").hidden);
+    if (completed) q("tour-quiet")._fire("click");
+    else dom.docFire("keydown", { key: "Escape", preventDefault() {}, stopPropagation() {} });
+    ok("help dismissal returns focus to its link", !isTourOpen() && document.activeElement === helpLink);
+    ok("help never completes onboarding or marks a feature tip seen", JSON.stringify(store.onboarding) === before && ws.last("config.update") === null);
+    await sleep(240);
+  }
+  document.getElementById("th-name")._rect = { left: 0, top: 0, width: 0, height: 0 };
+  openAskHelp();
+  ok("linked help without a session explains starting two agents", /Open two agent sessions/.test(q("tour-body").textContent));
+  closeTour(); await sleep(240);
+  startTour();
+  ok("Projects explains direct tasks and replies without the user relaying messages", /across providers/.test(q("tour-body").textContent) && /share a folder/.test(q("tour-body").textContent) && /tasks and replies/.test(q("tour-body").textContent) && /without you relaying messages/.test(q("tour-body").textContent));
 
   // ── persistence ─────────────────────────────────────────────────────────
   ws.clear();
@@ -211,9 +244,9 @@ try {
   config({ completed: true, seenTips: [TIP_ABOUT_ME, TIP_GUIDED_TOUR, "future-tip"] });
   ws.clear();
   startTour({ replay: true });
-  ok("a replay runs the full six stops regardless of completed", isTourOpen() && __tourForTest().total === 6);
+  ok("a replay runs the full seven stops regardless of completed", isTourOpen() && __tourForTest().total === 7);
   ok("starting a replay writes NOTHING — history is not touched on the way in", ws.last("config.update") === null);
-  for (let i = 0; i < 5; i++) acts().next._fire("click");
+  for (let i = 0; i < 6; i++) acts().next._fire("click");
   acts().next._fire("click");                     // Done
   ok("finishing a replay still never removes a seen id", store.seenTips.includes(TIP_ABOUT_ME) && store.seenTips.includes(TIP_GUIDED_TOUR) && store.seenTips.includes("future-tip"));
   ok("…and the patch it sends only ever ADDS ids", onboardingSent().seenTips.every((id) => [TIP_ABOUT_ME, TIP_GUIDED_TOUR].includes(id)));
@@ -246,7 +279,7 @@ try {
   }
 
   // ── the live controls stay live ─────────────────────────────────────────
-  startTour({ from: 4 });                            // the Notifications stop — its controls are right there, and live
+  startTour({ from: 5 });                            // the Notifications stop — its controls are right there, and live
   const picker = document.querySelector(".set-body select");    // the idle-sound picker, under the tour's own spotlight
   const at = __tourForTest().index;
   picker.focus();

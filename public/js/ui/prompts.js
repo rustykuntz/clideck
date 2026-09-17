@@ -213,7 +213,7 @@ function build() {
   const help = node("button", "pl-help-btn"); help.type = "button"; help.title = "Usage & placeholders"; help.setAttribute("aria-label", "Prompt usage help");
   help.innerHTML = HELP_ICON; help.addEventListener("click", toggleHelp);
   const newBtn = node("button", "pl-newbtn"); newBtn.type = "button";
-  newBtn.innerHTML = NEW_ICON + "<span>New</span>";
+  newBtn.innerHTML = NEW_ICON + "<span>New prompt</span>";
   newBtn.addEventListener("click", () => openEditor());
   const x = node("button", "pl-x"); x.type = "button"; x.setAttribute("aria-label", "Close");
   x.innerHTML = DEL_ICON; x.addEventListener("click", close);
@@ -246,9 +246,9 @@ function renderList() {
   els.list.replaceChildren();
   if (!prompts.length) {
     const e = node("div", "pl-empty");
-    e.append(node("p", "pl-empty-big", "No prompts saved"));
+    e.append(node("p", "pl-empty-big", "Saved prompts"));
     const sub = node("p", "pl-empty-sub");
-    sub.innerHTML = 'Add one, then paste it into any terminal by typing <kbd>//</kbd> and a few letters.';
+    sub.innerHTML = 'Save project introductions, links and instructions here, then type <kbd>//</kbd> in any terminal to find and reuse them.';
     e.append(sub);
     els.list.appendChild(e);
     return;

@@ -18,27 +18,53 @@ export function initSidebarResize() {
   applyWidth(sidebarWidth());   // re-affirm the head pre-stamp (and normalize a stale/out-of-range value)
   handle.setAttribute("role", "separator");
   handle.setAttribute("aria-orientation", "vertical");
-  handle.title = "Drag to resize · double-click to reset";
-
-  let dragging = false;
-  const onMove = (e) => { if (dragging) { applyWidth(e.clientX); e.preventDefault(); } };
-  const onUp = () => {
-    if (!dragging) return;
+  handle.removeAttribute("title");
+  handle.setAttribute("aria-label", "Resize sessions panel; double-click to reset");
+  const tip = document.createElement("span");
+  tip.className = "resize-tooltip"; tip.id = "sidebar-size-tip"; tip.setAttribute("role", "tooltip");
+  handle.appendChild(tip);
+  handle.setAttribute("aria-describedby", tip.id);
+  const updateTip = (e) => {
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1;
+    tip.textContent = "Sessions · " + Math.round(cur / vw * 100) + "%";
+    tip.style.left = Math.max(8, Math.min(cur + 14, vw - (tip.offsetWidth || 130) - 8)) + "px";
+    if (e) tip.style.top = Math.max(8, Math.min(e.clientY + 12, window.innerHeight - 38)) + "px";
+  };
+  let dragging = false, pointerId = null, grabOffset = 0, startX = 0, startWidth = cur;
+  const onMove = (e) => {
+    if (!dragging || e.pointerId !== pointerId) return;
+    applyWidth(e.clientX === startX ? startWidth : Math.round((e.clientX - grabOffset) / 5) * 5);
+    updateTip(e); e.preventDefault();
+  };
+  const onUp = (e) => {
+    if (!dragging || (e && e.pointerId != null && e.pointerId !== pointerId)) return;
     dragging = false;
     document.body.classList.remove("resizing");
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
-    write(cur);
+    window.removeEventListener("pointercancel", onUp);
+    window.removeEventListener("blur", onUp);
+    try { handle.releasePointerCapture(pointerId); } catch {}
+    pointerId = null;
+    write(cur); updateTip(e && e.clientY != null ? e : null);
   };
+  handle.addEventListener("pointermove", updateTip);
+  handle.addEventListener("pointerenter", updateTip);
+  window.addEventListener("resize", () => updateTip());
+  handle.addEventListener("lostpointercapture", onUp);
   handle.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    dragging = true;
+    if (e.button !== 0 || dragging) return;
+    dragging = true; pointerId = e.pointerId; grabOffset = e.clientX - cur; startX = e.clientX; startWidth = cur;
     document.body.classList.add("resizing");
+    try { handle.setPointerCapture(pointerId); } catch {}
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    e.preventDefault();
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("blur", onUp);
+    updateTip(e); e.preventDefault();
   });
-  handle.addEventListener("dblclick", () => { applyWidth(SIDEBAR_DEFAULT); write(SIDEBAR_DEFAULT); });
+  handle.addEventListener("dblclick", () => { applyWidth(SIDEBAR_DEFAULT); write(SIDEBAR_DEFAULT); updateTip(); });
+  updateTip();
 }
 
 function read() { try { const v = parseInt(localStorage.getItem(KEY), 10); return Number.isFinite(v) ? v : null; } catch { return null; } }

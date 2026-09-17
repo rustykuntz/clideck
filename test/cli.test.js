@@ -6,6 +6,7 @@ const { createServer } = require('http');
 const {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -102,6 +103,28 @@ test('CLI help explains how busy agents can steer', async () => {
   assert.match(result.stdout, /ask <target> <message> --steer/);
   assert.match(result.stdout, /injects guidance immediately and returns without waiting/);
   assert.match(result.stdout, /Show supports text, JSON, markdown/);
+});
+
+test('HTML starter and focused show help work without an engine or caller', async () => {
+  const offline = { CLIDECK_SESSION_ID: '', CLIDECK_NEXT_SESSION_ID: '', CLIDECK_URL: 'http://127.0.0.1:1' };
+  const result = await runCli(['show', '--template'], offline);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /^<!doctype html>/);
+  assert.match(result.stdout, /<html lang="en" data-clideck-theme="auto">/);
+  assert.match(result.stdout, /name="viewport"/);
+  assert.ok(result.stdout.includes(readFileSync(join(__dirname, '../public/css/preview.css'), 'utf8').trim()));
+  assert.doesNotMatch(result.stdout, /<script|<link/);
+  const help = await runCli(['show', '--help'], offline);
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /show --template > report.html/);
+  assert.match(help.stdout, /--cd-bg/);
+  for (const args of [['page.html'], ['--stdin'], ['--kind', 'html'], ['--name', 'Report']]) {
+    const invalid = await runCli(['show', '--template', ...args], offline);
+    assert.notEqual(invalid.code, 0);
+    assert.equal(invalid.stdout, '');
+    assert.match(invalid.stderr, /--template writes an HTML starter/);
+  }
 });
 
 test('CLI long polls do not inherit fetch transport deadlines', async () => {
@@ -430,6 +453,9 @@ test('CLI show broadcasts scoped content and serves ranged media', async () => {
     ]) {
       const result = await runCli(['show', file], env, '', cwd);
       assert.equal(result.code, 0, `${file}: ${result.stderr}`);
+      assert.equal(result.stdout, '');
+      if (kind === 'html') assert.match(result.stderr, /To follow CliDeck's theme.*show --template/);
+      else assert.equal(result.stderr, '');
       const event = broadcasts.at(-1);
       assert.equal(event.kind, kind);
       assert.equal(event.name, file);
@@ -437,6 +463,20 @@ test('CLI show broadcasts scoped content and serves ranged media', async () => {
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('content-type'), mime);
       assert.equal(Buffer.from(await response.arrayBuffer()).toString(), body);
+    }
+
+    const starter = await runCli(['show', '--template'], {});
+    assert.equal(starter.code, 0, starter.stderr);
+    writeFileSync(join(cwd, 'page.html'), starter.stdout);
+    const themedFile = await runCli(['show', 'page.html'], env, '', cwd);
+    assert.deepEqual(themedFile, { code: 0, stdout: '', stderr: '' });
+    const themedResponse = await fetch(`${httpUrl}${broadcasts.at(-1).url}`);
+    assert.equal(await themedResponse.text(), starter.stdout);
+    for (const [html, hinted] of [['<h1>Plain HTML</h1>', true], [starter.stdout, false]]) {
+      const result = await runCli(['show', '--stdin', '--kind', 'html', '--name', 'theme-check'], env, html, cwd);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr.includes('show --template'), hinted);
     }
 
     const overridden = await runCli(['show', 'notes.txt', '--kind', 'markdown'], env, '', cwd);

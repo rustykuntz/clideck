@@ -6,6 +6,7 @@
 // session record by the engine and replayed on every connect, so a document survives a refresh and an engine
 // restart — which is why closing one has to TELL the engine, or it comes back on the next reconnect.
 import { store } from "../store.js";
+import { onTheme, resolvedTheme } from "../theme.js";
 import { closeContent } from "../ws.js";
 import { h, copyText } from "../util.js";
 import { renderText, renderJson, renderMarkdown, renderDiff, renderChart, renderTestResults, htmlFrame, pdfEmbed, imageEl, videoEl, mermaidEl } from "./content-renderers.js";
@@ -142,7 +143,7 @@ function stillActive(sessionId, contentId) {
 // reach its DOM — which is the whole point, and is not being relaxed. To mark words in there we load the
 // document as `srcdoc` with a host-owned script inlined ahead of it, and talk to that script by postMessage.
 //
-// What crosses is deliberately unprivileged. Down: integer ranges to mark, and a request for the selection.
+// What crosses is deliberately unprivileged. Down: theme, integer ranges to mark, and a selection request.
 // Up: a fingerprint, "the user touched me", and a selection ONLY in reply to a request that named an id.
 // event.source proves which FRAME spoke, never which script inside it — the author's own code shares that
 // frame and can forge any of this — so nothing from the frame is trusted with an action. The worst a forged
@@ -159,7 +160,7 @@ async function bridgeScript() {
   // and the WHOLE thing is wrapped in one function, because a top-level `const MAX_VIEWER_TEXT` in the author's
   // own global scope is a name collision waiting to happen, and a duplicate declaration is a SyntaxError that
   // would take their scripts down with ours.
-  bridgeSource = "(function(){\n" + shared.replace(/^export /gm, "") + "\n" + bridge + "\n})();";
+  bridgeSource = "(function(initialPreviewTheme){\n" + shared.replace(/^export /gm, "") + "\n" + bridge + "\n})";
   return bridgeSource;
 }
 async function loadPreview(frame, item) {
@@ -188,8 +189,9 @@ async function loadPreview(frame, item) {
     const doctype = /^\s*<!doctype[^>]*>/i.exec(source);
     const rest = doctype ? source.slice(doctype[0].length) : source;
     const head = /<head[^>]*>/i.exec(rest);
-    const inject = base + "<script>" + script + "<\/script>";
-    const at = head ? head.index + head[0].length : 0;
+    const inject = base + "<script>" + script + "(" + JSON.stringify(resolvedTheme()) + ");<\/script>";
+    const html = /<html(?:\s[^>]*)?>/i.exec(rest);
+    const at = head ? head.index + head[0].length : html ? html.index + html[0].length : 0;
     frame.removeAttribute("src");
     frame.srcdoc = (doctype ? doctype[0] : "") + rest.slice(0, at) + inject + rest.slice(at);
   } catch {
@@ -197,6 +199,15 @@ async function loadPreview(frame, item) {
     frame.src = item.url;                        // no bridge; the document still renders exactly as before
   }
 }
+function sendPreviewTheme(frame) {
+  try { frame.contentWindow.postMessage({ ck: "theme", theme: resolvedTheme() }, "*"); } catch {}
+}
+onTheme(() => {
+  for (const frame of previews.keys()) {
+    if (frame.isConnected === false) continue; // Other sessions cache their frames; ready resyncs on return.
+    sendPreviewTheme(frame);
+  }
+});
 function previewEntry(source) {
   for (const [frame, entry] of previews) if (frame.contentWindow === source) return entry;
   return null;
@@ -207,6 +218,8 @@ function onPreviewMessage(event) {
   if (!data || typeof data.ck !== "string") return;
   if (data.ck === "pointer") { closeMenu(); return; }         // an outside click that never reaches this document
   if (data.ck === "ready") {
+    const frame = frameOf(entry);
+    if (frame) sendPreviewTheme(frame); // Catch a theme change while the document was loading.
     // Canonical text agreement: if the frame's reading of the document differs from ours by one character,
     // every offset we would send it is wrong. Disagreement disables the mark; it never guesses.
     // Also arrives when the document rewrites itself: the frame re-announces, and a text that no longer

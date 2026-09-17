@@ -1,0 +1,45 @@
+/* CliDeck HTML previews: opt in with <html data-clideck-theme="auto">.
+   Auto follows the OS outside CliDeck; the preview bridge supplies light/dark inside it.
+   Keep this stylesheet embedded in exported templates so they also work offline. */
+:root[data-clideck-theme] {
+  color-scheme: light;
+  --cd-bg:#f5f6f8; --cd-text:#24262c; --cd-surface:#ffffff;
+  --cd-muted:#5c5f66; --cd-border:#d9dce2; --cd-accent:#b3452a;
+}
+:root[data-clideck-theme="dark"] {
+  color-scheme: dark;
+  --cd-bg:#191a1e; --cd-text:#e9eaee; --cd-surface:#212229;
+  --cd-muted:#a1a4ad; --cd-border:#41434d; --cd-accent:#e18063;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-clideck-theme="auto"] {
+    color-scheme: dark;
+    --cd-bg:#191a1e; --cd-text:#e9eaee; --cd-surface:#212229;
+    --cd-muted:#a1a4ad; --cd-border:#41434d; --cd-accent:#e18063;
+  }
+}
+:where(html[data-clideck-theme]) { background:var(--cd-bg); color:var(--cd-text); }
+:where(html[data-clideck-theme] *) { box-sizing:border-box; }
+:where(html[data-clideck-theme] body) {
+  max-width:1000px; margin:0 auto; padding:clamp(16px,4vw,40px);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  overflow-wrap:anywhere;
+}
+:where(html[data-clideck-theme] h1, html[data-clideck-theme] h2, html[data-clideck-theme] h3) { line-height:1.25; margin:1.5em 0 .6em; }
+:where(html[data-clideck-theme] h1) { font-size:clamp(26px,5vw,40px); }
+:where(html[data-clideck-theme] p, html[data-clideck-theme] ul, html[data-clideck-theme] ol) { margin:0 0 1em; }
+:where(html[data-clideck-theme] a) { color:var(--cd-accent); text-underline-offset:3px; }
+:where(html[data-clideck-theme] small, html[data-clideck-theme] figcaption) { color:var(--cd-muted); }
+:where(html[data-clideck-theme] code, html[data-clideck-theme] pre, html[data-clideck-theme] kbd) { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.9em; background:var(--cd-surface); }
+:where(html[data-clideck-theme] pre) { padding:16px; border:1px solid var(--cd-border); border-radius:8px; overflow:auto; }
+:where(html[data-clideck-theme] blockquote) { margin:1em 0; padding:0 16px; border-left:3px solid var(--cd-accent); color:var(--cd-muted); }
+:where(html[data-clideck-theme] hr) { border:0; border-top:1px solid var(--cd-border); margin:24px 0; }
+:where(html[data-clideck-theme] img, html[data-clideck-theme] video, html[data-clideck-theme] svg) { max-width:100%; height:auto; }
+:where(html[data-clideck-theme] table) { width:100%; border-collapse:collapse; }
+:where(html[data-clideck-theme] th, html[data-clideck-theme] td) { padding:8px 12px; text-align:left; border-bottom:1px solid var(--cd-border); }
+:where(html[data-clideck-theme] button, html[data-clideck-theme] input, html[data-clideck-theme] select, html[data-clideck-theme] textarea) {
+  max-width:100%; font:inherit; color:var(--cd-text); background:var(--cd-surface);
+  border:1px solid var(--cd-border); border-radius:6px; padding:7px 10px;
+}
+:where(html[data-clideck-theme] button) { cursor:pointer; }
+:where(html[data-clideck-theme] :focus-visible) { outline:2px solid var(--cd-accent); outline-offset:3px; }

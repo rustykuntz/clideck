@@ -1,5 +1,6 @@
 const http = require('http');
 const https = require('https');
+const { open, readFile } = require('fs/promises');
 const { resolve } = require('path');
 const { MAX_CONTENT_BYTES } = require('./content-store');
 const { readPluginManifest } = require('./plugin-manifest');
@@ -18,6 +19,7 @@ function usage(pluginCommands = []) {
     '  clideck ask <target> <message> --steer [--url <url>]',
     '  cat message.txt | clideck ask <target> [--timeout 10m]',
     '  clideck show <path> [--kind <kind>] [--url <url>]',
+    '  clideck show --template > report.html',
     '  cat output | clideck show --stdin --kind <kind> --name <name>',
     '  clideck prompt "<question>" [--options "a,b,c"] [--timeout 10m]',
     '  clideck annotate <image-file> [--timeout 10m]',
@@ -71,6 +73,7 @@ function parseOptions(
     timeoutMs: DEFAULT_TIMEOUT_MS,
     url: defaultUrl(env),
     stdin: false,
+    template: false,
     kind: '',
     name: '',
     promptOptions: null,
@@ -90,6 +93,8 @@ function parseOptions(
       if (!options.timeoutMs) throw new Error('Invalid timeout. Use values such as 30s, 10m, or 1h.');
     } else if (allowContent && argument === '--stdin') {
       options.stdin = true;
+    } else if (allowContent && argument === '--template') {
+      options.template = true;
     } else if (allowContent && argument === '--kind') {
       options.kind = args[++index];
       if (!options.kind) throw new Error('--kind requires a value.');
@@ -458,7 +463,41 @@ async function runAsk(args, env, io) {
 
 async function runShow(args, env, io) {
   const options = parseOptions(args, env, { allowContent: true });
-  if (options.help) return io.stdout.write(`${usage()}\n`);
+  if (options.help) return io.stdout.write([
+    'clideck show <path> [--kind <kind>]',
+    'cat output | clideck show --stdin --kind <kind> --name <name>',
+    'clideck show --template > report.html',
+    '',
+    'The HTML starter follows the viewing browser\'s CliDeck theme, including live changes.',
+    'Edit its body and keep data-clideck-theme="auto" on <html> and the embedded CSS.',
+    'Custom styles can use --cd-bg, --cd-text, --cd-surface, --cd-muted, --cd-border and --cd-accent.',
+    'Outside CliDeck, the starter follows the system theme. Existing HTML keeps its own styling.',
+    '',
+  ].join('\n'));
+  if (options.template) {
+    if (options.stdin || options.kind || options.name || options.positional.length) {
+      throw new Error('--template writes an HTML starter to stdout; use it without a path, --stdin, --kind or --name.');
+    }
+    const css = await readFile(resolve(__dirname, '../public/css/preview.css'), 'utf8');
+    return io.stdout.write(`<!doctype html>
+<html lang="en" data-clideck-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report</title>
+<style>
+${css.trim()}
+</style>
+</head>
+<body>
+<main>
+  <h1>Report</h1>
+  <p>Replace this with your content.</p>
+</main>
+</body>
+</html>
+`);
+  }
   let content;
   if (options.stdin) {
     if (options.positional.length || !options.kind || !options.name) {
@@ -476,7 +515,7 @@ async function runShow(args, env, io) {
       ...(options.kind && { kind: options.kind }),
     };
   }
-  await requestJson(options.url, '/show', {
+  const shown = await requestJson(options.url, '/show', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -484,6 +523,23 @@ async function runShow(args, env, io) {
       ...content,
     }),
   });
+  if (shown.kind === 'html') {
+    // Discovery only: a bounded header read must never turn a successful preview into a failure.
+    let header = content.payload;
+    if (header === undefined) {
+      let file;
+      try {
+        file = await open(content.path, 'r');
+        const buffer = Buffer.alloc(8192);
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+        header = buffer.toString('utf8', 0, bytesRead);
+      } catch { /* the file may have moved since the preview opened */ }
+      finally { if (file) await file.close().catch(() => {}); }
+    }
+    if (typeof header === 'string' && !/<html\b[^>]*\sdata-clideck-theme\s*=/i.test(header)) {
+      io.stderr.write('To follow CliDeck\'s theme, start with: clideck show --template > report.html\n');
+    }
+  }
 }
 
 async function runPrompt(args, env, io) {

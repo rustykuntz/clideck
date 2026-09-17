@@ -1,11 +1,11 @@
-// The HTML preview's side of the reading. This file is INLINED into the sandboxed frame together with
+// The HTML preview's theme and reading bridge. This file is INLINED into the sandboxed frame together with
 // doc-text.js, whose functions it calls directly — see the warning at the top of that file.
 //
 // The frame is `sandbox="allow-scripts"` with no allow-same-origin, so it cannot reach this window, its
 // storage or its cookies, and that is not being relaxed for a highlight. What crosses the boundary is
 // deliberately unprivileged in BOTH directions:
-//   • down: a mark instruction carrying integer ranges, and a request for the current selection. Nothing
-//     else — no urls, no paths, no secrets, nothing about the session.
+//   • down: a light/dark theme, integer ranges to mark, and a request for the current selection.
+//     No urls, paths, secrets, or session details.
 //   • up: "ready" with a fingerprint of the text, "pointer" when the user touches the document, and a
 //     selection ONLY in reply to a request that named an id. The host validates event.source, but the
 //     author's own scripts share this frame and can forge any of it, so nothing here is ever trusted with
@@ -14,6 +14,12 @@
   const HOST = window.parent;
   if (!HOST || HOST === window) return;
   const send = (message) => { try { HOST.postMessage(message, "*"); } catch {} };
+  const themed = document.documentElement.hasAttribute("data-clideck-theme");
+  const applyTheme = (theme) => {
+    if (themed && (theme === "light" || theme === "dark")) document.documentElement.setAttribute("data-clideck-theme", theme);
+  };
+  // The host supplies this argument inside its private wrapper, before author CSS/scripts parse.
+  if (typeof initialPreviewTheme !== "undefined") applyTheme(initialPreviewTheme);
   let index = null, pending = "", fingerprint = "", stale = false;
 
   const build = () => { try { index = docTextIndex(document.body); } catch { index = null; } stale = false; return index; };
@@ -92,6 +98,7 @@
     if (event.source !== HOST) return;
     const data = event.data;
     if (!data || typeof data.ck !== "string") return;
+    if (data.ck === "theme") { applyTheme(data.theme); return; }
     if (data.ck === "mark") {
       if (!current()) return;
       const ranges = Array.isArray(data.ranges) ? data.ranges.slice(0, 8) : [];

@@ -28,10 +28,13 @@ body { font-family:var(--sans); background:var(--bg); color:var(--text); font-si
 
 .app { display:flex; height:100vh; position:relative; }
 /* E1: user-resizable sidebar — width driven by --sidebar-w (persisted client pref), default 340px */
-.resize-handle { position:absolute; top:0; bottom:0; left:var(--sidebar-w,340px); width:9px; margin-left:-4px; z-index:40; cursor:col-resize; }
+.resize-handle { position:absolute; top:0; bottom:0; left:var(--sidebar-w,340px); width:9px; margin-left:-4px; z-index:40; cursor:col-resize; touch-action:none; }
 .resize-handle::after { content:""; position:absolute; top:0; bottom:0; left:4px; width:1px; background:transparent; transition:background .14s; }
 .resize-handle:hover::after, body.resizing .resize-handle::after { background:var(--accent); }
 body.resizing, body.resizing * { cursor:col-resize !important; user-select:none; }
+body.resizing iframe { pointer-events:none; } /* Embedded documents must not take focus midway through a drag. */
+.resize-tooltip { position:fixed; top:80px; z-index:1; padding:5px 9px; border:1px solid var(--border-strong); border-radius:7px; background:var(--surface-2); color:var(--text); box-shadow:0 4px 14px var(--shadow); font:11px/1.5 var(--sans); white-space:nowrap; pointer-events:none; visibility:hidden; opacity:0; transition:opacity .12s; }
+.resize-handle:hover .resize-tooltip, body.resizing .resize-tooltip { visibility:visible; opacity:1; }
 
 /* ══════════ SIDEBAR ══════════ */
 .sidebar { width:var(--sidebar-w,340px); flex:0 0 var(--sidebar-w,340px); background:var(--bg-side); border-right:1px solid var(--border); display:flex; flex-direction:column; }
@@ -60,6 +63,10 @@ body.resizing, body.resizing * { cursor:col-resize !important; user-select:none;
 .tab.on { background:var(--surface-3); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.06); }
 .tab .cnt { font-size:11px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }   /* inline live count — reads "Unread 8", not a pill */
 .tab .cnt.zero { display:none; }
+
+.project-help { align-self:flex-start; margin:0 16px 4px; padding:4px 0; border:0; background:transparent; color:var(--dim); font:12px/1.5 var(--sans); text-align:left; cursor:pointer; }
+.project-help:hover { color:var(--text); text-decoration:underline; text-underline-offset:3px; }
+.project-help:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
 
 .list { flex:1; overflow-y:auto; padding-bottom:14px; }
 .group-head { display:flex; align-items:center; gap:8px; padding:11px 16px 7px; cursor:pointer; user-select:none; }
@@ -625,7 +632,7 @@ body.resizing, body.resizing * { cursor:col-resize !important; user-select:none;
 
 /* ══════════ PROMPT LIBRARY ══════════ */
 /* management modal (mirrors the .fp-* modal shell; all-token so light/dark track for free) */
-.pl-overlay { position:fixed; inset:0; z-index:600; display:grid; place-items:center; padding:24px; background:color-mix(in srgb, var(--bg) 62%, transparent); backdrop-filter:blur(4px); opacity:0; transition:opacity .18s; }
+.pl-overlay { position:fixed; inset:0; z-index:600; display:grid; grid-template-columns:minmax(0,1fr); place-items:center; padding:24px; background:color-mix(in srgb, var(--bg) 62%, transparent); backdrop-filter:blur(4px); opacity:0; transition:opacity .18s; }
 .pl-overlay.show { opacity:1; }
 .pl-modal { width:520px; max-width:100%; max-height:82vh; display:flex; flex-direction:column; background:var(--surface-1); border:1px solid var(--border-strong); border-radius:14px; box-shadow:0 30px 80px var(--shadow); transform:translateY(10px) scale(.985); transition:transform .2s cubic-bezier(.2,.8,.2,1); overflow:hidden; }
 .pl-overlay.show .pl-modal { transform:none; }
@@ -1572,6 +1579,8 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
 /* A menu.js popover or a modal opened from the control this stop points at owns that corner for a moment. The
    card steps back rather than covering it, and returns the instant that surface closes. */
 .tour.tour-faded .tour-pop { opacity:.1; pointer-events:none; }
+/* The prompt library sits below the tour: hide its dimming as well as its card while browsing. */
+.tour.tour-library-open { opacity:0; }
 /* The copy is a fresh node each stop, so it animates IN on its own — the highlight sliding while the words
    snap is the tell that a tour was assembled rather than designed. */
 @keyframes tour-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
@@ -1579,6 +1588,7 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
 .tour-eyebrow { font:600 9.5px/1.2 var(--mono); letter-spacing:.085em; text-transform:uppercase; color:var(--accent); margin-bottom:9px; }
 .tour-title { font-size:14.5px; font-weight:600; color:var(--text); line-height:1.35; margin-bottom:6px; }
 .tour-body { font-size:12.8px; line-height:1.62; color:var(--dim); }
+.tour-key { padding:1px 4px; border:1px solid color-mix(in srgb,var(--working) 35%,transparent); border-radius:4px; background:var(--surface-1); color:var(--working); font:600 12px/1.4 var(--mono); white-space:nowrap; }
 .tour-acts { display:flex; align-items:center; gap:7px; margin-top:15px; }
 .tour-sp { flex:1; }
 .tour-btn { height:29px; padding:0 12px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface-2);

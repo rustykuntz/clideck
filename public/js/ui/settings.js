@@ -193,7 +193,7 @@ function renderGeneral() {
 
   const started = section("Getting started", "started");
   started.append(buttonRow("Take the tour",
-    "Six quick stops around the deck. Tips you have already dismissed stay dismissed.",
+    "A short tour of CliDeck. Tips you have already dismissed stay dismissed.",
     "Start", () => import("./tour.js").then(({ startTour }) => startTour({ replay: true }))));
   els.body.append(started);
 }

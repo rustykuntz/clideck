@@ -59,5 +59,24 @@ ok("normalising collapses runs, trims the ends, and caps blank lines at one",
 ok("a document too big to hold says so instead of pretending it is complete",
   normalizeWithMap("x".repeat(256 * 1024 + 10)).truncated === true);
 
+const splitBreaks = el("div", [el("span", null, "first\n"), el("span", null, "\n"),
+  el("span", null, "\n\n"), el("p", null, "second")]);
+const splitIndex = docTextIndex(splitBreaks);
+ok("newlines split across text nodes preserve paragraph spacing and raw offsets",
+  textParts(splitBreaks).raw === "first\n\n\n\nsecond\n\n" && splitIndex.text === "first\n\nsecond"
+  && partAt(splitIndex.at[7], splitIndex.parts).node.nodeValue === "second"
+  && partAt(splitIndex.at[7], splitIndex.parts).offset === 0);
+
+const longRoot = el("main", Array.from({ length: 5000 }, (_, i) => el("p", null, `Paragraph ${i}.`)));
+const longIndex = docTextIndex(longRoot);
+const expectedLong = Array.from({ length: 5000 }, (_, i) => `Paragraph ${i}.`).join("\n\n");
+ok("a long document preserves every paragraph and its exact character-to-node mapping",
+  longIndex.text === expectedLong && !longIndex.truncated
+  && longIndex.at.every((offset, i) => {
+    if (/\s/.test(longIndex.text[i])) return true;
+    const part = partAt(offset, longIndex.parts);
+    return part?.node?.nodeValue[part.offset] === longIndex.text[i];
+  }));
+
 if (checks.some(([, pass]) => !pass)) process.exitCode = 1;
 else console.log(`\n${checks.length}/${checks.length} document text checks passed`);

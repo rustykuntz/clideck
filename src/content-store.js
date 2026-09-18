@@ -561,6 +561,8 @@ async function serveContent(req, res, content) {
     'Accept-Ranges': 'bytes',
     'Content-Type': served.mime,
     'X-Content-Type-Options': 'nosniff',
+    // Keep HTML isolated even when its asset URL is opened directly.
+    ...(served.mime === 'text/html' && { 'Content-Security-Policy': 'sandbox allow-scripts' }),
   };
   let range = null;
   if (req.headers.range !== undefined) {

@@ -40,6 +40,10 @@ const viewer = document.querySelector(".cd-render");
 viewer._fire("contextmenu", { shiftKey: false, clientX: 40, clientY: 50, preventDefault() { prevented = true; } });
 ok("viewer predicate is primed at bind so the first right-click works", prevented && document.querySelector(".menu-item")?.textContent === "Read document aloud" && calls.some((call) => call.method === "match-action"));
 closeMenu();
+const anchor = document.createElement("a"); anchor.setAttribute("href", "https://example.com/"); viewer.appendChild(anchor);
+prevented = false;
+viewer._fire("contextmenu", { target: anchor, shiftKey: false, preventDefault() { prevented = true; } });
+ok("document links keep the native browser menu even with plugin actions", !prevented && !document.querySelector(".menu"));
 
 document.querySelector(".cd-tab-term")._fire("click"); await tick();
 ok("document controls retire when the terminal becomes active", !document.querySelector(".cd-viewer-actions"));

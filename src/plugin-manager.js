@@ -579,8 +579,8 @@ class PluginManager {
     try {
       cpSync(source, temporary, { recursive: true, errorOnExist: true });
       readPluginManifest(temporary, { requireFolderName: false });
+      chmodSync(temporary, 0o700);
       renameSync(temporary, destination);
-      chmodSync(destination, 0o700);
     } catch (error) {
       rmSync(temporary, { recursive: true, force: true });
       throw error;

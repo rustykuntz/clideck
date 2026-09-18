@@ -195,6 +195,7 @@ async function loadPreview(frame, item) {
     frame.removeAttribute("src");
     frame.srcdoc = (doctype ? doctype[0] : "") + rest.slice(0, at) + inject + rest.slice(at);
   } catch {
+    if (previews.get(frame) !== entry) return;   // closed/reloaded while the fetch was pending
     previews.delete(frame);
     frame.src = item.url;                        // no bridge; the document still renders exactly as before
   }
@@ -477,7 +478,7 @@ function renderDock() {
   // browsing context outright and RELOADS when it comes back — so a second document arriving while the
   // reader was talking took the highlight down with it, and rebuilt the preview's bridge underneath it.
   // That was a large part of "the highlighting is intermittent". Only a node whose tab is gone is removed;
-  // `releaseItemNode` is the one path that unmounts a document, and closing is the one thing that calls it.
+  // `releaseItemNode` unmounts a document only when it is closed, replaced or explicitly reloaded.
   const showTerm = activeId === TERMINAL_TAB;
   const mounted = new Set(items.map((it) => it.node).filter(Boolean));
   // ⚠️ WORK OUT WHAT WILL BE VISIBLE BEFORE HIDING ANYTHING. The sweep below used to hide every frame and then
@@ -607,6 +608,8 @@ function bindViewerContext(node, item) {
   node._primePluginContext = prime;
   node.addEventListener("pointerup", prime); node.addEventListener("keyup", prime);
   node.addEventListener("contextmenu", (event) => {
+    // A real anchor already has the browser's link menu. Do not replace it with plugin text actions.
+    if (event.target?.closest?.("a[href]")) return;
     if (event.shiftKey || !hasActions("viewer.context")) return;
     const context = viewerContext(item, selectedText(node), selectionOffset(item));
     const key = viewerActionEpoch + "\0" + context.selection.offset + "\0" + context.selection.text;
@@ -625,14 +628,20 @@ function bindViewerContext(node, item) {
 function paintDockTools(item) {
   if (!tabsEl) return null;
   tabsEl.querySelector(".cd-viewer-actions")?.remove();
-  const previewable = !!(item && item.kind === "html" && item.url);
+  const previewable = !!(item && !item.workspace && item.url && viewerFor(item.kind));
   if (!item || (!previewable && !hasActions("viewer.header"))) return null;
   const toolbar = h("div", "cd-viewer-actions"); toolbar.setAttribute("role", "toolbar"); toolbar.setAttribute("aria-label", "Document actions");
   toolbar.appendChild(h("div", "cd-viewer-plugin-slot"));
   if (previewable) {
     const reload = h("button", "cd-viewer-action cd-dock-refresh", REFRESH); reload.type = "button";
     reload.title = "Reload preview"; reload.setAttribute("aria-label", "Reload preview");
-    reload.addEventListener("click", () => { if (reloadPreview(item)) reload.classList.add("spun"); setTimeout(() => reload.classList.remove("spun"), 620); });
+    reload.addEventListener("click", () => {
+      if (!reloadPreview(item)) return;
+      const button = tabsEl.querySelector(".cd-dock-refresh");
+      button?.classList.add("spun");
+      button?.focus({ preventScroll: true });
+      setTimeout(() => button?.classList.remove("spun"), 620);
+    });
     toolbar.appendChild(reload);
   }
   tabsEl.appendChild(toolbar);
@@ -721,11 +730,16 @@ function htmlShell(item) {
   return shell;
 }
 
-// Cache-bust so a reload really re-fetches rather than being answered from memory.
+// Rebuild just this document through its existing viewer. A detached old fetch can only fill its old
+// node; it cannot replace the new one. Keep the item (identity and Markdown view choice) intact.
+let refreshRevision = 0;
 function reloadPreview(item) {
-  const frame = item && item.node && item.node.querySelector ? item.node.querySelector("iframe") : null;
-  if (!frame || !item.url) return false;
-  loadPreview(frame, { ...item, url: item.url + (item.url.includes("?") ? "&" : "?") + "r=" + Date.now() });
+  if (!item || item.workspace || !item.url || !viewerFor(item.kind)) return false;
+  const url = new URL(item.url, location.href || "http://localhost");
+  url.searchParams.set("r", Date.now() + "-" + ++refreshRevision);
+  item.url = item.url.startsWith("/") ? url.pathname + url.search + url.hash : url.href;
+  releaseItemNode(item);
+  renderDock();
   return true;
 }
 function wrapMedia(el) { const w = h("div", "cd-media"); w.appendChild(el); return w; }

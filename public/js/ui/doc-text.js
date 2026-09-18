@@ -32,11 +32,19 @@ export function hiddenNode(node, tag) {
 // "mark these words" are searches, and a search over a document that repeats itself lands on the wrong copy.
 export const MAX_NODES = 120000;          // a pathological document is refused, never chased forever
 export function textParts(root) {
-  const parts = [];
-  let raw = "", budget = MAX_NODES;
-  const push = (text, node, base) => { if (!text) return; parts.push({ node, base, from: raw.length, to: raw.length + text.length }); raw += text; };
-  const trailing = () => { let n = 0; for (let i = raw.length - 1; i >= 0 && raw[i] === "\n"; i--) n++; return n; };
-  const breakTo = (want) => { if (!raw) return; for (let have = trailing(); have < want; have++) push("\n", null, 0); };
+  const parts = [], chunks = [];
+  let length = 0, newlines = 0, budget = MAX_NODES;
+  const push = (text, node, base) => {
+    if (!text) return;
+    parts.push({ node, base, from: length, to: length + text.length });
+    chunks.push(text); length += text.length;
+    // Inspect only the new chunk; indexing a growing concatenated string can copy
+    // the whole document again at every paragraph boundary.
+    let trailing = 0;
+    for (let i = text.length - 1; i >= 0 && text[i] === "\n"; i--) trailing++;
+    newlines = trailing === text.length ? newlines + trailing : trailing;
+  };
+  const breakTo = (want) => { if (!length) return; for (let have = newlines; have < want; have++) push("\n", null, 0); };
   const walk = (node, inItem) => {
     if (!node || budget-- <= 0) return;
     if (node.nodeType === 3) { push(node.nodeValue || "", node, 0); return; }
@@ -54,7 +62,7 @@ export function textParts(root) {
     if (want) breakTo(want);
   };
   walk(root, false);
-  return { raw, parts };
+  return { raw: chunks.join(""), parts };
 }
 
 // normalizeViewerText, character by character, keeping a map back to the raw text. The rules are the same

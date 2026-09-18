@@ -97,7 +97,10 @@ export function initTerminal() {
 
   // Right-click opens the TEXT menu — copy / paste / read aloud — not the session menu the row ▾ opens.
   // Shift+right-click is left untouched so it passes through to xterm / the native menu (copy-paste).
+  mount.addEventListener("mousedown", () => { linkContextGesture = false; }, true);
   mount.addEventListener("contextmenu", async (e) => {
+    // Mac Control-click uses button 0 even though it opens a context menu before mouseup.
+    linkContextGesture = true;
     if (e.shiftKey) return;
     const s = store.active(); if (!s) return;
     e.preventDefault();
@@ -495,6 +498,7 @@ export function commitTerminalDraft(text, options = {}) {
 // open in a new tab with the opener severed. xterm underlines provided links + shows a pointer on hover.
 function openUrl(url) { const w = window.open(url, "_blank", "noopener,noreferrer"); if (w) w.opener = null; }
 const linkProviders = [];
+let linkContextGesture = false;
 function addLinkProvider(p) { linkProviders.push(p); term.registerLinkProvider(p); }
 // Gate seam: the browser gate drives these EXACT objects, so it exercises the real matcher and the real
 // wrapped-line range maths rather than a copy of them.
@@ -515,7 +519,7 @@ function registerLinks() {
         if (t) url = url.slice(0, url.length - t[0].length);
         if (url.length < 11 || !/^https?:\/\/[^\s.]+\.[^\s]/.test(url)) continue;   // needs a host with a dot
         const sx = m.index + 1, ex = m.index + url.length;                          // 1-based, end inclusive
-        links.push({ text: url, range: { start: { x: sx, y }, end: { x: ex, y } }, activate: (_e, uri) => openUrl(uri) });
+        links.push({ text: url, range: { start: { x: sx, y }, end: { x: ex, y } }, activate: (event, uri) => { if (event.button === 0 && !linkContextGesture) openUrl(uri); } });
       }
       callback(links.length ? links : undefined);
     },
@@ -534,7 +538,7 @@ function registerLinks() {
       for (const c of candidatesIn(text)) {
         const abs = linkFor(sid, c.text);
         if (typeof abs !== "string") continue;                                      // undefined = unprobed, null = not a file
-        links.push({ text: c.text, range: { start: pos(c.start - 1), end: pos(c.end - 1) }, activate: () => openContentPath(sid, abs) });
+        links.push({ text: c.text, range: { start: pos(c.start - 1), end: pos(c.end - 1) }, activate: (event) => { if (event.button === 0 && !linkContextGesture) openContentPath(sid, abs); } });
       }
       callback(links.length ? links : undefined);
     },

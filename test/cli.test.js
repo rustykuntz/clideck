@@ -462,6 +462,7 @@ test('CLI show broadcasts scoped content and serves ranged media', async () => {
       const response = await fetch(`${httpUrl}${event.url}`);
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('content-type'), mime);
+      if (kind === 'html') assert.equal(response.headers.get('content-security-policy'), 'sandbox allow-scripts');
       assert.equal(Buffer.from(await response.arrayBuffer()).toString(), body);
     }
 

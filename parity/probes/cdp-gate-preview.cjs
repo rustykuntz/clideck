@@ -101,6 +101,8 @@ const PAGE = `<!doctype html>
     await sleep(4500);
     await show({ path: join(projDir, 'report.html') });
     await sleep(2200);
+    await js(`document.querySelector('.cd-dock-refresh').click()`);
+    await sleep(1200); // Run the existing bridge/read-along assertions against an explicitly reloaded frame.
 
     // ── the author's document is still the author's document ──────────────────────────────────────
     check('0 the preview is its own sandboxed target, reachable only as one', !!frameSession, frameSession || 'none');

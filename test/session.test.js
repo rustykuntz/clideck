@@ -294,6 +294,60 @@ test('menu context is present only while choices are active', () => {
   assert.equal(Object.hasOwn(cleared, 'context'), false);
 });
 
+test('manual and ask turns resume working after approval, then stop authoritatively', () => {
+  for (const provider of ['claude-code', 'codex']) {
+    for (const origin of ['typed', 'ask']) {
+      const session = new AgentSession({ provider: getProvider(provider), port: 1 });
+      const events = [];
+      session.terminal = { write() {} };
+      session.on('event', event => events.push(event));
+      try {
+        session.handleHook('session-start', { source: 'startup' });
+        if (origin === 'typed') session.writeInput('Run the check\r');
+        else session.sendPrompt('Run the check');
+        session.handleHook('start', { turn_id: 'approval-turn' });
+        session.screen.write([
+          'Do you want to run this command?', '❯ 1. Yes', '  2. No', 'Esc to cancel',
+        ].join('\r\n'));
+        session.analyzeScreen();
+        assert.equal(session.status, 'idle');
+        assert.equal(session.turnOpen, true);
+        assert.equal(session.menu.length, 2);
+        session.writeInput('\r');
+        session.screen = new Screen();
+        session.screen.write('Running the approved command\r\n');
+        session.analyzeScreen();
+        if (provider === 'claude-code') session.handleHook('menu');
+        assert.equal(session.status, 'working', `${provider}/${origin}`);
+        assert.equal(session.menu.length, 0);
+        session.handleHook('stop', {
+          turn_id: 'approval-turn', last_assistant_message: 'Check complete.',
+        });
+        assert.equal(session.status, 'idle');
+        assert.equal(session.turnOpen, false);
+        assert.equal(events.filter(e => e.type === 'agent.final').length, 1);
+      } finally {
+        session.handleExit(0, null);
+      }
+    }
+  }
+});
+
+test('menu input outside a turn cannot resume historical ask work', () => {
+  const session = claudeSession();
+  session.terminal = { write() {} };
+  session.userPrompts.push('An earlier completed ask');
+  session.screen.write([
+    'Choose an option', '❯ 1. Yes', '  2. No', 'Esc to cancel',
+  ].join('\r\n'));
+  session.analyzeScreen();
+  assert.equal(session.menu.length, 2);
+  session.writeInput('\r');
+  assert.equal(session.turnOpen, false);
+  assert.equal(session.status, 'idle');
+  session.handleExit(0, null);
+});
+
 test('Claude finalizes the native Stop message instead of a stale tool block', () => {
   const session = claudeSession();
   const events = [];

@@ -7,6 +7,31 @@ Updating npm does not replace a process that is already running.
 Requires Node.js 22.12 or newer. The default address is **http://127.0.0.1:4000**.
 `--port` takes precedence over `CLIDECK_PORT`, then `PORT`, then the default.
 
+## Update notices
+
+An interactive terminal startup checks npm for a newer stable CliDeck version on
+Linux, macOS and Windows. The check runs after the engine is ready; an offline
+registry does not block startup. A notice shows how to update and reminds you to
+restart. Source checkouts are told to update their checkout instead. CliDeck does
+not install updates or restart running sessions automatically.
+
+The version in Settings describes the running engine. Updating files or installing
+a newer npm package does not change that engine until you restart CliDeck.
+
+## Old agent hooks
+
+Before launching or resuming Claude Code or Codex, CliDeck removes obsolete v1
+CliDeck command hooks from that agent's profile. This also applies if you already
+upgraded to v2. Profiles selected through `CLAUDE_CONFIG_DIR` or `CODEX_HOME` are
+handled separately using the session's launch environment.
+
+Only recognized v1 hook registrations are removed. Other hooks and settings stay
+in place. The original file is saved beside it as a private
+`.clideck-v1-backup-…` file before replacement. Symlinks are preserved. If a file
+cannot be parsed or safely updated, CliDeck leaves it unchanged and prints a
+warning. Current v2 hooks are supplied automatically for the new agent process;
+already-running processes must be restarted to load the corrected configuration.
+
 ## Your sessions come with you
 
 On startup, CliDeck imports saved v1 sessions, projects, prompts, command settings,

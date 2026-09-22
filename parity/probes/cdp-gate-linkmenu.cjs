@@ -36,15 +36,16 @@ const check = (name, yes, detail) => { yes ? passes++ : fails++; console.log(`${
     const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {method:'PUT'})).json();
     cws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise(r=>cws.on('open',r));
-    let seq=0; const pending=new Map();
-    cws.on('message', raw=> {const m=JSON.parse(raw);if(pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id);}});
+    let seq=0, acceptDialog=true; const pending=new Map(), dialogs=[];
+    cws.on('message', raw=> {const m=JSON.parse(raw);if(m.method==='Page.javascriptDialogOpening'){dialogs.push(m.params.message);cmd('Page.handleJavaScriptDialog',{accept:acceptDialog});}if(pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id);}});
     const cmd=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{pending.delete(id);reject(new Error(method+' timeout'));},12000);pending.set(id,m=>{clearTimeout(timer);m.error?reject(new Error(JSON.stringify(m.error))):resolve(m.result);});cws.send(JSON.stringify({id,method,params}));});
     const js=async expression=>{const r=await cmd('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result?.value;};
     const snap=async name=>{const s=await cmd('Page.captureScreenshot',{format:'png'});writeFileSync(join(out,name),Buffer.from(s.data,'base64'));};
     const mouse=async(point,button='right',modifiers=0)=>{await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x+12,y:point.y+20});await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await sleep(250);await cmd('Input.dispatchMouseEvent',{type:'mousePressed',...point,button,modifiers,buttons:button==='right'?2:1,clickCount:1});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button,modifiers,buttons:0,clickCount:1});await sleep(450);};
     await cmd('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+    await cmd('Page.enable');
     await cmd('Page.navigate',{url:base});await sleep(2200);
-    await js(`(async()=>{window.store=(await import('/js/store.js')).store;store.select(${JSON.stringify(sid)});window.tm=await import('/js/ui/terminal.js');window.term=tm.__termForTest();window.sent=[];const send=WebSocket.prototype.send;WebSocket.prototype.send=function(data){try{sent.push(JSON.parse(data))}catch{}return send.call(this,data)};window.opened=[];window.open=(...args)=>{opened.push(args);return {opener:null}};})()`);
+    await js(`(async()=>{window.store=(await import('/js/store.js')).store;store.select(${JSON.stringify(sid)});window.tm=await import('/js/ui/terminal.js');window.term=tm.__termForTest();window.sent=[];const send=WebSocket.prototype.send;WebSocket.prototype.send=function(data){try{sent.push(JSON.parse(data))}catch{}return send.call(this,data)};window.opened=[];window.open=(...args)=>{opened.push(args);return {opener:null,location:{}}};})()`);
     const place=async text=>{
       await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:10,y:10});
       await js(`(async()=>{(await import('/js/ui/menu.js')).closeMenu();document.querySelector('.cd-tab')?.click();term.reset();await new Promise(r=>term.write(${JSON.stringify(text+'\r\n')},r));(await import('/js/ui/paths.js')).probe(store.activeId,[${JSON.stringify(text)}]);})()`);
@@ -53,6 +54,26 @@ const check = (name, yes, detail) => { yes ? passes++ : fails++; console.log(`${
     };
     const labels=()=>js(`[...document.querySelectorAll('.menu-item')].map(e=>e.textContent)`);
     const countOpens=()=>js(`sent.filter(e=>e.type==='content.open').length`);
+    const osc='\x1b]8;;https://example.com/osc-target\x07Example link\x1b]8;;\x07';
+    for(const [button,modifiers,name] of [['right',0,'right-click'],['left',2,'Mac Control-click'],['right',8,'Shift right-click']]) {
+      const point=await place(osc), before=await js('opened.length'), prompts=dialogs.length;
+      await mouse(point,button,modifiers);
+      check('OSC8 '+name+' does not prompt or navigate',await js('opened.length')===before&&dialogs.length===prompts,{opens:await js('opened.length')-before,dialogs:dialogs.length-prompts});
+      check('OSC8 '+name+' retains expected menu',modifiers===8?!await js("!!document.querySelector('.menu')"):(await labels()).slice(0,2).join('|')==='Copy|Paste');
+    }
+    const oscPoint=await place(osc), beforeOsc=await js('opened.length'), prompts=dialogs.length;
+    await mouse(oscPoint,'left');
+    check('OSC8 left-click still confirms then opens',dialogs.length===prompts+1&&await js('opened.length')===beforeOsc+1);
+    check('OSC8 confirmation reveals hidden destination',dialogs.at(-1).includes('https://example.com/osc-target'));
+    acceptDialog=false;await mouse(oscPoint,'left');acceptDialog=true;
+    check('OSC8 Cancel does not open browser',await js('opened.length')===beforeOsc+1);
+    for(const uri of ['javascript:alert(1)','file:///tmp/notes.md']) {
+      const point=await place('\x1b]8;;'+uri+'\x07Hidden label\x1b]8;;\x07'), before=await js('opened.length'), promptCount=dialogs.length;
+      await mouse(point,'left');
+      check('OSC8 non-HTTP URI stays inactive: '+uri,await js('opened.length')===before&&dialogs.length===promptCount);
+    }
+    const selected=await place(osc);await js('term.select(0,0,7)');const beforeSelection=await js('opened.length');await mouse(selected);
+    check('OSC8 right-click preserves selection without opening',await js('term.getSelection()')==='Example'&&await js('opened.length')===beforeSelection);
     for(const file of ['notes.md','notes.txt','notes.html']) {
       for(const [button,modifiers,name] of [['right',0,'right-click'],['left',2,'Mac Control-click']]) {
         const point=await place(file), before=await countOpens();
@@ -93,11 +114,11 @@ const check = (name, yes, detail) => { yes ? passes++ : fails++; console.log(`${
     check('HTML body right-click keeps native menu without opening page',!await js("!!document.querySelector('.menu')")&&(await cmd('Target.getTargets')).targetInfos.filter(t=>t.type==='page').length===targets);
     for(const theme of ['dark','light']) {
       await js(`(async()=>{(await import('/js/theme.js')).setThemePref(${JSON.stringify(theme)})})()`);
-      const point=await place('notes.md');await mouse(point);await snap('text-menu-'+theme+'.png');
+      const point=await place(osc);await mouse(point);await snap('osc8-menu-'+theme+'.png');
       check(theme+' text menu fits viewport',await js(`(()=>{const r=document.querySelector('.menu').getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight})()`));
     }
     await cmd('Emulation.setDeviceMetricsOverride',{width:420,height:800,deviceScaleFactor:1,mobile:false});await sleep(300);
-    const point=await place('notes.md');await mouse(point);await snap('text-menu-narrow.png');
+    const point=await place(osc);await mouse(point);await snap('osc8-menu-narrow.png');
     check('narrow text menu fits viewport',await js(`(()=>{const r=document.querySelector('.menu').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight})()`));
   } finally {
     cws?.close();ctl?.close();chrome?.kill();await server.close();

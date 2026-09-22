@@ -3,6 +3,7 @@ const { randomUUID } = require('crypto');
 const { delimiter, join } = require('path');
 const pty = require('./pty');
 const { Screen } = require('./screen');
+const { migrateLegacyHooks } = require('./legacy-hooks');
 const { hasNonemptyFile, waitForNonemptyFile } = require('./transcript-file');
 const { augmentedPath } = require('./custom-command');
 
@@ -118,13 +119,15 @@ class AgentSession extends EventEmitter {
       ? this.launchOptions.extraArgs.filter((value) => typeof value === 'string')
       : [];
     this.launchCleanup = launch.cleanup || (() => {});
+    const env = sessionEnvironment(launch.env, this.id, this.port, this.colorfgbg, this.serverUrl);
+    migrateLegacyHooks(this.provider.id, env, this.cwd);
     try {
       this.terminal = pty.spawn(launch.command, [...extraArgs, ...(launch.args || [])], {
         name: 'xterm-256color',
         cols: this.cols,
         rows: this.rows,
         cwd: this.cwd,
-        env: sessionEnvironment(launch.env, this.id, this.port, this.colorfgbg, this.serverUrl),
+        env,
       });
     } catch (error) {
       this.launchCleanup();
@@ -495,7 +498,8 @@ class AgentSession extends EventEmitter {
       this.beginTurn();
       this.setStatus('working');
     }
-    if (this.menu.length && this.userPrompts.length && /[\r\n0-9]/.test(input)) {
+    // Menu approval continues the current turn, regardless of how it was submitted.
+    if (this.menu.length && this.turnOpen && /[\r\n0-9]/.test(input)) {
       this.beginTurn();
       this.setStatus('working');
     }

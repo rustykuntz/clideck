@@ -4,6 +4,9 @@
 // Per-terminal pipeline order (matches v1 hotkeys.js:115-158) — the // prompt trigger owns its key window,
 // so the terminal-native keys are decided BEFORE it, and the registry catches whatever survives:
 //   OSC52 (output) → Ctrl+C-copy → Shift+Enter → clear/Ctrl+K → // interception → registry
+import { send } from "../ws.js";
+import { pastePayload } from "./paste.js";
+import { toast } from "./toast.js";
 import { store } from "../store.js";
 import { handleTerminalKey } from "./prompts.js";
 
@@ -11,7 +14,22 @@ const registry = new Map();                 // normalized combo → { pluginId, 
 const MAX_OSC52_BYTES = 512 * 1024;
 const MULTILINE_PROVIDERS = new Set(["claude-code", "antigravity"]);
 const IS_MAC = /Mac|iPhone|iPad/i.test((typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || "");
+export function ctrlVPasteEnabled() {
+  try { return localStorage.getItem("clideck.ctrlVPaste") === "true"; } catch { return false; }
+}
 const writeClipboard = (text) => { try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text); } catch {} return null; };
+
+// macOS only binds Cmd+V to native Paste. Guard the asynchronous read against focus/session changes.
+async function pasteOnMac(term) {
+  const session = store.active(), target = term.textarea, pid = session?.pid;
+  if (!session || session.live === false || document.activeElement !== target) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || store.active() !== session || session.pid !== pid || session.live === false || document.activeElement !== target) return;
+    if (session.bracketedPaste ?? term.modes.bracketedPasteMode) send({ type: "input", sessionId: session.id, data: pastePayload(text) });
+    else term.paste(text);
+  } catch { toast({ type: "error", body: "Could not read the clipboard. Use Cmd+V to paste." }); }
+}
 
 // ── combo registry (Cmd ≡ Ctrl) ────────────────────────────────────────────────
 // F1 THROUGH F24 — the keys a user may bind BARE, because they do not type: a bare letter or digit shortcut
@@ -135,6 +153,13 @@ export function attachToTerminal(term, getProvider, isReplaying) {
   attachClipboardOscHandler(term, isReplaying);
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== "keydown") return true;
+
+    // Let the browser deliver its native paste event to the existing terminal paste handler.
+    // Non-Mac keeps native focus/permission handling; Mac needs an explicit clipboard read.
+    if (!e.isComposing && e.keyCode !== 229 && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === "KeyV" && ctrlVPasteEnabled()) {
+      if (IS_MAC) { e.preventDefault(); pasteOnMac(term); }
+      return false;
+    }
 
     // 1. Ctrl+C copies a selection instead of sending SIGINT — ONLY when a selection exists; otherwise it
     //    passes through untouched so ^C still interrupts the shell (v1 :117-128).

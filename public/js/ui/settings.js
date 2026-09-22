@@ -15,7 +15,7 @@ import { themePref, setThemePref, onThemePref, THEME_PREFS, THEME_LABELS } from 
 import { getPrefs, setPref, onPrefs, enableBrowser, notifyPermission, previewSound, SOUND_OPTS, DISPATCH_OPTS, MINWORK_OPTS } from "../notify.js";
 import { pluginClientError, onPluginHostChange } from "./plugin-host.js";
 import { backupControls, isRestoreOpen, isBackupBusy } from "./backup-restore.js";
-import { hotkeyComboFromEvent, hotkeyConflict, hotkeyCodeFromEvent, isFunctionKey } from "./hotkeys.js";
+import { hotkeyComboFromEvent, hotkeyConflict, hotkeyCodeFromEvent, isFunctionKey, ctrlVPasteEnabled } from "./hotkeys.js";
 
 const CLOSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const FOLDER = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -179,6 +179,17 @@ function renderGeneral() {
 
   const beh = section("Behavior", "behavior");
   beh.append(toggleRow("Confirm before closing a session", "When off, Delete closes immediately — no confirm step.", store.confirmClose !== false, (on) => updateConfig({ confirmClose: on })));
+  const paste = toggleRow("Paste with Ctrl+V", "In terminals on this browser. Off keeps the terminal’s normal Ctrl+V behavior.", ctrlVPasteEnabled(), (on) => {
+    try { localStorage.setItem("clideck.ctrlVPaste", String(on)); }
+    catch {
+      const button = paste.querySelector("[role=switch]");
+      button.classList.toggle("on", ctrlVPasteEnabled());
+      button.setAttribute("aria-checked", String(ctrlVPasteEnabled()));
+      import("./toast.js").then(({ toast }) => toast("Could not save this browser setting."));
+    }
+  });
+  paste.querySelector("[role=switch]").setAttribute("aria-label", "Paste with Ctrl+V");
+  beh.append(paste);
   els.body.append(beh);
 
   // Say what is in the file, in the row. A backup nobody understands the scope of is a backup nobody trusts.

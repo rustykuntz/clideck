@@ -4,7 +4,7 @@ import { store } from "../store.js";
 import { send } from "../ws.js";
 import { toast } from "./toast.js";
 
-const KEYS = { "clideck.theme": "appearance", "clideck.sidebarW": "appearance", "clideck.collapsed": "appearance", "clideck.mru-provider": "agents" };
+const KEYS = { "clideck.ctrlVPaste": "behavior", "clideck.theme": "appearance", "clideck.sidebarW": "appearance", "clideck.collapsed": "appearance", "clideck.mru-provider": "agents" };
 const pickerKey = /^clideck\.picker\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.recent$/;
 const sectionFor = (key) => KEYS[key] || (pickerKey.test(key) ? "plugins" : null);
 let active = null, transferBusy = false;

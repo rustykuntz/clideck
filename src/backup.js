@@ -37,6 +37,7 @@ function safeJson(value) {
   });
 }
 function browserSection(key) {
+  if (key === 'clideck.ctrlVPaste') return 'behavior';
   if (['clideck.theme', 'clideck.sidebarW', 'clideck.collapsed'].includes(key)) return 'appearance';
   if (key === 'clideck.mru-provider') return 'agents';
   if (/^clideck\.picker\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.recent$/.test(key)) return 'plugins';
@@ -48,7 +49,8 @@ function browserPrefs(value = {}) {
   for (const [key, v] of Object.entries(value)) {
     if (!browserSection(key)) continue;
     requireValid(text(v, 32 * 1024), 'Invalid browser preference in backup.');
-    if (key === 'clideck.theme') requireValid(['auto', 'dark', 'light'].includes(v));
+    if (key === 'clideck.ctrlVPaste') requireValid(['true', 'false'].includes(v), 'Invalid browser preference in backup.');
+    else if (key === 'clideck.theme') requireValid(['auto', 'dark', 'light'].includes(v));
     else if (key === 'clideck.sidebarW') requireValid(Number.isFinite(Number(v)) && Number(v) > 0 && Number(v) <= 10000);
     else if (key === 'clideck.collapsed' || key.endsWith('.recent')) {
       let parsed;

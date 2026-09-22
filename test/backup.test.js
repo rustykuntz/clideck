@@ -53,6 +53,23 @@ test('full backup and preview include settings, all sessions and only known brow
   assert.equal(preview.sessions[0].id, 'ungrouped');
 });
 
+test('Ctrl+V preference is validated and restored only with Behavior', (t) => {
+  const server = fixture(t);
+  for (const enabled of ['true', 'false']) {
+    const backup = createBackup(server, { 'clideck.ctrlVPaste': enabled });
+    assert.equal(backup.settings.behavior.browser['clideck.ctrlVPaste'], enabled);
+    assert.deepEqual(restoreBackup(server, backup, select(['behavior'])).browser,
+      { 'clideck.ctrlVPaste': enabled });
+    assert.deepEqual(restoreBackup(server, backup, select(['appearance'])).browser, {});
+  }
+  for (const invalid of ['yes', '', true, 1]) {
+    assert.throws(() => createBackup(server, { 'clideck.ctrlVPaste': invalid }), /Invalid browser preference/);
+  }
+  const backup = createBackup(server, {});
+  backup.settings.behavior.browser['clideck.ctrlVPaste'] = 'yes';
+  assert.throws(() => parseBackup(backup), /Invalid browser preference/);
+});
+
 test('restore one session brings its project and theme, keeps other state, and survives restart', (t) => {
   const backup = sample(fixture(t)), target = fixture(t);
   target.configStore.update({ about: { name: 'Target' }, projects: [{ ...project, id: 'other' }],

@@ -1,6 +1,6 @@
 {
   "name": "clideck",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "Run AI agents from different providers, let them work with you and each other, and view their work in one place",
   "main": "src/server.js",
   "bin": {

@@ -2,7 +2,8 @@
 
 Open **Settings → General → Backup & restore**. **Backup** downloads one dated JSON
 file with your settings, projects and session definitions, including stopped sessions.
-It also includes this browser's appearance preferences and recent picker choices.
+It also includes this browser's appearance preferences, Ctrl+V paste setting and
+recent picker choices. The Ctrl+V setting is restored with **Behavior**.
 
 Choose **Restore**, open the file, and tick what you want to bring back. Everything
 starts selected. You can restore all settings, individual settings sections, whole

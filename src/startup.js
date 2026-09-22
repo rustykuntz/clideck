@@ -34,7 +34,22 @@ function nonLoopbackWarning(host) {
   return `[SECURITY WARNING] clideck-next is listening on non-loopback host ${host} without authentication.`;
 }
 
+// Do not hold up startup for the registry or turn a network failure into a launch
+// failure. Source checkouts and installed packages need different update advice.
+async function notifyUpdate({ currentVersion, output = process.stdout, sourceCheckout = false,
+  check = require('./update-check').checkForUpdate }) {
+  if (!output.isTTY) return;
+  try {
+    const latest = await check({ currentVersion });
+    if (!latest) return;
+    const instruction = sourceCheckout ? 'Update your source checkout, then restart CliDeck.'
+      : 'Run npm install -g clideck, then restart CliDeck.';
+    output.write(`\nCliDeck update available: ${currentVersion} → ${latest}. ${instruction}\n`);
+  } catch {} // Optional notice; offline startup still works.
+}
+
 module.exports = {
+  notifyUpdate,
   alreadyRunningLine,
   nonLoopbackWarning,
   openUrlHint,

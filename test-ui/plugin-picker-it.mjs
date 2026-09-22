@@ -27,14 +27,40 @@ document.activeElement._fire("click");
 ok("selection resolves the exact declarative id", await first === "wave" && !document.querySelector(".pk-overlay"));
 
 const reopened = openPluginPicker("fixture", options); await tick();
-ok("recent choices persist under the plugin and picker identity", document.querySelector(".pk-recent .pk-item")?.dataset.itemId === "wave");
+ok("recent choices persist and the most recent valid item starts focused", document.querySelector(".pk-recent .pk-item")?.dataset.itemId === "wave" && document.activeElement === document.querySelector(".pk-recent .pk-item"));
+docFire("keydown", { key: "Enter", preventDefault() {}, stopPropagation() {} });
+ok("Enter immediately chooses the recent item", await reopened === "wave");
+const outside = openPluginPicker("fixture", options); await tick();
 document.querySelector(".pk-overlay")._fire("mousedown", { target: document.querySelector(".pk-overlay") });
-ok("outside click cancels with null", await reopened === null);
+ok("outside click cancels with null", await outside === null);
 
 const superseded = openPluginPicker("fixture", options); await tick();
 const latest = openPluginPicker("other-plugin", { ...options, id: "other" }); await tick();
 ok("opening a second picker cancels the first", await superseded === null && document.querySelectorAll(".pk-overlay").length === 1);
 ok("teardown is owner-scoped", closePluginPicker("fixture") === false && closePluginPicker("other-plugin") === true && await latest === null);
+
+const returnFocus = document.createElement("button"); document.body.appendChild(returnFocus); returnFocus.focus();
+localStorage.setItem("clideck.picker.fixture.symbols.recent", '["missing","circle","wave"]');
+const recent = openPluginPicker("fixture", options); await tick();
+ok("removed recent ids are skipped", document.activeElement?.dataset.itemId === "circle");
+docFire("keydown", { key: "ArrowRight", preventDefault() {}, stopPropagation() {} });
+ok("arrow navigation still moves between recents", document.activeElement?.dataset.itemId === "wave");
+docFire("keydown", { key: "Escape", preventDefault() {}, stopPropagation() {} });
+ok("Escape cancels and restores invoking focus", await recent === null && document.activeElement === returnFocus);
+localStorage.setItem("clideck.picker.fixture.symbols.recent", '["missing"]');
+const stale = openPluginPicker("fixture", options); await tick();
+ok("no valid recents falls back to search", document.activeElement === document.querySelector(".pk-input"));
+closePluginPicker(); await stale;
+const raf = globalThis.requestAnimationFrame, frames = [];
+globalThis.requestAnimationFrame = fn => frames.push(fn);
+const closed = openPluginPicker("fixture", options); closePluginPicker(); frames.shift()();
+ok("pending initial frame cannot steal focus after close", await closed === null && document.activeElement === returnFocus);
+const old = openPluginPicker("fixture", options);
+const replacement = openPluginPicker("other-plugin", options);
+const oldFrame = frames.shift(), newFrame = frames.shift(); newFrame();
+const replacementFocus = document.activeElement; oldFrame();
+ok("replaced picker frame cannot steal new picker focus", await old === null && document.activeElement === replacementFocus && replacementFocus.isConnected);
+closePluginPicker(); await replacement; globalThis.requestAnimationFrame = raf;
 
 let bounded = false;
 try { openPluginPicker("fixture", { ...options, items: Array.from({ length: 257 }, (_, i) => ({ id: String(i), label: String(i) })) }); }

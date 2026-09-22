@@ -68,5 +68,25 @@ for (const link of links) {
   link.activate({ button: 0 }, link.text);
   ok(link.text + " next ordinary click is unaffected", count() === before + 1);
 }
+const osc = term.options.linkHandler;
+const mount = document.getElementById("term");
+const destination = "https://example.com/hidden-destination";
+const prompts = []; let answer = true;
+window.confirm = text => { prompts.push(text); return answer; };
+const beforeOsc = opened.length;
+for (const button of [1, 2]) osc.activate({ button }, destination);
+ok("OSC8 middle/right releases do not prompt or open", prompts.length === 0 && opened.length === beforeOsc);
+for (const shiftKey of [false, true]) {
+  mount._fire("mousedown", { button: 0, ctrlKey: true });
+  mount._fire("contextmenu", { button: 0, ctrlKey: true, shiftKey, preventDefault() {} });
+  osc.activate({ button: 0, ctrlKey: true }, destination);
+}
+ok("OSC8 context gestures including native menu never prompt or open", prompts.length === 0 && opened.length === beforeOsc);
+mount._fire("mousedown", { button: 0 });
+answer = false; osc.activate({ button: 0 }, destination);
+ok("OSC8 left-click still shows destination and respects Cancel", prompts[0].includes(destination) && opened.length === beforeOsc);
+answer = true; osc.activate({ button: 0 }, destination);
+ok("OSC8 confirmed left-click uses isolated browser opening", opened.length === beforeOsc + 1 && opened.at(-1).join("|") === destination + "|_blank|noopener,noreferrer");
+ok("OSC8 non-HTTP protocols remain disabled by default", osc.allowNonHttpProtocols !== true);
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

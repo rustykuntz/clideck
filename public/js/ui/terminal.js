@@ -79,6 +79,11 @@ export function initTerminal() {
     scrollback: 10000, cols: 120, rows: 34, allowProposedApi: true,
     minimumContrastRatio: 4.5, smoothScrollDuration: 180,        // v1 parity: legibility floor + gentle scroll
     macOptionIsMeta: true, drawBoldTextInBrightColors: true,
+    // OSC8 links bypass our text providers. Keep their destination confirmation, but never on a menu gesture.
+    linkHandler: { activate: (event, uri) => {
+      if (event.button !== 0 || linkContextGesture) return;
+      if (window.confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) openUrl(uri);
+    } },
   });
   term.open(mount);
   installScrollbackPreservation(term);

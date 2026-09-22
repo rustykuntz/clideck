@@ -28,8 +28,8 @@ function deletePrompt(id) {
   if (p) toast.info({ id: "prompt-del", title: "Prompt deleted", body: "`" + p.name + "`", markdown: true });
 }
 
-// The one ranking ladder, shared with searchAgents: 3 = you typed the WHOLE name, 2 = the name contains it,
-// 1 = only the body does. Ties keep the order the caller handed in — which is where project/MRU preference
+// Saved prompts: whole name > name prefix > other name substring > body.
+// Agents retain their existing whole-name/address > name substring > address ladder. Ties keep the order the caller handed in — which is where project/MRU preference
 // lives, so preference breaks an equal rank and can never lift a weak match over a strong one.
 //
 // ⚠️ THAT ORDER OF OPERATIONS IS THE FIX, and reversing it is the bug (Or, 09-09): `//reviewer` offered
@@ -37,6 +37,7 @@ function deletePrompt(id) {
 // named "reviewer", because the preference partition ran AFTER the rank sort and moved the whole preferred
 // group to the top. Partition the INPUT, rank the result. Never partition a ranked list.
 const RANK_EXACT = 3, RANK_NAME = 2, RANK_BODY = 1;
+const PROMPT_EXACT = 4, PROMPT_PREFIX = 3;
 function searchPrompts(prompts, filter) {
   const q = (filter || "").toLowerCase().trim();
   if (!q) return prompts;
@@ -48,7 +49,7 @@ function searchPrompts(prompts, filter) {
 }
 function promptRank(p, q) {
   const name = String(p.name || "").toLowerCase();
-  return name === q ? RANK_EXACT : name.includes(q) ? RANK_NAME : String(p.text || "").toLowerCase().includes(q) ? RANK_BODY : 0;
+  return name === q ? PROMPT_EXACT : name.startsWith(q) ? PROMPT_PREFIX : name.includes(q) ? RANK_NAME : String(p.text || "").toLowerCase().includes(q) ? RANK_BODY : 0;
 }
 
 // ── paste into the active terminal + refocus ───────────────────────────────────

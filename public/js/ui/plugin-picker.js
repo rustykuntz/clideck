@@ -171,7 +171,11 @@ export function openPluginPicker(pluginId, options) {
   document.body.classList.add("cd-modal-open");
   renderChips(); renderResults();
   active = { pluginId, overlay, finish };
-  requestAnimationFrame(() => { overlay.classList.add("show"); input.focus(); });
+  requestAnimationFrame(() => {
+    if (active?.overlay !== overlay) return;
+    overlay.classList.add("show");
+    (results.querySelector(".pk-recent .pk-item") || input).focus();
+  });
   return promise;
 }
 

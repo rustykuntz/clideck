@@ -39,7 +39,7 @@ const { isAllowedWebSocketOrigin, isLoopbackAddress, isLoopbackHost } = require(
 const { listSessionAgents, resolveLiveCaller } = require('./session-agents');
 const { servePluginStatic, serveStatic } = require('./static');
 const { ServerLock } = require('./server-lock');
-const { alreadyRunningLine, startupBanner } = require('./startup');
+const { alreadyRunningLine, startupBanner, notifyUpdate } = require('./startup');
 const { TranscriptStore } = require('./transcript-store');
 const { MAX_UPLOAD_BYTES, UploadError, saveUpload } = require('./upload');
 const { checkCommandAvailability } = require('./availability');
@@ -1889,6 +1889,10 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     version: ENGINE_BUILD_VERSION, url: address.httpUrl, isTTY: process.stdout.isTTY,
   }));
   installShutdownHandlers(server);
+  void notifyUpdate({
+    currentVersion: require('../package.json').version,
+    sourceCheckout: existsSync(require('path').join(__dirname, '../.git')),
+  });
   return { server, address, lock };
 }
 

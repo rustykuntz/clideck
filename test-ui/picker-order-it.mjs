@@ -210,6 +210,27 @@ try {
     guessed && mixed.slice(0, 4).join(",") === "reviewer,Senior reviewer,Daily checklist,revewer digest",
     mixed.join(",") + (guessed ? "" : "  [scorer no longer offers it — fixture needs a new near miss]"));
 
+  // Saved prompt prefixes outrank other name substrings, independently of library/project preference.
+  const prefixPrompts = [
+    { id: "ui", name: "UI programmer", text: "UI instructions" },
+    { id: "body", name: "Daily notes", text: "Find the programmer" },
+    { id: "intro", name: "programmer intro", text: "Programmer instructions" },
+    { id: "guide", name: "programmer guide", text: "Guide instructions" },
+    { id: "exact", name: "prog", text: "Exact instructions" },
+  ];
+  ladder({ prompts: prefixPrompts, promptMru: {} });
+  ok("// prefix beats earlier library substring; equal prefixes keep library order",
+    slash("program").slice(0, 4).join(",") === "programmer intro,programmer guide,UI programmer,Daily notes");
+  ladder({ prompts: prefixPrompts, promptMru: { pr: ["ui", "body", "guide"] } });
+  ok("// exact beats prefix, preferred substring/body stay lower, preference breaks prefix tie",
+    slash("PROG").slice(0, 5).join(",") === "prog,programmer guide,programmer intro,UI programmer,Daily notes");
+  slash("program"); ws.clear(); key("Enter");
+  ok("// Enter completes highest-ranked preferred prefix, not preferred substring",
+    ws.last("input")?.data === "\x1b[200~Guide instructions\x1b[201~");
+  slash("prog"); ws.clear(); key("Tab");
+  ok("// Tab completes exact name ahead of preferred prefix",
+    ws.last("input")?.data === "\x1b[200~Exact instructions\x1b[201~");
+
   closePromptDropdown();
 } catch (error) {
   fail++; console.log("  FAIL threw: " + (error && error.stack || error));

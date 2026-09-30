@@ -223,7 +223,7 @@ export function requestTranscriptPage(sessionId, before, limit = 30) {
 
 export function connectWs() {
   clearTimeout(retry);
-  try { ws = new WebSocket(`ws://${location.host}`); }
+  try { ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`); }
   catch { scheduleReconnect(); return; }
 
   ws.onopen = () => {

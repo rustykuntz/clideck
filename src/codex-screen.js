@@ -79,10 +79,16 @@ function hasInputCommand(lines, command) {
 
 function startupModel(lines) {
   const banner = lines.findIndex((line) => /^\s*│\s*>_ OpenAI Codex \(v[^)]+\)\s*│\s*$/.test(line));
-  if (banner < 0) return '';
-  for (const line of lines.slice(banner + 1, banner + 4)) {
-    const match = line.match(/^\s*│\s*model:\s+(\S+)(?:\s+(?:minimal|low|medium|high|xhigh|default))?\s+\/model to change\s*│\s*$/);
-    if (match && !/^loading(?:\.{3}|…)?$/i.test(match[1])) return match[1];
+  if (banner >= 0) {
+    for (const line of lines.slice(banner + 1, banner + 4)) {
+      const match = line.match(/^\s*│\s*model:\s+(\S+)(?:\s+(?:minimal|low|medium|high|xhigh|default))?\s+\/model to change\s*│\s*$/);
+      if (match && !/^loading(?:\.{3}|…)?$/i.test(match[1])) return match[1];
+    }
+  }
+  // Codex 0.159 moved the selected model to the footer prompt line.
+  for (const line of lines.slice(-12)) {
+    const match = line.match(/^\s*(\S+)\s+(?:minimal|low|medium|high|xhigh|default)\s+·\s+[~/][^\n]*$/i);
+    if (match && !/^loading(?:\.{3}|…)?$/i.test(match[1])) return match[1].toLowerCase();
   }
   return '';
 }

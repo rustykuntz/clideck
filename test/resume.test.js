@@ -113,6 +113,55 @@ test('dormant resume reuses metadata and falls back to a fresh provider launch w
   }
 });
 
+test('Codex session-start hook persists its native ID for the next CliDeck restart', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'clideck-next-codex-hook-resume-'));
+  const server = new HeadlessServer({ port: 0, dataDir });
+  const starts = [];
+  server.startSession = (options, register, createdFields) => {
+    starts.push({ options, register, createdFields });
+    return { id: options.id };
+  };
+
+  try {
+    await server.listen();
+    const session = {
+      id: 'codex-hook-resume',
+      provider: getProvider('codex'),
+      name: 'Codex worker',
+      cwd: 'C:\\project',
+      cols: 100,
+      rows: 30,
+      hookToken: 'launch-secret',
+      handleHook() {},
+      recordResumeMetadata() {},
+    };
+    server.sessions.set(session.id, session);
+    server.persistence.register(session);
+
+    const response = await fetch(`http://127.0.0.1:${server.port}/hooks/${session.id}/session-start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Clideck-Launch': session.hookToken,
+      },
+      body: JSON.stringify({
+        source: 'startup',
+        session_id: 'codex-native-session',
+        transcript_path: 'C:\\Users\\Sam\\.codex\\sessions\\codex-native.jsonl',
+      }),
+    });
+    assert.equal(response.status, 204);
+    server.sessions.delete(session.id);
+
+    assert.equal(server.resumeSession(session.id).id, session.id);
+    assert.equal(starts[0].options.providerOptions.resumeHandle, 'codex-native-session');
+  } finally {
+    server.sessions.clear();
+    await server.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('engine shutdown waits for live PTYs before closing persistence', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'clideck-next-close-unit-'));
   const server = new HeadlessServer({ port: 0, dataDir });

@@ -4,8 +4,8 @@ const {
   hasCodexDeveloperInstructions,
 } = require('./agent-session-guide');
 
-function hookGroup(command, timeout = 5) {
-  return `[{ hooks = [{ type = "command", command = ${JSON.stringify(command)}, timeout = ${timeout} }] }]`;
+function hookGroup(command, timeout = 5, commandWindows = command) {
+  return `[{ hooks = [{ type = "command", command = ${JSON.stringify(command)}, commandWindows = ${JSON.stringify(commandWindows)}, timeout = ${timeout} }] }]`;
 }
 
 function createCodexLaunch({
@@ -20,20 +20,36 @@ function createCodexLaunch({
 }) {
   const node = process.execPath.replace(/\\/g, '/');
   const script = join(__dirname, 'codex-hook.js').replace(/\\/g, '/');
+  const windowsScript = join(__dirname, 'codex-hook.js');
   // Codex trusts the exact hook definition. Keep launch-specific values in the
   // child environment so restarting a session does not change all four hashes.
   const hookCommand = (route) => `"${node}" "${script}" ${route}`;
+  // Codex evaluates commandWindows in PowerShell, where quoted executable
+  // paths need the call operator to execute instead of becoming bare strings.
+  const windowsHookCommand = (route) => `& "${process.execPath}" "${windowsScript}" ${route}`;
+  const hook = (route, timeout = 5) => hookGroup(
+    hookCommand(route), timeout, windowsHookCommand(route),
+  );
   const args = [
     '--enable',
     'hooks',
+    // Each CliDeck PTY needs its own inherited CLIDECK_* hook environment.
+    // The shared Codex daemon runs hooks in the daemon's environment instead.
     '-c',
-    `hooks.UserPromptSubmit=${hookGroup(hookCommand('start'))}`,
+    'features.daemon_auto_start=false',
+    // The global legacy notifier can exceed Windows process limits when it
+    // serializes a large turn. CliDeck has its own status hooks, so suppress it
+    // in managed Codex processes.
     '-c',
-    `hooks.Stop=${hookGroup(hookCommand('stop'))}`,
+    'notify=[]',
     '-c',
-    `hooks.SessionStart=${hookGroup(hookCommand('session-start'))}`,
+    `hooks.UserPromptSubmit=${hook('start')}`,
     '-c',
-    `hooks.Interrupt=${hookGroup(hookCommand('idle'), 3)}`,
+    `hooks.Stop=${hook('stop')}`,
+    '-c',
+    `hooks.SessionStart=${hook('session-start')}`,
+    '-c',
+    `hooks.Interrupt=${hook('idle', 3)}`,
   ];
   if (!hasCodexDeveloperInstructions(command, extraArgs)) {
     args.push('-c', `developer_instructions=${JSON.stringify(agentGuide || AGENT_SESSION_GUIDE)}`);

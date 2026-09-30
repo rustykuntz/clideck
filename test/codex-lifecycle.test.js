@@ -33,7 +33,8 @@ test('Codex displays the native startup model before hooks and later hook metada
   assert.equal(session.model, 'another-native-model');
   const { startupModel } = session.provider.screen;
   assert.equal(startupModel(lines.slice(2)), '');
-  assert.equal(startupModel(['gpt-6-astra default · ~/project']), '');
+  assert.equal(startupModel(['gpt-6-astra default · ~/project']), 'gpt-6-astra');
+  assert.equal(startupModel(['  GPT-6-Luna default · ~\\Documents\\fix-china']), 'gpt-6-luna');
   assert.equal(startupModel(lines.map(line => line.replace('gpt-6-astra   ', 'gpt-6-astra high   '))), 'gpt-6-astra');
   assert.equal(startupModel(lines.map(line => line.replace('/model to change', 'unrelated prose'))), '');
 });

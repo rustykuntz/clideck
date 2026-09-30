@@ -14,6 +14,7 @@ import { toast } from "./toast.js";
 import { closePromptDropdown, registerTerminalFocus } from "./prompts.js";
 import { attachToTerminal } from "./hotkeys.js";
 import { pastePayload } from "./paste.js";
+import { uploadFiles } from "./drop.js";
 import { startBounce } from "./bounce.js";
 import { onTerminalTabShown } from "./content-dock.js";
 import { candidatesIn, linkFor, probeDebounced } from "./paths.js";
@@ -129,6 +130,13 @@ export function initTerminal() {
   // textarea handler so clipboard line endings or embedded bracket markers cannot submit partway through.
   mount.addEventListener("paste", (e) => {
     const s = store.active();
+    const files = e.clipboardData && e.clipboardData.files ? Array.from(e.clipboardData.files) : [];
+    if (s && s.live !== false && files.length) {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadFiles(s, files);
+      return;
+    }
     const text = e.clipboardData && e.clipboardData.getData("text/plain");
     const bracketedPaste = s?.bracketedPaste ?? term.modes.bracketedPasteMode;
     if (!s || s.live === false || !text || !bracketedPaste) return;

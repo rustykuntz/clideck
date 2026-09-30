@@ -97,7 +97,19 @@ function onDrop(e) {
   } else {
     for (const f of files) { if (supported(f)) uploadOne(s, f); else bad.push(f); }
   }
+  reportRejected(bad);
+}
+
+function reportRejected(bad) {
   if (bad.length) toast.info({ id: "drop-reject", title: "Can’t send that", body: bad.length === 1 ? "“" + bad[0].name + "” — executables & archives aren’t supported" : bad.length + " files skipped (executables / archives)" });
+}
+
+// Pasted files (a copied file, a screenshot) follow the terminal-drop rules: each supported file uploads to the
+// session and its path is pasted in; executables and archives are refused.
+export function uploadFiles(s, files) {
+  const bad = [];
+  for (const f of files) { if (supported(f)) uploadOne(s, f); else bad.push(f); }
+  reportRejected(bad);
 }
 
 // Dropped ON THE TAB STRIP → open each file as a document tab, BY VALUE.

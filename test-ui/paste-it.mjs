@@ -4,6 +4,15 @@ import { installFakeDom, installFakeWs } from "./fakedom.mjs";
 
 installFakeDom();
 const ws = installFakeWs();
+const uploads = [];
+globalThis.XMLHttpRequest = class {
+  open(method, url) { this.url = url; this.upload = {}; }
+  send(body) {
+    uploads.push({ url: this.url, body });
+    const name = decodeURIComponent((/[?&]name=([^&]+)/.exec(this.url) || [])[1] || "file");
+    setTimeout(() => { this.status = 200; this.responseText = JSON.stringify({ ok: true, path: "/a/" + name, name }); this.onload(); }, 0);
+  }
+};
 const el = (tag, id, parent = document.body) => {
   const node = document.createElement(tag); node.id = id; parent.appendChild(node); return node;
 };
@@ -104,6 +113,28 @@ try {
   ok("long replay tails cannot disable atomic paste",
     prevented && stopped && ws.sent.filter((m) => m.type === "input").length === 1
       && ws.last("input")?.data === pastePayload(longPaste));
+
+  ws.clear(); prevented = false; stopped = false;
+  const shot = { name: "image.png", type: "image/png", size: 10 };
+  document.getElementById("term")._fire("paste", {
+    target: terminal.textarea,
+    clipboardData: { files: [shot], getData: () => "" },
+    preventDefault: () => { prevented = true; },
+    stopPropagation: () => { stopped = true; },
+  });
+  await sleep(5);
+  ok("a pasted file uploads to the active session like a terminal drop",
+    prevented && stopped && uploads.length === 1 && /sessionId=A&name=image\.png/.test(uploads[0].url) && uploads[0].body === shot);
+  ok("the uploaded path is pasted, not sent", ws.last("input")?.data === pastePayload("/a/image.png"));
+
+  ws.clear(); uploads.length = 0;
+  document.getElementById("term")._fire("paste", {
+    target: terminal.textarea,
+    clipboardData: { files: [{ name: "bundle.zip", type: "application/zip", size: 10 }], getData: () => "" },
+    preventDefault: () => {}, stopPropagation: () => {},
+  });
+  await sleep(5);
+  ok("a pasted archive is refused like a dropped one", uploads.length === 0 && !ws.last("input"));
 
   ws.clear();
   terminal.dataHandler("\r");

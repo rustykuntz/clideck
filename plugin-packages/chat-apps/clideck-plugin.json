@@ -1,0 +1,12 @@
+{
+  "id": "chat-apps",
+  "name": "Chat apps",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "enabledByDefault": false,
+  "description": "Connect your existing WhatsApp account and link your private groups to individual Claude or Codex agents. Experimental linked-device connection; no second phone number. Set up in Configure. Computer must stay awake with CliDeck running.",
+  "icon": "phone",
+  "commands": [
+    { "name": "whatsapp", "description": "Set up WhatsApp and link groups to agents. status, connect, disconnect, groups, bind <group-id> [session-id], unbind <group-id>, test <group-id>, pending, acknowledge <request-id>. Pairing QR is only shown in Configure.", "usage": "chat-apps/whatsapp <action> [arguments]" }
+  ]
+}

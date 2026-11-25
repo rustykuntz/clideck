@@ -99,7 +99,8 @@ export function initSidebar() {
   store.on("transcripts", () => { if (store.search.trim()) applyFilters(); });
   store.on("session:output", onOutput);   // E3: while searching, re-filter rows as output streams (preview no longer reads output)
   initNotificationToggle();
-  document.getElementById("prompts-btn").onclick = (e) => { e.stopPropagation(); openPromptLibrary(); };
+  const promptsBtn = document.getElementById("prompts-btn");   // the library now lives in the footer app menu
+  if (promptsBtn) promptsBtn.onclick = (e) => { e.stopPropagation(); openPromptLibrary(); };
   // engine rejected a rename (race / cross-client) — re-surface the in-row editor with the rejected name + error.
   store.on("session:renameRejected", (id, name) => startRowRename(id, { value: name, error: "That name is already taken — choose another." }));
   // engine rejected a create (duplicate name) — re-open the new-session picker with the typed values + inline error.
@@ -202,7 +203,20 @@ function ensureProjectGroup(p) {                 // create if missing + refresh 
   const isCollapsed = !!p.collapsed;             // project collapse lives in config (v1 parity; syncs across clients)
   g.head.classList.toggle("collapsed", isCollapsed);
   g.rowsEl.classList.toggle("collapsed", isCollapsed);
+  sortGroupRows(g);
   return g;
+}
+// A project keeps the order its sessions were dragged into (config project.sessionOrder, so every client agrees).
+// Sessions it doesn't list yet — new ones — follow in arrival order. Only moves rows when the order changed.
+function sortGroupRows(g) {
+  if (g.kind !== "project") return;
+  const order = (projectById(g.projectId) || {}).sessionOrder;
+  if (!Array.isArray(order) || !order.length) return;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const current = [...g.rowsEl.children].filter((n) => n.dataset && n.dataset.id);
+  const sorted = current.map((n, i) => [n, rank.has(n.dataset.id) ? rank.get(n.dataset.id) : order.length + i]).sort((a, b) => a[1] - b[1]).map((x) => x[0]);
+  if (sorted.every((n, i) => n === current[i])) return;
+  for (const n of sorted) g.rowsEl.appendChild(n);
 }
 function removeGroupIfEmpty(key) {               // cwd + Previous groups — project groups persist as drop targets
   const g = groups.get(key);
@@ -518,6 +532,7 @@ function addRow(id) {
   root.append(avatar, name, time, preview, badge, actions, menuBtn);
   g.rowsEl.appendChild(root);
   g.ids.add(id);
+  sortGroupRows(g);
   rows.set(id, { root, avatar, presence, name, nameText, copyBtn, time, preview, bounce, ptext, badge, actions, groupKey: key, faceSig: f.sig, stopBounce: null });
   root.classList.toggle("muted", !!s.muted);
   g.count.textContent = g.ids.size;
@@ -547,6 +562,7 @@ function moveRowToGroup(id) {
   const oldKey = r.groupKey;
   const g = ensureGroupFor(s);
   g.rowsEl.appendChild(r.root); g.ids.add(id); g.count.textContent = g.ids.size;
+  sortGroupRows(g);
   r.groupKey = newKey;
   const og = groups.get(oldKey);
   if (og) { og.ids.delete(id); og.count.textContent = og.ids.size; removeGroupIfEmpty(oldKey); }
@@ -706,7 +722,9 @@ function renderIdentity() {
   const who = foot && foot.querySelector(".who"), av = foot && foot.querySelector(".av");
   if (!who || !av) return;
   const name = String((store.about && store.about.name) || "").trim() || "You";
-  who.textContent = name + " · local";
+  // "· local" is about the engine, not the person; it is the part that steps aside on a narrow sidebar.
+  const where = document.createElement("span"); where.className = "who-where"; where.textContent = " · local";
+  who.replaceChildren(document.createTextNode(name), where);
   av.textContent = name.slice(0, 1).toLowerCase();
 }
 
@@ -914,15 +932,17 @@ function spawnFromPicker(ctl, mode, fields, provider, commandId) {
   pendingCreate = { anchor, mode, cwd: cwd || "", provider, commandId, rawName: fields.nameInput.value, rawPath: fields.pathInput ? fields.pathInput.value : "", projectChoice };
   ctl.close();   // success closes; a name-conflict re-opens via onCreateRejected
 }
-// Engine reported a create-time name conflict — re-open the picker on its button, restore what was typed, and
-// show the rose inline error. cwd-match keeps it from firing on another client's create.
+// Re-open a rejected create with its inputs intact. Name conflicts are broadcast;
+// startup failures are sent only to the requesting client.
 function onCreateRejected(msg, err) {
   const p = pendingCreate; if (!p) return;
-  if (err && String(err.cwd || "") !== String(p.cwd)) return;
+  const nameConflict = err?.code === "name_conflict";
+  if (nameConflict && String(err.cwd || "") !== String(p.cwd)) return;
   pendingCreate = null;
+  toast.error({ title: nameConflict ? "Name taken" : err?.code === "folder_not_found" ? "Folder not found" : "Couldn't start session", body: msg,
+    id: nameConflict ? "name-conflict" : "session-create", ...(nameConflict ? {} : { duration: 0 }) });
   if (!p.anchor || !p.anchor.isConnected) return;               // its + button is gone (group removed) — nothing to re-anchor
-  openPicker(p.anchor, p.mode, { errorMsg: msg, rawName: p.rawName, rawPath: p.rawPath, projectChoice: p.projectChoice, focusName: true });
-  toast.error({ title: "Name taken", body: msg, id: "name-conflict" });   // the engine's message, alongside the inline error
+  openPicker(p.anchor, p.mode, { errorMsg: msg, rawName: p.rawName, rawPath: p.rawPath, projectChoice: p.projectChoice, focusName: nameConflict });
 }
 function openPicker(anchor, mode, opts = {}) {
   pendingCreate = null;

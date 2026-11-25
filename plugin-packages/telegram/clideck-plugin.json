@@ -1,0 +1,15 @@
+{
+  "id": "telegram",
+  "name": "Telegram",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "enabledByDefault": false,
+  "description": "Talk to Claude and Codex sessions from Telegram on your phone. Pair one account, enable individual sessions, receive their replies and important background notifications. Requires your own BotFather bot with private topics, and an awake computer running CliDeck.",
+  "icon": "phone",
+  "commands": [
+    { "name": "setup", "description": "Inspect or configure Telegram: status, connect (token on stdin), pair, test, disconnect. Reports the next setup step; secrets are never returned.", "usage": "telegram/setup [status|connect|pair|test|disconnect]" },
+    { "name": "phone", "description": "Inspect or turn Phone on/off for the calling session, or an explicit session ID. Reuses its Telegram topic and keeps history.", "usage": "telegram/phone [status|on|off] [session-id]" },
+    { "name": "away", "description": "Choose automatic away detection, Here or Away for phone notifications.", "usage": "telegram/away [auto|here|away]" },
+    { "name": "pending", "description": "Inspect uncertain phone submissions; acknowledge only after checking the terminal. Never resends.", "usage": "telegram/pending [acknowledge <id>]" }
+  ]
+}

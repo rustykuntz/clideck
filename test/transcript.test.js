@@ -82,6 +82,29 @@ test('transcript store preserves unknown ids for recovery, caps cache, and reads
   }
 });
 
+test('bounded recent turns preserve grouping and old signature, clip newest Unicode text, and cap reads', t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'clideck-bounded-turns-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const store = new TranscriptStore({ dataDir });
+  store.append('recent', 'user', 'first'); store.append('recent', 'user', 'continued');
+  store.append('recent', 'agent', 'earlier answer'); store.append('recent', 'user', 'question');
+  store.append('recent', 'agent', 'newest 🚀 reply');
+  assert.deepEqual(store.getTurns('recent', 4, 1000), store.getTurns('recent', 4));
+  assert.deepEqual(store.getTurns('recent', 2, 12), [{ role: 'agent', text: 'est 🚀 reply' }]);
+  assert.deepEqual(store.getTurns('recent', 2, 20), [{ role: 'user', text: 'stion' }, { role: 'agent', text: 'newest 🚀 reply' }]);
+  store.append('emoji', 'agent', 'a🚀');
+  assert.deepEqual(store.getTurns('emoji', 1, 1), []);
+  assert.deepEqual(store.getTurns('emoji', 1, 2), [{ role: 'agent', text: '🚀' }]);
+  for (const invalid of [0, -1, 1.5, 64001, NaN, Infinity, null, '12']) assert.throws(() => store.getTurns('recent', 4, invalid), /maxChars/);
+  assert.deepEqual(store.getTurns('missing', 4, 12000), []);
+  // The old record is larger than the read budget; newest complete records still work.
+  store.append('long', 'user', 'old '.repeat(400000));
+  store.append('long', 'agent', 'latest answer');
+  assert.deepEqual(store.getTurns('long', 4, 12000), [{ role: 'agent', text: 'latest answer' }]);
+  store.append('long', 'user', 'new '.repeat(400000));
+  assert.throws(() => store.getTurns('long', 4, 12000), /exceeds the bounded context read/);
+});
+
 test('transcript pages are requester-only and reject unknown sessions', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'clideck-next-transcript-pages-'));
   const id = 'paged-transcript';

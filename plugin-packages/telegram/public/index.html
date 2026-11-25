@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Telegram</title>
+<!--
+  Telegram setup — the plugin's workspace tab. Sandboxed, opaque origin (no allow-same-origin): it links the
+  host's app.css and uses the same classes as Settings (set-card, set-row, plg-*, tasks-seg, set-switch), so it
+  reads as part of CliDeck. Everything else crosses postMessage: clideck.ready up; clideck.init / message /
+  theme / visible down; clideck.send to the plugin server; clideck.open for external https links.
+-->
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:auto; }
+  .page { max-width:720px; margin:0 auto; padding:26px 24px 40px; box-sizing:border-box; }
+  .ca-head { display:flex; align-items:flex-start; gap:12px; margin-bottom:22px; }
+  .ca-ic { width:38px; height:38px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; color:#2aabee; background:color-mix(in srgb,#2aabee 14%,transparent); }
+  .ca-titles { flex:1; min-width:0; }
+  .ca-name { font-size:16px; font-weight:650; color:var(--text); }
+  .ca-sub { margin-top:3px; font-size:12.5px; line-height:1.5; color:var(--faint); }
+  .ca-head .plg-status { flex:0 0 auto; margin-top:3px; }
+  .set-card .set-row { border-bottom:0; padding:8px 0; }
+  .ca-steps { margin:2px 0 14px; padding-left:20px; font-size:12.5px; line-height:1.75; color:var(--dim); }
+  .ca-steps b { color:var(--text); font-weight:600; }
+  .ca-steps code { padding:1px 5px; border-radius:5px; background:var(--surface-3); color:var(--text); font:11.5px var(--mono); }
+  .ca-link { padding:0; border:0; background:none; color:var(--accent); font:550 12.5px var(--sans); cursor:pointer; }
+  .ca-link:hover { text-decoration:underline; }
+  .ca-link:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+  .ca-connect { display:flex; gap:8px; }
+  .ca-connect .set-input { flex:1; min-width:0; }
+  .ca-pair { margin:6px 0 4px; padding:13px 14px; border:1px dashed color-mix(in srgb,var(--accent) 38%,var(--border-strong)); border-radius:11px; background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .ca-pair-t { margin-bottom:10px; font-size:13px; color:var(--text); }
+  .ca-pair-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .ca-pair-actions > button { height:34px; box-sizing:border-box; padding-top:0; padding-bottom:0; }
+  .ca-pair-url { flex:1 1 220px; min-width:0; }
+  .ca-wait { display:flex; align-items:center; gap:7px; margin-top:12px; font-size:12px; color:var(--dim); }
+  .ca-expiry { margin-top:4px; font-size:11.5px; color:var(--faint); }
+  .ca-topics { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .ca-manage { justify-content:flex-end; align-items:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .ca-err { color:var(--danger); }
+  .ca-loading { padding:30px 0; text-align:center; font-size:12.5px; color:var(--faint); }
+  .ca-presence-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .ca-presence-head .set-row-t { white-space:nowrap; }
+  .ca-presence-head .tasks-seg { width:auto; flex:0 0 auto; margin:0; }
+  .ca-presence-head .tasks-seg-b { flex:0 0 auto; padding:0 12px; }
+  .ca-presence-sub { max-width:560px; }
+  .ca-pending { margin:2px 0 8px; }
+  .ca-pending-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; margin-top:9px; }
+  .ca-pending-q { margin-right:auto; color:var(--dim); }
+  @media (max-width:560px) { .page { padding:18px 14px 32px; } .ca-connect, .ca-topics { flex-direction:column; align-items:stretch; } }
+</style>
+</head>
+<body>
+<main class="page" id="root" aria-live="polite"><div class="ca-loading">Loading…</div></main>
+<script src="app.js"></script>
+</body>
+</html>

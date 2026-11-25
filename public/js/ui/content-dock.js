@@ -7,7 +7,7 @@
 // restart — which is why closing one has to TELL the engine, or it comes back on the next reconnect.
 import { store } from "../store.js";
 import { onTheme, resolvedTheme } from "../theme.js";
-import { closeContent } from "../ws.js";
+import { closeContent, send } from "../ws.js";
 import { h, copyText } from "../util.js";
 import { renderCsv } from "./csv.js";
 import { renderText, renderJson, renderMarkdown, renderDiff, renderChart, renderTestResults, htmlFrame, pdfEmbed, imageEl, videoEl, mermaidEl } from "./content-renderers.js";
@@ -16,6 +16,8 @@ import { pluginFrame, isPluginFrame, disposePluginFrame, setPluginFrameVisible }
 import { hasActions, resolveActions, resolveImmediateActions, runAction, onActionsChange } from "./action-registry.js";
 import { openMenu, closeMenu } from "./menu.js";
 import { toast } from "./toast.js";
+import { actionIcon } from "./action-icon.js";
+import { initTabDrag } from "./tab-drag.js";
 import { registerReadAlongSurface, matchable } from "./read-along.js";
 import { MAX_VIEWER_TEXT, docTextIndex, normalizeWithMap, partAt, textParts, textFingerprint } from "./doc-text.js";
 
@@ -79,9 +81,12 @@ export function initContentDock() {
   bodyEl = document.getElementById("pane-body");
   termPanel = document.getElementById("term-panel");
   if (!tabsEl || !bodyEl) return;
-  store.on("active", renderDock);
+  // Switching sessions always lands on the terminal: that is where the agent works and where you type. The
+  // session's documents stay open as tabs, one click away. (A document that arrives for the session you are
+  // already in still opens in front — see presentInDock.)
+  store.on("active", () => { const entry = docks.get(store.activeId); if (entry) entry.activeId = TERMINAL_TAB; renderDock(); });
   store.on("reset", () => { for (const entry of docks.values()) releaseEntry(entry); docks.clear(); renderDock(); });   // NB: pendingCloses deliberately survives — see its comment
-  store.on("session:remove", (id) => { pendingCloses.delete(id); const entry = docks.get(id); if (entry) releaseEntry(entry); if (docks.delete(id)) renderDock(); });
+  store.on("session:remove", (id) => { pendingCloses.delete(id); for (const [cid, f] of pendingFailures) if (f.sid === id) pendingFailures.delete(cid); const entry = docks.get(id); if (entry) releaseEntry(entry); if (docks.delete(id)) renderDock(); });
   store.on("content:closed", onContentClosed);
   onViewersChange(() => { resetPluginViewerNodes(); renderDock(); });
   onActionsChange(() => {
@@ -90,7 +95,19 @@ export function initContentDock() {
     if (item && item.node && item.node._primePluginContext) item.node._primePluginContext();
     paintViewerActions(item);
   });
+  // Documents can be dragged into a new order, like browser tabs. The order is this browser's, per session.
+  initTabDrag(tabsEl, { commit: (from, to) => {
+    const entry = docks.get(store.activeId); if (!entry || !entry.items[from]) return;
+    const [moved] = entry.items.splice(from, 1); entry.items.splice(to, 0, moved);
+    entry.activeId = moved.id; renderDock();
+  } });
   renderDock();                      // establish the bare-terminal state before any content arrives
+}
+
+// Bring one document to the front — for "open the thing the agent just sent" after switching to its session.
+export function showDocument(sid, contentId) {
+  const entry = docks.get(sid); if (!entry || !entry.items.some((it) => it.id === contentId)) return false;
+  entry.activeId = contentId; glideNext = true; if (sid === store.activeId) renderDock(); return true;
 }
 
 // Record + show content for a session. Called by content-viewer for dock kinds. Returns nothing.
@@ -104,6 +121,12 @@ export function presentInDock(ev) {
   let item = ev.replaces ? entry.items.find((it) => it.id === ev.replaces) : null;
   if (item) { releaseItemNode(item); item.id = ev.contentId; item.kind = ev.kind; item.name = ev.name; item.url = ev.url; item.sourcePath = ev.sourcePath || ""; item.sessionId = ev.sessionId; }   // swap in place
   else { item = { id: ev.contentId, kind: ev.kind, name: ev.name, url: ev.url, sourcePath: ev.sourcePath || "", sessionId: ev.sessionId, node: null, built: false }; entry.items.push(item); }
+  // Only an engine that asks for it (reportErrors:true, agent-shown assets) understands content.renderFailed;
+  // an older engine disconnects on unknown controls, so without the flag nothing is ever sent.
+  item.reportErrors = ev.reportErrors === true;
+  if (ev.replaces && ev.replaces !== ev.contentId) pendingFailures.delete(ev.replaces);
+  if (item.reportErrors) flushPendingFailure(ev.sessionId, ev.contentId);
+  else pendingFailures.delete(ev.contentId);
   entry.activeId = item.id;
   if (ev.sessionId === store.activeId) renderDock();
 }
@@ -165,14 +188,14 @@ async function bridgeScript() {
   bridgeSource = "(function(initialPreviewTheme){\n" + shared.replace(/^export /gm, "") + "\n" + bridge + "\n})";
   return bridgeSource;
 }
-async function loadPreview(frame, item) {
+async function loadPreview(frame, item, fail = () => {}) {
   // A reload gives the frame a NEW contentWindow, and entries are matched by that window — so a late message
   // from the document we just replaced matches nothing and is ignored, with no generation counter to keep.
   const entry = { item, url: item.url, text: "", fp: "", agreed: false, truncated: false, ask: null };
   previews.set(frame, entry);
   try {
     const [source, script] = await Promise.all([
-      fetch(item.url).then((r) => (r.ok === false ? "" : r.text())),
+      fetch(item.url).then((r) => { if (r.ok === false) { fail("Couldn't load this html preview: HTTP " + r.status); return ""; } return r.text(); }),
       bridgeScript(),
     ]);
     if (!source || previews.get(frame) !== entry) throw new Error("stale");
@@ -456,6 +479,27 @@ export function overTabDrop(x, y) {
   return on;
 }
 
+// Like a browser's tab strip: a clicked tab glides fully into view, with a little of its neighbour showing, so
+// its close button is always reachable. Only a click animates; other renders just keep the selection visible.
+const TAB_EDGE = 28;
+let glideNext = false;
+function revealTab(tab, smooth) {
+  const strip = tabsEl;
+  if (!strip || !tab || !(strip.scrollWidth > strip.clientWidth)) return;
+  // The visible window ends where the pinned document toolbar begins: it floats over the strip's right end,
+  // so a tab "in view" behind it still has its close button covered.
+  const s = strip.getBoundingClientRect(), t = tab.getBoundingClientRect();
+  const tools = strip.querySelector(".cd-viewer-actions"), right = tools ? Math.min(s.right, tools.getBoundingClientRect().left) : s.right;
+  const delta = t.left < s.left + TAB_EDGE ? t.left - s.left - TAB_EDGE : t.right > right - TAB_EDGE ? t.right - right + TAB_EDGE : 0;
+  if (!delta) return;
+  const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  strip.scrollTo({ left: strip.scrollLeft + delta, behavior: smooth && !still ? "smooth" : "auto" });
+}
+function selectTab(entry, id, tab) {
+  if (entry.activeId === id) { revealTab(tab, true); return; }
+  entry.activeId = id; glideNext = true; renderDock();
+}
+
 function renderDock() {
   if (!tabsEl || !bodyEl) return;
   const entry = docks.get(store.activeId);
@@ -468,10 +512,14 @@ function renderDock() {
   }
   const activeId = bare ? TERMINAL_TAB : (entry.activeId || TERMINAL_TAB);
 
+  // Rebuilding the strip empties it, which would snap its scroll to the start; carry the position across.
+  const scrolled = tabsEl.scrollLeft, glide = glideNext; glideNext = false;
   tabsEl.replaceChildren();
   if (!bare) {
     tabsEl.appendChild(terminalTab(activeId === TERMINAL_TAB));
     for (const it of items) tabsEl.appendChild(docTab(it, it.id === activeId, entry));
+    // With more tabs than fit, keep the selected one in view (not while a drag is moving the strip itself).
+    tabsEl.scrollLeft = scrolled;
   }
 
   // The terminal is HIDDEN, never unmounted — remounting xterm would lose scrollback. So is every OPEN
@@ -502,6 +550,9 @@ function renderDock() {
     }
   } else onTerminalShown();          // a hidden terminal measures 0, so it must be refit + refocused on return
   paintViewerActions(active);
+  // After the toolbar exists, so the reveal measures the space it leaves.
+  const on = bare ? null : tabsEl.querySelector(".cd-tab.on");
+  if (on && !tabsEl.classList.contains("tab-dragging")) revealTab(on, glide);
   // Last, so it survives the sweep above: a document landing mid-drag hands the target back to the real strip.
   showRail(dropArmed && bare);
 }
@@ -512,18 +563,19 @@ function terminalTab(on) {
   tab.append(spanIcon("terminal"));
   const label = h("span", "cd-tab-name"); label.textContent = "Terminal";
   tab.appendChild(label);
-  tab.addEventListener("click", () => { const e = docks.get(store.activeId); if (e) { e.activeId = TERMINAL_TAB; renderDock(); } });
+  tab.addEventListener("click", () => { const e = docks.get(store.activeId); if (e) selectTab(e, TERMINAL_TAB, tab); });
   return tab;
 }
 function docTab(it, on, entry) {
   const tab = h("div", "cd-tab" + (on ? " on" : ""));
+  tab.dataset.itemId = it.id;
   tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(on));
-  tab.append(spanIcon(it.kind));
+  tab.append(it.workspace ? workspaceIcon(it) : spanIcon(it.kind));
   const label = h("span", "cd-tab-name"); label.textContent = it.name || it.kind; label.title = it.name || it.kind;
   const close = h("button", "cd-tab-x", X); close.type = "button"; close.title = "Close"; close.setAttribute("aria-label", "Close " + (it.name || it.kind));
   close.addEventListener("click", (e) => { e.stopPropagation(); closeItem(store.activeId, it.id); });
   tab.append(label, close);
-  tab.addEventListener("click", () => { entry.activeId = it.id; renderDock(); });
+  tab.addEventListener("click", () => selectTab(entry, it.id, tab));
   // The tab is where the document's IDENTITY lives, so its menu answers "what file is this?". Only a document
   // the engine sourced from disk has an answer; a payload the agent sent inline has no file, and the row says
   // so rather than quietly copying a /content URL that is not a path anyone can open.
@@ -548,6 +600,34 @@ function docTab(it, on, entry) {
 // terminal.js registers what to do when its tab comes back (refit + focus).
 export function onTerminalTabShown(fn) { onTerminalShown = typeof fn === "function" ? fn : () => {}; }
 
+// A preview that genuinely failed to draw is reported ONCE per content id from this browser, so the engine can
+// tell the agent that showed it (the engine decides which assets came from an agent and drops duplicates from
+// other windows). Never once the tab was closed or replaced in place. A failure seen while offline waits — it
+// is sent only if the engine re-sends that same content after reconnecting, i.e. it is still current.
+const reportedFailures = new Set();
+const pendingFailures = new Map();     // contentId → { sid, message }, offline only; bounded
+const MAX_PENDING_FAILURES = 50;
+function sendFailure(sid, id, message) {
+  reportedFailures.add(id); pendingFailures.delete(id);
+  send({ type: "content.renderFailed", sessionId: sid, contentId: id, message });
+}
+function failureReporter(item) {
+  const id = item.id, sid = item.sessionId;
+  return (text) => {
+    if (reportedFailures.has(id)) return;
+    const entry = docks.get(sid);
+    if (!entry || !entry.items.includes(item) || item.id !== id || item.reportErrors !== true) return;
+    const message = String(text || "This preview couldn’t be shown.").slice(0, 2000);
+    if (store.connected) { sendFailure(sid, id, message); return; }
+    if (!pendingFailures.has(id) && pendingFailures.size >= MAX_PENDING_FAILURES) pendingFailures.delete(pendingFailures.keys().next().value);
+    pendingFailures.set(id, { sid, message });
+  };
+}
+function flushPendingFailure(sid, id) {
+  const pending = pendingFailures.get(id);
+  if (pending && pending.sid === sid && store.connected && !reportedFailures.has(id)) sendFailure(sid, id, pending.message);
+}
+
 function bodyFor(item) {
   if (item.built && item.node) return item.node;
   if (item.workspace) {
@@ -557,20 +637,24 @@ function bodyFor(item) {
   const viewer = viewerFor(item.kind);
   // No viewer for this kind: the plugin that draws it is disabled or gone. Say so, and leave the tab — closing
   // it is the only thing that releases the asset, so it must not be a dead end.
-  if (!viewer) { item.node = h("div", "cd-error"); item.node.textContent = "Nothing here can draw " + (item.kind || "this content") + " — its plugin is disabled or no longer installed. Enable it to see this again, or close the tab to discard it."; item.built = true; return item.node; }
+  const fail = failureReporter(item);
+  if (!viewer) { item.node = h("div", "cd-error"); item.node.textContent = "Nothing here can draw " + (item.kind || "this content") + " — its plugin is disabled or no longer installed. Enable it to see this again, or close the tab to discard it."; item.built = true; fail("No installed, enabled plugin can draw " + (item.kind || "this content") + "."); return item.node; }
   try {
     item.node = viewer.build
-      ? viewer.build(item)
+      ? viewer.build(item, fail)
       : pluginFrame(viewer.pluginId, viewer.src, viewerContext(item), { className: "plugin-frame plugin-viewer", title: item.name || viewer.title });
-  } catch (error) { item.node = h("div", "cd-error"); item.node.textContent = "Couldn't open this plugin view — " + error.message; }
+  } catch (error) { item.node = h("div", "cd-error"); item.node.textContent = "Couldn't open this plugin view — " + error.message; fail("Couldn't open this plugin view: " + error.message); }
   item.built = true;
   bindViewerContext(item.node, item);
   return item.node;
 }
 
-function fetchView(item, mode, render) {
+function fetchView(item, mode, render, report = () => {}) {
   const host = h("div", "cd-render"); host.appendChild(h("div", "cd-loading", "Loading…"));
-  const fail = (e) => { const er = h("div", "cd-error"); er.setAttribute("role", "alert"); er.textContent = "Couldn't load this content" + (e && e.message ? " — " + e.message : "."); host.replaceChildren(er); };
+  const fail = (e) => {
+    const er = h("div", "cd-error"); er.setAttribute("role", "alert"); er.textContent = "Couldn't load this content" + (e && e.message ? " — " + e.message : "."); host.replaceChildren(er);
+    report("Couldn't load this " + (item.kind || "content") + " preview" + (e && e.message ? ": " + e.message : "."));
+  };
   fetch(item.url).then((r) => { if (r.ok === false) throw new Error("HTTP " + r.status); return mode === "json" ? r.json() : r.text(); }).then((value) => host.replaceChildren(render(value, item))).catch(fail);
   return host;
 }
@@ -675,6 +759,8 @@ function paintViewerActions(item) {
       });
       slot.appendChild(button);
     }
+    // Plugin buttons widen the toolbar after the first reveal; keep the selected tab clear of it.
+    revealTab(tabsEl.querySelector(".cd-tab.on"), true);
   });
 }
 
@@ -729,10 +815,10 @@ function markdownShell(text, item) {
 // An html preview is the frame and nothing else. Reload used to sit on a full-width bar of its own directly
 // under the tab strip — two chrome rows stacked, the second holding one button and otherwise empty. The
 // control now lives at the right-hand end of the tab strip, where the tab strip already reserves that space.
-function htmlShell(item) {
+function htmlShell(item, fail) {
   const shell = h("div", "cd-html");
   const frame = htmlFrame();
-  loadPreview(frame, item);
+  loadPreview(frame, item, fail);
   shell.append(frame);
   return shell;
 }
@@ -749,8 +835,17 @@ function reloadPreview(item) {
   renderDock();
   return true;
 }
-function wrapMedia(el) { const w = h("div", "cd-media"); w.appendChild(el); return w; }
+function wrapMedia(el, fail, what) {
+  if (fail && el.addEventListener) el.addEventListener("error", () => fail("The " + what + " couldn't be loaded or decoded."), { once: true });
+  const w = h("div", "cd-media"); w.appendChild(el); return w;
+}
 function spanIcon(kind) { const s = h("span", "cd-tab-ic"); s.innerHTML = iconForKind(kind) || KIND_ICON[kind] || KIND_ICON.html; return s; }
+// A plugin workspace tab wears its plugin's own mark (named mark or glyph) rather than the HTML document icon.
+function workspaceIcon(item) {
+  const plugin = (store.plugins || []).find((p) => p.id === item.pluginId);
+  if (!plugin || !plugin.icon) return spanIcon(item.kind);
+  const s = h("span", "cd-tab-ic cd-tab-ic-plugin"); s.append(actionIcon(plugin.icon)); return s;
+}
 
 // The user closed a tab. Tombstone FIRST — before the control goes out or into the offline queue — so the
 // suppression is already armed if the reconnect replay beats our close to the wire.
@@ -766,7 +861,11 @@ function closeItem(sid, id) {
 // Workspace applications use the same tab shell as documents, but are client-owned rather than persisted
 // content assets. One workspace ID opens once per session; reopening selects the existing tab.
 export function openWorkspaceTab(pluginId, definition, options = {}) {
-  const sid = (options && options.sessionId) || store.activeId; if (!sid || !store.sessions.has(sid)) return false;
+  // An explicitly requested session must exist (refuse a stale/deleted one); with none requested and none selected
+  // the workspace opens app-wide instead.
+  const requested = options && options.sessionId, sid = requested || store.activeId;
+  if (requested && !store.sessions.has(requested)) return false;
+  if (!sid || !store.sessions.has(sid)) return openAppWorkspace(pluginId, definition, options || {});
   const entry = docks.get(sid) || { items: [], activeId: null }; docks.set(sid, entry);
   const id = "workspace:" + pluginId + "/" + definition.id;
   let item = entry.items.find((candidate) => candidate.id === id);
@@ -777,7 +876,55 @@ export function openWorkspaceTab(pluginId, definition, options = {}) {
   entry.activeId = id; if (sid === store.activeId) renderDock(); return true;
 }
 
+// ── App workspace ── With no session selected there is no pane to hold a tab, so a workspace opened then (e.g.
+// Configure from Settings on a fresh install) takes the main pane's empty state instead: the same tab strip with
+// one tab and the same sandboxed frame. One at a time. It shows only while no session is selected, stays mounted
+// (hidden, told so) while one is, and goes away with its own Close or when its plugin unloads.
+let appWs = null;   // {pluginId, definitionId, item, el, frame}
+function openAppWorkspace(pluginId, definition, options) {
+  const main = document.querySelector(".main"); if (!main) return false;
+  if (appWs && (appWs.pluginId !== pluginId || appWs.definitionId !== definition.id)) closeAppWorkspace();
+  if (!appWs) {
+    const name = String(options.title || definition.title || definition.id);
+    const item = { id: "app:" + pluginId + "/" + definition.id, kind: pluginId + "/" + definition.id, name, sessionId: "", workspace: true, pluginId, workspaceDef: definition, options };
+    const el = h("section", "app-ws"); el.id = "app-ws"; el.setAttribute("aria-label", name);
+    const strip = h("div", "cd-tabs"); strip.setAttribute("role", "tablist");
+    const tab = h("div", "cd-tab on"); tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", "true");
+    const label = h("span", "cd-tab-name"); label.textContent = name; label.title = name;
+    const close = h("button", "cd-tab-x", X); close.type = "button"; close.title = "Close"; close.setAttribute("aria-label", "Close " + name);
+    close.addEventListener("click", closeAppWorkspace);
+    tab.append(workspaceIcon(item), label, close); strip.append(tab);
+    const body = h("div", "pane-body"); body.setAttribute("role", "tabpanel");
+    const frame = pluginFrame(pluginId, definition.src, workspaceContext(item), { className: "plugin-frame plugin-workspace", title: name, onClose: closeAppWorkspace });
+    body.append(frame); el.append(strip, body); main.append(el);
+    appWs = { pluginId, definitionId: definition.id, item, el, frame };
+  }
+  syncAppWorkspace();
+  return true;
+}
+function closeAppWorkspace() {
+  if (!appWs) return;
+  disposePluginFrame(appWs.frame); appWs.el.remove(); appWs = null;
+  const empty = document.getElementById("rp-empty"); if (empty) empty.classList.toggle("hidden", !!store.active());
+}
+// The desktop app's Close Tab (Cmd+W): exactly the tab's own X. False when only the terminal is showing, so the
+// shell can hide the window instead.
+export function closeActiveTab() {
+  if (appWs) { closeAppWorkspace(); return true; }
+  const item = activeDocument(); if (!item) return false;
+  closeItem(store.activeId, item.id); return true;
+}
+export function appWorkspaceOpen() { return !!appWs; }
+// Called wherever the main pane switches between a session and its empty state.
+export function syncAppWorkspace() {
+  if (!appWs) return;
+  const show = !store.active();
+  appWs.el.hidden = !show; setPluginFrameVisible(appWs.frame, show);
+  const empty = document.getElementById("rp-empty"); if (empty && show) empty.classList.add("hidden");
+}
+
 export function closePluginTabs(pluginId) {
+  if (appWs && appWs.pluginId === pluginId) closeAppWorkspace();
   let any = false;
   for (const [sid, entry] of [...docks]) {
     const before = entry.items.length;
@@ -793,18 +940,18 @@ export function closePluginTabs(pluginId) {
 // Core kinds register through the same lookup the plugin kinds use. Adding a renderer no longer adds another
 // bodyFor branch; the host shell remains stable while the implementation is replaceable.
 for (const definition of [
-  { kind: "text", icon: KIND_ICON.text, build: (item) => fetchView(item, "text", (text) => renderText(text)) },
-  { kind: "csv", icon: KIND_ICON.csv, build: (item) => fetchView(item, "text", (text) => renderCsv(text, item)) },
-  { kind: "json", icon: KIND_ICON.json, build: (item) => fetchView(item, "text", (text) => renderJson(text)) },
+  { kind: "text", icon: KIND_ICON.text, build: (item, fail) => fetchView(item, "text", (text) => renderText(text), fail) },
+  { kind: "csv", icon: KIND_ICON.csv, build: (item, fail) => fetchView(item, "text", (text) => renderCsv(text, item), fail) },
+  { kind: "json", icon: KIND_ICON.json, build: (item, fail) => fetchView(item, "text", (text) => renderJson(text, { onError: fail }), fail) },
   { kind: "html", icon: KIND_ICON.html, build: htmlShell },
   { kind: "pdf", icon: KIND_ICON.pdf, build: (item) => pdfEmbed(item.url) },
-  { kind: "image", icon: KIND_ICON.image, build: (item) => wrapMedia(imageEl(item.url, item.name)) },
-  { kind: "video", icon: KIND_ICON.video, build: (item) => wrapMedia(videoEl(item.url)) },
-  { kind: "markdown", icon: KIND_ICON.markdown, build: (item) => fetchView(item, "text", markdownShell) },
-  { kind: "diff", icon: KIND_ICON.diff, build: (item) => fetchView(item, "text", (text) => renderDiff(text)) },
-  { kind: "mermaid", icon: KIND_ICON.mermaid, build: (item) => fetchView(item, "text", (text) => mermaidEl(text)) },
-  { kind: "chart", icon: KIND_ICON.chart, build: (item) => fetchView(item, "json", (spec) => renderChart(spec)) },
-  { kind: "testresults", icon: KIND_ICON.testresults, build: (item) => fetchView(item, "json", (spec) => renderTestResults(spec)) },
+  { kind: "image", icon: KIND_ICON.image, build: (item, fail) => wrapMedia(imageEl(item.url, item.name), fail, "image") },
+  { kind: "video", icon: KIND_ICON.video, build: (item, fail) => wrapMedia(videoEl(item.url), fail, "video") },
+  { kind: "markdown", icon: KIND_ICON.markdown, build: (item, fail) => fetchView(item, "text", markdownShell, fail) },
+  { kind: "diff", icon: KIND_ICON.diff, build: (item, fail) => fetchView(item, "text", (text) => renderDiff(text), fail) },
+  { kind: "mermaid", icon: KIND_ICON.mermaid, build: (item, fail) => fetchView(item, "text", (text) => mermaidEl(text, { onError: fail }), fail) },
+  { kind: "chart", icon: KIND_ICON.chart, build: (item, fail) => fetchView(item, "json", (spec) => renderChart(spec, { onError: fail }), fail) },
+  { kind: "testresults", icon: KIND_ICON.testresults, build: (item, fail) => fetchView(item, "json", (spec) => renderTestResults(spec), fail) },
 ]) registerCoreViewer(definition);
 
 // The engine dropped an asset — this client, another window, or a lifecycle rule. Purely local and idempotent:
@@ -819,6 +966,7 @@ function onContentClosed(ev) {
 function dropLocally(sid, id) {
   const entry = docks.get(sid); if (!entry) return;
   const i = entry.items.findIndex((it) => it.id === id); if (i < 0) return;   // already gone → no-op
+  pendingFailures.delete(id);
   releaseItemNode(entry.items[i]);
   entry.items.splice(i, 1);
   if (!entry.items.length) { docks.delete(sid); renderDock(); return; }

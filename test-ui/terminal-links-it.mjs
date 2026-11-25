@@ -90,5 +90,34 @@ ok("OSC8 left-click still shows destination and respects Cancel", prompts[0].inc
 answer = true; osc.activate({ button: 0 }, destination);
 ok("OSC8 confirmed left-click uses isolated browser opening", opened.length === beforeOsc + 1 && opened.at(-1).join("|") === destination + "|_blank|noopener,noreferrer");
 ok("OSC8 non-HTTP protocols remain disabled by default", osc.allowNonHttpProtocols !== true);
+// URL recognition: the browser's parser decides, so localhost/IPv4/IPv6/ports link; sentence punctuation does not.
+const urlProvider = __linkProvidersForTest()[0];
+const linksIn = (line) => {
+  term.buffer.active.getLine = y => y === 0 ? { isWrapped: false, translateToString: () => line } : null;
+  let found = [];
+  urlProvider.provideLinks(1, result => { found = result || []; });
+  return found.map(link => ({ text: link.text, start: link.range.start.x, end: link.range.end.x }));
+};
+const report = "The Screeners tab is ready: http://localhost:7345/#screeners.";
+const reported = linksIn(report);
+ok("exact report: localhost link with #fragment, final dot excluded",
+  reported.length === 1 && reported[0].text === "http://localhost:7345/#screeners"
+  && report.slice(reported[0].start - 1, reported[0].end) === "http://localhost:7345/#screeners");
+ok("exact report without the final dot links too", linksIn("ready: http://localhost:7345/#screeners")[0]?.text === "http://localhost:7345/#screeners");
+for (const [line, want] of [
+  ["http://localhost", "http://localhost"], ["https://localhost:3000/app", "https://localhost:3000/app"],
+  ["see https://example.com/a?b=1.", "https://example.com/a?b=1"], ["(https://example.com/x), then", "https://example.com/x"],
+  ["at http://127.0.0.1:8080/health!", "http://127.0.0.1:8080/health"], ["ipv6 http://[::1]:8080/path.", "http://[::1]:8080/path"],
+  ["bare ipv6 http://[::1].", "http://[::1]"], ["[http://example.com]", "http://example.com"], ["\"http://localhost:5173\"", "http://localhost:5173"],
+]) ok(`links ${JSON.stringify(line)} as ${want}`, JSON.stringify(linksIn(line).map(l => l.text)) === JSON.stringify([want]));
+for (const line of ["http://:8080/x", "http://localhost:99999", "http://localhost:abc/", "http://.", "http://", "http://[::1 broken", "ftp://example.com", "file:///etc/hosts", "javascript:alert(1)"])
+  ok(`no link for ${JSON.stringify(line)}`, linksIn(line).length === 0);
+const pair = "a http://localhost:1/x, b https://example.org.", two = linksIn(pair);
+ok("two URLs on a line keep their own ranges", two.length === 2 && two.every(l => pair.slice(l.start - 1, l.end) === l.text) && two.map(l => l.text).join() === "http://localhost:1/x,https://example.org");
+opened = [];
+const localhostLink = linksIn(report);
+urlProvider.provideLinks(1, result => { result[0].activate({ button: 0 }, result[0].text); });
+ok("left click opens the exact localhost URL without the final dot", opened.length === 1 && opened[0].join("|") === "http://localhost:7345/#screeners|_blank|noopener,noreferrer" && localhostLink.length === 1);
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

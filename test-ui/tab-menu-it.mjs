@@ -59,7 +59,7 @@ menuFor(remaining)[3]._fire('click');
 ok("close-all removes documents and preserves terminal", document.getElementById('pane-tabs').hidden && !document.getElementById('term-panel').hidden);
 
 store.select('OTHER');
-ok("closing tabs leaves other session documents untouched", document.querySelectorAll('.cd-tab').length === 2 && document.querySelector('.cd-tab.on').textContent.includes('Unrelated'));
+ok("closing tabs leaves other session documents untouched", document.querySelectorAll('.cd-tab').length === 2 && [...document.querySelectorAll('.cd-tab')].some(tab => tab.textContent.includes('Unrelated')) && document.querySelector('.cd-tab.on').className.includes('cd-tab-term'));
 store.select('S');
 
 // ── a click inside a sandboxed preview never reaches this document ───────────────────────────────────────

@@ -7,14 +7,51 @@ const svg = path => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 const CLOSE = svg('<path d="m6 6 12 12M18 6 6 18"/>');
 const REFRESH = svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>');
 const CHEVRON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
-const LOCK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 // Plain-text cell; heavy CPU reads warm, near-idle values recede so busy jobs stand out.
 const metricCell = (value, level) => text('td', `tasks-number${level ? ' ' + level : ''}`, value);
 const cpuLevel = cpu => cpu >= 50 ? 'hot' : cpu < 1 ? 'quiet' : '';
+const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+const ARROW = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
+// Sortable columns. Numbers start high-to-low (what is heavy, what has run longest); names and PIDs start A→Z / low.
+const COLUMNS = [
+  { key: 'name', label: 'Process', dir: 'asc' }, { key: 'cpu', label: 'CPU', dir: 'desc' }, { key: 'memory', label: 'RAM', dir: 'desc' },
+  { key: 'elapsed', label: 'Running', dir: 'desc' }, { key: 'pid', label: 'PID', dir: 'asc' },
+];
+const SORT_KEY = 'clideck.tasks.sort';
+function savedSort() {
+  try { const v = JSON.parse(localStorage.getItem(SORT_KEY) || 'null'); if (COLUMNS.some(c => c.key === v?.key) && (v.dir === 'asc' || v.dir === 'desc')) return v; } catch {}
+  return { key: 'name', dir: 'asc' };   // calm default: agents in a stable A→Z order, not a CPU race
+}
+// ps etime: [[dd-]hh:]mm:ss → seconds.
+export function elapsedSeconds(value) {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(String(value || '').trim());
+  return m ? ((+m[1] || 0) * 86400) + ((+m[2] || 0) * 3600) + (+m[3] * 60) + +m[4] : 0;
+}
 
+// A raw command line as people read it: the program's name, then its arguments with long paths cut to their
+// last part. macOS bundles are named by their bundle; agent shells ("zsh -c <setup> && eval '<command>'")
+// show the command they run. The full line stays in the tooltip and the stop confirmation.
+export function describe(command) {
+  const raw = String(command || '').trim(), bundle = raw.startsWith('/') ? raw.indexOf('/Contents/MacOS/') : -1;
+  let name, rest;
+  if (bundle > 0) {
+    name = raw.slice(raw.lastIndexOf('/', bundle - 1) + 1, bundle).replace(/\.(?:app|xpc|appex)$/, '');
+    const after = raw.slice(bundle + 16);
+    rest = after.startsWith(name) ? after.slice(name.length) : after.replace(/^\S+/, '');
+  } else {
+    const first = raw.split(/\s/, 1)[0];
+    name = first.slice(first.lastIndexOf('/') + 1) || first; rest = raw.slice(first.length);
+  }
+  if (/^(?:ba|z|da|k)?sh$/.test(name)) { const run = rest.match(/\beval '([\s\S]*?)'?$/); if (run) rest = run[1].replace(/'"'"'/g, "'"); }
+  rest = rest.replace(/\\012/g, ' ').replace(/(^|[\s=:"'(])\/(?:[^\s/"']+\/)+/g, '$1…/');
+  return { name, detail: rest.replace(/\s+/g, ' ').trim() };
+}
+
+// Opened from the sidebar footer's app menu (openTaskManager); an old #task-manager button still works.
+let trigger = null;
+export function openTaskManager() { trigger?.onclick?.(); }
 export function initTaskManager() {
-  const trigger = document.getElementById("task-manager");
-  if (!trigger) return;
+  trigger = document.getElementById("task-manager") || {};
   let opened = false;
   trigger.onclick = () => {
     if (opened) return;
@@ -46,8 +83,8 @@ export function initTaskManager() {
     }
     const project = select("Project filter", [['', 'All projects']]);
     const agent = select("Agent filter", [['', 'All agents']]);
-    const sort = select("Sort processes", [['cpu', 'Sort by CPU'], ['memory', 'Sort by RAM'], ['pid', 'Sort by PID']]);
-    toolbar.append(view, project, agent, sort);
+    toolbar.append(view, project, agent);
+    let sort = savedSort();
     const summary = h("div", "tasks-summary");
     const stat = (label) => { const box = h("div", "tasks-stat"), value = text("strong", "", "–"), sub = text("span", "", label); box.append(value, sub); summary.append(box); return [value, sub]; };
     const [countValue, countLabel] = stat("processes"), [cpuValue, cpuLabel] = stat("CPU"), [memoryValue] = stat("RAM");
@@ -56,12 +93,33 @@ export function initTaskManager() {
     const scroll = h("div", "tasks-scroll");
     const table = h("table", "tasks-table");
     const thead = h("thead"), tr = h("tr");
-    for (const label of ['Process', 'CPU', 'RAM', 'Running', 'PID', '']) tr.append(text("th", "", label));
+    // The headers ARE the sort control: click to sort by a column, click again to reverse it.
+    const headers = COLUMNS.map((column, i) => {
+      const th = h("th", i ? "tasks-num" : ""), button = h("button", "tasks-sort"); th.dataset.first = column.dir;
+      button.type = "button"; button.append(text("span", "", column.label), h("span", "tasks-sort-arrow", ARROW));
+      button.onclick = () => {
+        sort = sort.key === column.key ? { key: column.key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key: column.key, dir: column.dir };
+        try { localStorage.setItem(SORT_KEY, JSON.stringify(sort)); } catch {}
+        paintSort(); page = 0; render();
+      };
+      th.append(button); tr.append(th); return { column, th, button };
+    });
+    tr.append(h("th"));
+    headers[2].button.title = 'Can include memory shared with other apps';
+    function paintSort() {
+      for (const { column, th, button } of headers) {
+        const on = column.key === sort.key;
+        th.classList.toggle('sorted', on); th.classList.toggle('asc', on && sort.dir === 'asc');
+        th.setAttribute('aria-sort', on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+        button.setAttribute('aria-label', `Sort by ${column.label}${on ? (sort.dir === 'asc' ? ', ascending' : ', descending') : ''}`);
+      }
+    }
+    paintSort();
     thead.append(tr); const tbody = h("tbody"); table.append(thead, tbody);
     const state = h("div", "tasks-state"); state.setAttribute("role", "status");
     scroll.append(table, state);
     const foot = h("footer", "tasks-foot");
-    foot.append(text("p", "", "Updates every 5 seconds while open. CPU 100% = one core. RAM can include memory shared with other apps. Jobs CliDeck can't link to an agent are under Other processes."));
+    foot.append(text("p", "", "Updates every 5 seconds. 100% CPU is one full core. Jobs CliDeck can't link to an agent are under Other processes."));
     const pager = h('div', 'tasks-pager');
     const prevPage = text('button', 'tasks-btn', 'Previous'), nextPage = text('button', 'tasks-btn', 'Next');
     prevPage.type = nextPage.type = 'button';
@@ -136,14 +194,28 @@ export function initTaskManager() {
       const groups = new Map();
       let position = 0, displayed = 0;
       for (const p of rows) { const key = p.sessionId || ''; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(p); }
-      const metric = list => list.reduce((sum, p) => sum + p[sort.value], 0);
-      for (const [id, group] of [...groups].sort((a, b) => metric(b[1]) - metric(a[1]))) {
-        const beforeGroup = displayed;
+      // One sort for the whole table: agents are ordered by the same column as the jobs inside them (their totals,
+      // longest-running job, lowest PID, or project / session name). Unlinked processes always come last.
+      const sign = sort.dir === 'asc' ? 1 : -1;
+      const groupValue = (group) => sort.key === 'cpu' ? group.reduce((n, p) => n + p.cpu, 0)
+        : sort.key === 'memory' ? group.reduce((n, p) => n + p.memory, 0)
+        : sort.key === 'elapsed' ? Math.max(...group.map(p => elapsedSeconds(p.elapsed)))
+        : Math.min(...group.map(p => p.pid));
+      const groupOrder = ([ida, a], [idb, b]) => {
+        if (!ida !== !idb) return ida ? -1 : 1;
+        const byLabel = byName(a[0].project || '', b[0].project || '') || byName(a[0].session || '', b[0].session || '');
+        if (sort.key === 'name') return sign * byLabel;
+        return sign * (groupValue(a) - groupValue(b)) || byLabel;
+      };
+      for (const [id, group] of [...groups].sort(groupOrder)) {
+        const beforeGroup = displayed, startPosition = position;
         const groupRow = h('tr', 'tasks-group'), label = h('td'), name = h('div', 'tasks-group-name');
-        if (id) name.append(text('span', 'tasks-group-project', group[0].project), text('span', 'tasks-group-sep', ' / '), text('span', '', group[0].session));
-        else name.append(text('span', '', 'Other processes'), text('span', 'tasks-group-project', ' · owner unknown or outside CliDeck'));
-        name.append(text('span', 'tasks-group-count', group.length)); label.append(name);
-        groupRow.append(label, metricCell(`${group.reduce((s, p) => s + p.cpu, 0).toFixed(1)}%`), metricCell(bytes(group.reduce((s, p) => s + p.memory, 0))), h('td'), h('td'), h('td'));
+        if (id) name.append(text('span', 'tasks-group-project', group[0].project), text('span', 'tasks-group-sep', ' / '), text('span', 'tasks-group-session', group[0].session));
+        else name.append(text('span', 'tasks-group-session', 'Other processes'), text('span', 'tasks-group-sep', ' · '), text('span', 'tasks-group-project', 'owner unknown or outside CliDeck'));
+        label.append(name);
+        const groupCpu = group.reduce((s, p) => s + p.cpu, 0);
+        groupRow.title = id ? 'This agent and everything it started' : '';
+        groupRow.append(label, metricCell(`${groupCpu.toFixed(1)}%`, groupCpu >= 50 ? 'hot' : ''), metricCell(bytes(group.reduce((s, p) => s + p.memory, 0))), h('td'), h('td'), h('td'));
         tbody.append(groupRow);
         const byPid = new Map(group.map(p => [p.pid, p])), children = new Map();
         for (const p of group) { const parent = byPid.has(p.ppid) && p.ppid !== p.pid ? p.ppid : 0; if (!children.has(parent)) children.set(parent, []); children.get(parent).push(p); }
@@ -155,11 +227,15 @@ export function initTaskManager() {
           for (const child of children.get(p.pid) || []) { const t = total(child, seen); value.cpu += t.cpu; value.memory += t.memory; }
           totals.set(p.pid, value); return value;
         }
-        const compare = (a, b) => sort.value === 'pid' ? a.pid - b.pid : total(b)[sort.value] - total(a)[sort.value];
+        const value = p => sort.key === 'cpu' || sort.key === 'memory' ? total(p)[sort.key] : sort.key === 'elapsed' ? elapsedSeconds(p.elapsed) : p.pid;
+        const compare = (a, b) => (sort.key === 'name' ? sign * byName(describe(a.command).name, describe(b.command).name) : sign * (value(a) - value(b))) || a.pid - b.pid;
         const visited = new Set();
+        const count = p => (children.get(p.pid) || []).reduce((n, child) => n + 1 + count(child), 0);
         function add(p, depth) {
           if (visited.has(p.pid)) return; visited.add(p.pid);
           const childRows = children.get(p.pid) || [], isOpen = expanded.get(p.token) ?? !p.canStop;
+          // The agent's own processes are its group row (they can't be stopped here); show only its jobs.
+          if (id && !p.canStop) { for (const child of childRows.sort(compare)) add(child, depth); return; }
           const index = position++;
           if (index >= page * 400 && index < (page + 1) * 400) {
             displayed++;
@@ -170,20 +246,26 @@ export function initTaskManager() {
               toggle.setAttribute('aria-label', `Show children of PID ${p.pid}`); toggle.setAttribute('aria-expanded', String(isOpen)); toggle.dataset.taskControl = `expand-${p.token}`;
               toggle.onclick = () => { expanded.set(p.token, !isOpen); render(); }; line.append(toggle);
             } else line.append(text('span', 'tasks-tree-spacer', ''));
-            const name = text('span', 'tasks-command-text', p.command); name.title = `${p.command}\nStarted ${p.started} UTC`; line.append(name); command.append(line);
+            const { name: program, detail } = describe(p.command), name = h('span', 'tasks-command-text');
+            name.append(text('span', 'tasks-proc-name', program)); if (detail) name.append(' ', text('span', 'tasks-proc-args', detail));
+            name.title = `${p.command}\nStarted ${p.started} UTC`; line.append(name);
             const rolled = childRows.length && !isOpen, metrics = rolled ? total(p) : p;
-            row.title = rolled ? 'CPU and RAM include collapsed child processes' : 'CPU and RAM for this process';
-            row.append(command, metricCell(`${metrics.cpu.toFixed(1)}%`, cpuLevel(metrics.cpu)), metricCell(bytes(metrics.memory), metrics.memory < 64 * 1024 ** 2 ? 'quiet' : ''), metricCell(p.elapsed, 'quiet'), metricCell(p.pid, 'quiet'));
+            if (rolled) { const inside = count(p), more = text('span', 'tasks-proc-more', `+${inside}`); more.title = `${inside} more process${inside === 1 ? '' : 'es'} inside`; line.append(more); }
+            command.append(line);
+            row.title = rolled ? 'CPU and RAM include the processes inside' : '';
+            row.append(command, metricCell(`${metrics.cpu.toFixed(1)}%`, cpuLevel(metrics.cpu)), metricCell(bytes(metrics.memory), metrics.memory < 64 * 1024 ** 2 ? 'quiet' : ''), metricCell(p.elapsed, 'meta'), metricCell(p.pid, 'meta'));
             const action = h('td', 'tasks-action');
             if (p.canStop) {
-              const stop = text('button', `tasks-stop${p.forceAllowed ? ' force' : ''}`, p.forceAllowed ? 'Force stop…' : p.stopping ? 'Stopping…' : 'Stop…'); stop.type = 'button'; stop.disabled = busy || (p.stopping && !p.forceAllowed);
+              const stop = text('button', `tasks-stop${p.forceAllowed ? ' force' : p.stopping ? ' stopping' : ''}`, p.forceAllowed ? 'Force stop…' : p.stopping ? 'Stopping…' : 'Stop…'); stop.type = 'button'; stop.disabled = busy || (p.stopping && !p.forceAllowed);
               stop.dataset.taskControl = `stop-${p.token}`; stop.onclick = () => confirmStop(p); action.append(stop);
-            } else { const lock = h('span', 'tasks-protected', `${LOCK}<span>Protected</span>`); lock.title = 'The agent itself is not stopped here'; action.append(lock); }
+            } else row.title ||= 'CliDeck does not stop this process';
             row.append(action); tbody.append(row);
           }
           if (isOpen) for (const child of childRows.sort(compare)) add(child, depth + 1);
         }
         for (const p of (children.get(0) || []).sort(compare)) add(p, 0);
+        // An agent with no jobs is still listed (its own footprint); it takes one slot like a row.
+        if (position === startPosition) { const index = position++; if (index >= page * 400 && index < (page + 1) * 400) displayed++; }
         if (displayed === beforeGroup) groupRow.remove();
       }
       const pages = Math.max(1, Math.ceil(position / 400));
@@ -231,7 +313,7 @@ export function initTaskManager() {
     function changed() { page = 0; selected = null; confirmation.hidden = true; filterProject = project.value; filterSession = agent.value; if (snapshot) { updateFilters(); } render(); }
     close.onclick = dismiss;
     overlay.addEventListener('mousedown', e => { if (e.target === overlay) dismiss(); });
-    for (const control of [project, agent, sort]) control.onchange = changed;
+    for (const control of [project, agent]) control.onchange = changed;
     refresh.onclick = load;
     document.addEventListener('visibilitychange', visibility);
     document.addEventListener('keydown', keydown, true);

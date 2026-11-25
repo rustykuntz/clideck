@@ -5,6 +5,7 @@ import { store } from "../store.js";
 import { sendPluginMessage } from "../ws.js";
 import { resolvedTheme, onTheme } from "../theme.js";
 import { toast } from "./toast.js";
+import { openPluginLink } from "./desktop.js";
 
 const frames = new Set();              // {frame,pluginId,context,onClose}
 let initialized = false;
@@ -27,6 +28,7 @@ function initialize() {
     const message = event.data || {};
     if (message.type === "clideck.send" && typeof message.event === "string") sendPluginMessage(entry.pluginId, message.event, message.data);
     else if (message.type === "clideck.close" && entry.onClose) entry.onClose();
+    else if (message.type === "clideck.open") openPluginLink(message.url);   // sandboxed pages cannot open tabs themselves
     else if (message.type === "clideck.toast") {
       const kind = ["success", "warn", "error"].includes(message.kind) ? message.kind : "info";
       toast[kind]({ title: String(message.title || "Plugin"), body: String(message.body || "") });

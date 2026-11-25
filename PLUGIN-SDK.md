@@ -48,10 +48,38 @@ Installing validates and atomically copies the folder into the engine's plugin
 directory. It never runs npm. Bundle any dependencies you require. Manual copy
 into `<dataDir>/plugins/` followed by Refresh Plugins is equivalent.
 
+Every plugin shipped in `plugins/` or `plugin-packages/` appears in Settings and
+`clideck plugins`, including disabled plugins. Google Workspace and Telegram
+ship disabled; enable them with their switch or `clideck plugin enable <id>`.
+Listing a disabled plugin never activates its code. Earlier user-installed
+copies retain their code, settings and activation state; removing such a copy
+reveals the shipped version, disabled, while keeping its settings and data.
+
+Third-party plugins install from an unpacked folder using Settings or
+`clideck plugin install ./my-plugin`. `clideck plugins --all` also lists any
+packages added since the last refresh. `clideck plugin info <id>` returns the
+description, commands, redacted settings and bounded README setup instructions.
+
+Make commands agent-friendly: include a status/setup command that returns the
+current state and next step, reuse the same handlers as your UI, and report
+failures through nonzero exit codes. A command that presents a pairing link has
+not completed pairing. Secrets belong on stdin or in a secret setup control,
+never command arguments or command output. Agents may enable/disable a plugin
+or apply validated settings using `clideck plugin settings <id> --stdin`.
+
 The optional manifest boolean `enabledByDefault` controls initial activation
 (defaults to `true`). Use `false` to require the user to enable the plugin first.
 A saved enabled/disabled choice always takes precedence, just as saved setting
 values take precedence over setting defaults.
+
+A setting may include a nonempty `group` label (up to 80 characters). Settings
+with the same label appear together in a collapsed, labelled section below the
+ungrouped fields. Use this for optional or advanced configuration; keep the
+required first-use fields ungrouped.
+
+If copying succeeds but activation fails, installation returns an error with the
+reason and leaves the installed folder available for repair. It never reports a
+failed activation as a successful ready plugin.
 
 ## Backend
 
@@ -83,6 +111,65 @@ It exposes canonical events, cloned session/project snapshots, transcript
 turns, normal session prompt/input/lifecycle paths, validated settings,
 namespaced client messages, commands, logging, and a private data directory.
 Do not read core persistence files or parse raw terminal screens.
+
+For a short recap, use `getTurns(sessionId, 4, 12000)` when
+`api.capabilities?.boundedTurns === true`. The optional third argument caps the
+total returned text at 1–64,000 UTF-16 characters; core reads at most 1 MiB from
+the transcript tail. It returns the same `{role: 'user'|'agent', text}` array,
+merges adjacent same-role entries and keeps the newest text (the first turn can
+start mid-message). This is captured user/final-answer text, not full model
+context or live reasoning. Missing history returns `[]`; if no complete record
+fits in the read budget, the request fails explicitly. Omitting
+the argument preserves the existing behavior. Older engines do not enforce it:
+check the running engine capability before relying on the bound.
+
+Return failures to the initiating command: throw an error or return a nonzero
+`exitCode` with diagnostic `stderr`. Await asynchronous work, including browser
+receipts, before completing the handler; broadcasting a client event is not a
+completion receipt. CLI commands may wait up to one hour, and plugins should use
+their own shorter deadline and return an explicit error if it expires.
+`sendPrompt` resolves only after submission is confirmed; interrupted delivery
+rejects because text may already be present. Never blindly resend it. Observable
+preview failures after `showContent` are reported to that content's session.
+
+For a request originating outside CliDeck, use `submitRequest(sessionId,
+requestId, text, {resume: true})` with a stable unique ID. It returns `waiting`,
+`sent`, `uncertain` or `error` and shares the normal busy/typing/menu guards.
+Resume requires the same saved native conversation; a fresh session is never
+silently substituted. Receipts persist before any paste, deduplicate retries,
+and remain in core if the plugin is disabled. `getRequests()` recovers receipts
+and completed answers after a worker restart. Release a completed request only
+after saving its answer/delivery state; acknowledge uncertainty only after the
+user/agent has inspected the terminal, never as a retry mechanism.
+
+With `api.capabilities?.sessionSteer === true`, `{steer: true}` also permits
+delivery to a working session through the existing steering path. Idle sessions
+still receive a normal request with native reply ownership. Busy delivery returns
+`{state: 'sent', steered: true, message}` and stores a `complete` receipt with
+`steered: true`: this confirms delivery only, not completed agent work. It ends
+any previous reply ownership and does not capture an answer or allow
+`cancelRequest` to stop that turn. Use an explicit plugin reply command with your
+own operation/delegation ID when a response is needed. Typing, menus, a paste in
+progress and uncertain deliveries still block steering. `waiting` is not an
+automatic queue; retry with the same request ID, session, text and options.
+Changing an ID's prompt or delivery options is rejected, including after restart.
+
+Subscribe to `session.reply` for request-owned replies. It carries `sessionId`,
+`requestId`, `origin` (`plugin:<id>` or `desktop`) and `phase` (`turn.started`,
+`agent.update`, `agent.final`, `menu`, `turn.ended`, `request.acknowledged`), plus the corresponding text,
+choices or reason. Ownership begins at the submitted prompt's native echo,
+available for Claude and Codex. A later request, steering, input or interruption
+ends ownership. Never route a generic `agent.final` as the next external answer.
+`cancelRequest(id)` interrupts only that plugin's exact owned active turn;
+`releaseRequest(id)` stops waiting without stopping ongoing agent work.
+
+Use `reportError(sessionId, key, text)` for later failures, and `clearError(key)`
+after recovery. Keys are namespaced to the plugin and deduplicate failures.
+`notifyUser(sessionId, text)` stores a local user notification. The agent-facing
+equivalent is `clideck notify "<short message>"`. `user.notice` events and
+`getNotifications()` let delivery plugins forward notices; `readNotification(id)`
+marks successful delivery read. A plugin's own notices have `origin: plugin:<id>`
+so it can avoid forwarding its delivery errors back into itself.
 
 A custom document viewer declares its durable kind and MIME pair in the
 manifest, registers its sandboxed renderer from `client.js`, and publishes
@@ -169,6 +256,104 @@ dots and camelCase are invalid. A page receives `clideck.visible` when its tab i
 shown or hidden, and `clideck.theme` when the theme changes. Pause polling while
 hidden; tabs remain mounted. Git Changes provides a complete workspace example.
 
+`toolbar` actions appear in the sidebar's app menu; `terminal.header` actions
+appear in the session's **More for this session** menu.
+`terminal.primary` puts a prominent action directly in the session header;
+reserve it for the plugin's main session control, with a matching Stop action
+while active. Set `iconOnly: true` for a compact icon control (its `label` remains
+the accessible name) and `pressed: true | false` for a toggle's highlighted and
+`aria-pressed` state. `terminal.voice` remains the dictation microphone affordance.
+Actions may also use `plugin.settings` placement to add a Configure button to
+their own Settings card. `openWorkspace(id)` uses the active session when one is
+selected; otherwise it opens in the main pane without creating an agent session.
+That frame receives an empty session ID and must not assume a calling agent.
+Selecting a session hides the app workspace; Close or disabling its plugin
+disposes it. An explicitly supplied deleted/invalid session ID is refused.
+A sandboxed workspace can open an HTTP, HTTPS or mailto link through
+`parent.postMessage({type:'clideck.open', url}, '*')`; the host validates and
+rate-limits it, refuses links back to the app's own origin, and never grants the frame general popup
+access. Disabling a plugin removes its registered controls and workspace assets.
+
+`api.openSettings()` opens only the calling plugin's Settings card and returns
+its success receipt; it does not accept another plugin's ID.
+
+### Desktop integration and browser fallback
+
+The same client plugin works in the browser and desktop app. Check
+`api.capabilities.desktop === true` for desktop-specific presentation; it is absent
+in the browser. Backend plugins continue to run in ordinary Node workers with the
+same SDK, settings and private data directories.
+
+- `await api.notify({ title, body, sessionId? })` requests a notification and returns
+  whether the host accepted it. It follows the person's notification settings and
+  allows at most one notification per second per plugin. Desktop delivery uses a
+  native notification; its click focuses the app and optional session. Browser
+  delivery uses the existing browser-notification permission.
+- `await api.openExternal(url)` opens an HTTP, HTTPS or mailto URL through the same
+  validated, rate-limited host path as workspace `clideck.open` links. Plugin links
+  always open in the system browser from the desktop app. Ordinary app web links
+  follow Settings → Desktop app → Open web links; Google authorization always
+  opens in the system browser. Browser links use `noopener`.
+
+These are host capabilities, not access to Electron or Node from plugin UI code.
+Client Workers and sandboxed workspace/viewer frames retain their existing
+isolation. Older clients may not expose these methods; feature-detect them before
+calling when supporting older CliDeck releases.
+
+### Live browser audio and focus
+
+Check `api.capabilities?.realtimeAudio === true`, supplied by the running browser
+host. A newer Worker loaded by an old page does not advertise support. The host
+also requires browser WebRTC/microphone support and localhost or HTTPS; denied
+permission, blocked playback and failed connections return explicit errors.
+
+Subscribe to `onActiveSessionChange(handler)` for an initial snapshot and later
+changes: `{session, focused, visible, connected}`. Focus means the browser window
+has document focus, not that a particular input owns the caret. The host cuts
+live capture/playback synchronously before notifying the Worker on session
+switch, focus/visibility loss, disconnection, session removal or teardown.
+Returning focus never restarts media. A plugin may start a fresh connection for
+an explicitly enabled, currently focused session; discard old session replies
+and pending signaling. Do not cancel the underlying agent's work on focus loss.
+
+```js
+const { id, offerSdp } = await api.openRealtimeAudio({
+  sessionId, channelLabel: 'events', // label optional, 1–128 UTF-8 bytes
+  signal: openingController.signal, // optional AbortController owned by the Worker
+});
+// Exchange SDP through the plugin backend; standard provider keys stay there.
+await api.setRealtimeAudioAnswer(id, answerSdp);
+// Wait for onRealtimeAudioEvent({type:'state', state:'connected', id, sessionId}).
+await api.sendRealtimeAudioData(id, JSON.stringify(providerEvent));
+await api.closeRealtimeAudio(id);
+```
+
+`onRealtimeAudioEvent(handler)` supplies `{id, sessionId, type, state?, data?,
+error?}`. States are `connecting`, `connected` (data channel open), and `closed`;
+data is opaque text, never provider-interpreted by core. Subscribe before opening
+and match connection/session IDs. SDP and each data message are capped at 64 KiB
+UTF-8; outbound buffered data is capped at 256 KiB. Invalid or stale answer/send
+calls reject; closing an already closed/unowned ID returns `false`. No automatic
+retry or buffering is performed. A connection must open its data channel within
+60 seconds, including permission and signaling; late permission/SDP/playback
+cannot revive a cancelled connection.
+Abort the opening controller when Stop is pressed while permission or SDP is
+pending: no connection ID is available yet. The signal stays in the Worker;
+core cancels only that exact opening request. Once the promise resolves, use
+`closeRealtimeAudio(id)` to stop the established connection.
+
+The host owns `MediaStream`, `RTCPeerConnection`, a gathered SDP offer and remote
+audio. Plugins own signaling, providers, voice/instructions and browser claims;
+use targeted backend `context.reply` for SDP, not broadcast `sendToClients`.
+Only one live media reservation exists per page, including while opening. Live
+audio refuses active dictation or clip playback, and blocks new dictation/clips
+until closed. No iframe permissions or provider-specific core state are added.
+
+Existing `startMicrophone()`, `stopMicrophone()`, `onMicrophoneData()` and
+`onMicrophoneState()` expose host-captured mono 16 kHz PCM16 in 100 ms chunks for
+dictation. They are separate from the focus-bound WebRTC connection; plugin
+Workers and workspace frames never receive its media objects.
+
 Generated audio crosses the Worker boundary as an `ArrayBuffer` and is played
 by one host-owned player through `playAudio()`; `stopAudio()` only stops that
 plugin's clip. This keeps playback controls accessible and consistent without
@@ -228,6 +413,9 @@ authority. Install only code you trust. Worker isolation protects CliDeck from
 accidental crashes; it is not a malicious-code sandbox.
 
 The current API version is `1`. Require only capabilities you use and ignore
-unknown additive fields. A plugin requiring another API version is shown as
+unknown additive fields. Backend `api.capabilities` is frozen and supplied by the
+running engine; older engines may omit it. Installing an updated plugin does not
+upgrade the engine: check `api.capabilities?.sessionSteer === true` before relying
+on busy-session steering. A plugin requiring another API version is shown as
 incompatible and never loaded. See [PLUGINS-DESIGN.md](PLUGINS-DESIGN.md) for
 the product boundary and lifecycle rules.

@@ -29,6 +29,8 @@ test('read-along traces the existing normalization without changing spoken text'
     'Item 365 is now your live question about the copy icon',
     'since 08-26, from 1/99, at 9:05 PM; wait 2 days or 250ms.',
     '€1.01; $897k; 42nd; 3.1415; 2026-08-26. API >= 365.',
+    'Sep 22–Nov 6; 11 Oct, October 11th, and 11–13 Oct 2026.',
+    'We made +1.82M, +0.41M and −0.42M; we make 0.41K.',
     'Read https://example.com/docs?q=1 and ./reports/result.pdf:761.',
     '“READY”—e.g. HTML… foo_bar a*b issue#12 😀 日本語',
     'First.  Second!\nThird.\n\nLast.', '',

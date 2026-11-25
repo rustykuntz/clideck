@@ -51,6 +51,15 @@ const xss = R.renderMarkdown("Hi <script>alert(1)</script> and [x](javascript:al
 ok("md: raw HTML in text is escaped (no live <script>)", !q(xss, "script") && /&lt;script&gt;/.test(q(xss, "p").innerHTML));
 ok("md: javascript: link is NOT linkified", !q(xss, "a") && /x/.test(q(xss, "p").innerHTML));
 
+const urls = R.renderMarkdown("Sources (https://github.com/elder-plinius/CL4R1T4S), https://example.com/wiki/Topic_(detail). https://example.com/?a=1&b=2");
+const hrefs = (html) => [...html.matchAll(/<a href="([^"]*)"/g)].map(m => m[1]);
+ok("md: bare URLs become links without surrounding prose punctuation", hrefs(q(urls, "p").innerHTML).join(" ") === "https://github.com/elder-plinius/CL4R1T4S https://example.com/wiki/Topic_(detail) https://example.com/?a=1&amp;b=2");
+const protectedUrls = R.renderMarkdown("[https://explicit.dev](https://target.dev) `https://code.dev` ![image](https://image.dev/pic.png)\n\n```\nhttps://fenced.dev\n```");
+const protectedHtml = q(protectedUrls, "p").innerHTML;
+ok("md: autolinking preserves explicit links, images and code", hrefs(protectedHtml).join(" ") === "https://target.dev" && protectedHtml.includes("<code>https://code.dev</code>") && protectedHtml.includes('src="https://image.dev/pic.png"') && q(protectedUrls, "pre code").textContent === "https://fenced.dev");
+const quotedUrl = R.renderMarkdown('https://safe.dev/" onclick="alert(1) <https://angle.dev>');
+ok("md: bare URLs cannot introduce HTML attributes", hrefs(q(quotedUrl, "p").innerHTML).join(" ") === "https://safe.dev/ https://angle.dev" && q(quotedUrl, "p").innerHTML.startsWith('<a href="https://safe.dev/" target="_blank" rel="noopener noreferrer">https://safe.dev/</a>') && !/<a\b[^>]*onclick/.test(q(quotedUrl, "p").innerHTML));
+
 // ── diff ──
 const df = R.renderDiff(["@@ -1,2 +1,2 @@", " keep", "-old line", "+new line"].join("\n"));
 ok("diff: one add row", qa(df, ".diff-row.add").length === 1 && q(df, ".diff-row.add .diff-code").textContent === "new line");

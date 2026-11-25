@@ -8,7 +8,7 @@ import { store } from "../store.js";
 import { installScrollbackPreservation } from "../terminal-scrollback.js";
 import { send, renameSession, openContentPath } from "../ws.js";
 import { sessionFace } from "../providers-ui.js";
-import { esc, shortId, debounce, copyText, inlineRename, askAddress, SESSION_NAME_MAX, limitSessionName } from "../util.js";
+import { esc, relTime, shortId, debounce, copyText, inlineRename, askAddress, SESSION_NAME_MAX, limitSessionName } from "../util.js";
 import { onTheme } from "../theme.js";
 import { appliedXterm } from "../terminal-themes.js";
 import { openTerminalMenu } from "./session-menu.js";
@@ -19,16 +19,33 @@ import { pastePayload } from "./paste.js";
 import { isEditingKey, userInputFrame } from "./user-activity.js";
 import { uploadFiles } from "./drop.js";
 import { startBounce } from "./bounce.js";
-import { onTerminalTabShown } from "./content-dock.js";
+import { onTerminalTabShown, appWorkspaceOpen, syncAppWorkspace } from "./content-dock.js";
 import { candidatesIn, linkFor, probeDebounced } from "./paths.js";
 import { resolveActions, runAction } from "./action-registry.js";
 import { registerReadAlongSurface, matchable } from "./read-along.js";
+const FOCUS_REPORTS = /^(?:\x1b\[[IO])+$/;
 
 const FONT_FAMILY = "'SF Mono','JetBrains Mono','Fira Code',ui-monospace,Menlo,Consolas,monospace";
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 1.3;
 const URL_RE = /https?:\/\/[^\s]+/g;
-const URL_TRAIL = /[),.;:!?\]}'"]+$/;   // trailing punctuation to peel off a matched URL (v1 terminals.js:199-210)
+const URL_TRAIL = "),.;:!?]}'\"";       // trailing punctuation to peel off a matched URL (v1 terminals.js:199-210)
+// The browser's own URL parser decides what is a link: any http(s) URL with a host — localhost, IPv4, IPv6,
+// ports and all. Sentence punctuation after it is peeled off; a "]" stays only when it closes an IPv6 host.
+// Returns the URL exactly as printed (minus that punctuation), or null.
+function terminalUrl(raw) {
+  let end = raw.length;
+  while (end > 0 && URL_TRAIL.includes(raw[end - 1])) {
+    const head = raw.slice(0, end - 1);
+    if (raw[end - 1] === "]" && head.split("[").length > head.split("]").length) break;
+    end--;
+  }
+  const url = raw.slice(0, end);
+  try {
+    const parsed = new URL(url);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.hostname ? url : null;
+  } catch { return null; }
+}
 
 // The xterm palette is the ACTIVE session's applied theme (its per-session override, else the app-mode
 // default) — resolved live from the theme library, so switching sessions / picking a theme re-colours the pane.
@@ -168,7 +185,13 @@ export function initTerminal() {
 
   // every keystroke → raw input for the focused session (menu digits included).
   // Dormant sessions are read-only: the PTY is gone, so input goes nowhere — drop it locally.
-  term.onData((data) => { const s = store.active(); if (s && s.live !== false) send({ type: "input", sessionId: s.id, data }); });
+  // Focus reports (DECSET 1004: ESC[I / ESC[O) are optional notifications, not input. Forwarding them made a mere
+  // focus change count as typing and cancel a phone-tracked reply, so a chunk made ONLY of them is dropped.
+  // Anything else — keys, paste, cursor/device replies — passes untouched.
+  term.onData((data) => {
+    if (FOCUS_REPORTS.test(data)) return;
+    const s = store.active(); if (s && s.live !== false) send({ type: "input", sessionId: s.id, data });
+  });
 
   scrollBtn = document.getElementById("scroll-btn");
   nameEl = document.getElementById("th-name");
@@ -548,10 +571,8 @@ function registerLinks() {
       const text = line.translateToString(true);
       const links = []; let m; URL_RE.lastIndex = 0;
       while ((m = URL_RE.exec(text))) {
-        let url = m[0];
-        const t = url.match(URL_TRAIL);
-        if (t) url = url.slice(0, url.length - t[0].length);
-        if (url.length < 11 || !/^https?:\/\/[^\s.]+\.[^\s]/.test(url)) continue;   // needs a host with a dot
+        const url = terminalUrl(m[0]);
+        if (!url) continue;
         const sx = m.index + 1, ex = m.index + url.length;                          // 1-based, end inclusive
         links.push({ text: url, range: { start: { x: sx, y }, end: { x: ex, y } }, activate: (event, uri) => { if (event.button === 0 && !linkContextGesture) openUrl(uri); } });
       }
@@ -726,8 +747,11 @@ function paintHeaderTelemetry(session) {
       if (usage) {
         const percent = Math.round(usage.percent);
         context.classList.toggle("estimated", usage.estimated);
-        context.classList.toggle("warm", percent >= 75 && percent < 90);
-        context.classList.toggle("hot", percent >= 90);
+        // Four steps, so the bar warns early and escalates: calm (as before) under 25%, yellow to 50%,
+        // orange to 70%, red from 70%.
+        context.classList.toggle("ctx-yellow", percent >= 25 && percent < 50);
+        context.classList.toggle("ctx-orange", percent >= 50 && percent < 70);
+        context.classList.toggle("ctx-red", percent >= 70);
         context.setAttribute("aria-valuenow", String(percent));
         context.setAttribute("aria-label", "Context usage " + percent + " percent" + (usage.estimated ? ", estimated" : ", exact") + ". " + tokenFormat.format(usage.usedTokens) + " of " + tokenFormat.format(usage.windowTokens) + " tokens.");
         context.title = tokenFormat.format(usage.usedTokens) + " / " + tokenFormat.format(usage.windowTokens) + " tokens · " + (usage.estimated ? "Estimated" : "Exact");
@@ -737,23 +761,67 @@ function paintHeaderTelemetry(session) {
     }
   }
   const last = document.getElementById("th-last");
-  if (last && last._at !== session.lastAgentAt) {
-    last._at = session.lastAgentAt;
-    last.hidden = !session.lastAgentAt;
-    if (session.lastAgentAt) {
-      const date = new Date(session.lastAgentAt), time = clockFormat.format(date);
-      last.title = "Last finalized reply · " + stampFormat.format(date);
-      last.setAttribute("aria-label", "Last finalized agent reply at " + time);
-      const value = document.getElementById("th-last-value"); if (value) value.textContent = time;
-    }
+  if (!last) return;
+  const at = session.lastAgentAt;
+  const cold = cacheCold(session);
+  clearTimeout(cacheTimer);
+  // Re-decide when the cache would expire, then once a minute while cold so the card's "ago" keeps up.
+  const ttl = cacheTtl(session.provider);
+  if (cold) cacheTimer = setTimeout(repaintCache, 60000);
+  else if (cacheWatched(session)) cacheTimer = setTimeout(repaintCache, Math.max(1000, at + ttl.ms - Date.now() + 250));
+  const sig = at + "|" + (cold ? relTime(at) + "|" + session.contextUsage.usedTokens : "");
+  if (last._sig === sig) return;
+  last._sig = sig;
+  last.hidden = !at;
+  last.classList.toggle("cold", cold);
+  if (!at) return;
+  const date = new Date(at), time = clockFormat.format(date), stamp = stampFormat.format(date);
+  const value = document.getElementById("th-last-value"); if (value) value.textContent = time;
+  const tip = document.getElementById("th-last-tip");
+  if (cold) {
+    const usage = session.contextUsage;
+    const tokens = (usage.estimated ? "~" : "") + compactFormat.format(usage.usedTokens);
+    last.title = "";   // the card replaces the native tooltip; two would stack
+    last.setAttribute("tabindex", "0");   // keyboard users reach the explanation too
+    last.setAttribute("aria-describedby", "th-last-tip");
+    last.setAttribute("aria-label", "Last reply at " + time + ". Prompt cache likely expired.");
+    if (tip) tip.innerHTML = '<div class="th-tip-title">Cache likely expired</div>'
+      + "<p>The last reply was <b>" + esc(relTime(at)) + "</b>. " + esc(ttl.who) + " keeps a conversation cached for about "
+      + esc(ttl.label) + ", so your next message will likely resend all <b>" + esc(tokens) + "</b> tokens without the cache discount.</p>"
+      + '<p class="th-tip-foot">Starting something new? Run <code>/clear</code> first.</p>';
+  } else {
+    last.title = "Last finalized reply · " + stamp;
+    last.removeAttribute("tabindex");
+    last.removeAttribute("aria-describedby");
+    last.setAttribute("aria-label", "Last finalized agent reply at " + time);
+    if (tip) tip.textContent = "";
   }
 }
+
+// Prompt cache: providers keep a conversation's prefix cached only for a while after the last request. Past that,
+// the next message re-reads the whole context at full (or cache-write) price. Claude Code on a subscription uses
+// 1h (5m on an API key — we can't tell which, so 1h); OpenAI's current models keep ≥30m. No warning elsewhere:
+// Gemini CLI on a Google login has no prompt cache and Google documents no idle TTL; other CLIs' backends vary.
+const CACHE_TTL = {
+  "claude-code": { ms: 60 * 60000, label: "1 hour", who: "Claude Code" },
+  codex: { ms: 30 * 60000, label: "30 minutes", who: "Codex" },
+};
+const compactFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 0 });
+let cacheTimer = null;
+function cacheTtl(provider) { return CACHE_TTL[provider] || null; }
+// Only a live, idle session with a context to lose. /clear empties contextUsage (engine), which ends the warning.
+function cacheWatched(s) {
+  return !!(cacheTtl(s.provider) && s.lastAgentAt && s.live !== false && !s.closed && s.status !== "working" && s.contextUsage && s.contextUsage.usedTokens > 0);
+}
+function cacheCold(s) { return cacheWatched(s) && Date.now() - s.lastAgentAt >= cacheTtl(s.provider).ms; }
+function repaintCache() { const s = store.active(); if (s) paintHeaderTelemetry(s); }
 
 function updateEmpty() {
   const s = store.active();
   document.getElementById("rp").classList.toggle("hidden", !s);
   const empty = document.getElementById("rp-empty");
-  empty.classList.toggle("hidden", !!s);
+  empty.classList.toggle("hidden", !!s || appWorkspaceOpen());   // a sessionless plugin workspace fills the pane instead
+  syncAppWorkspace();
   if (!s) {
     const anyLive = store.sessions.size > 0;
     document.getElementById("rp-empty-big").textContent = !store.connected ? "Engine offline" : anyLive ? "No session selected" : "No sessions yet";

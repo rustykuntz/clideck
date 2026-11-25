@@ -15,6 +15,20 @@ const MAX_ANCHOR_CHARS = 256;
 const surfaces = new Map();
 let active = null;
 
+// The user's switch for the whole mark — highlight AND the follow-scroll that comes with it. On by default;
+// off is remembered. Off never stops the timeline: playback keeps choosing cues, it just paints nothing, so
+// switching back on mid-read lands on the words being spoken now.
+const ENABLED_KEY = "clideck.readAlong";
+let enabled = (() => { try { return localStorage.getItem(ENABLED_KEY) !== "off"; } catch { return true; } })();
+export function readAlongEnabled() { return enabled; }
+export function setReadAlongEnabled(on) {
+  enabled = !!on;
+  try { enabled ? localStorage.removeItem(ENABLED_KEY) : localStorage.setItem(ENABLED_KEY, "off"); } catch {}
+  if (!active) return;
+  active.index = -1;                                          // repaint (or clear) on the next clock tick
+  if (!enabled) { try { active.handle.clear(); } catch {} }
+}
+
 export function registerReadAlongSurface(name, resolve) {
   if (typeof name !== "string" || typeof resolve !== "function") return () => {};
   surfaces.set(name, resolve);
@@ -86,7 +100,7 @@ export function startReadAlong(value) {
 
 export function updateReadAlong(seconds, playing = true) {
   if (!active) return;
-  const index = playing ? cueAt(active.cues, Number(seconds)) : -1;
+  const index = playing && enabled ? cueAt(active.cues, Number(seconds)) : -1;
   if (index === active.index) return;
   active.index = index;
   try { index >= 0 ? active.handle.show(index) : active.handle.clear(); } catch {}

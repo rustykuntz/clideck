@@ -1,0 +1,69 @@
+/* CliDeck desktop startup / error screen. Shares the app's tokens (public/css/app.css) so the hand-off into the
+   app is seamless: same background, same coral mark, same type. The whole window is a drag handle. */
+:root {
+  --bg:#191a1e; --surface-1:#212229; --surface-2:#292b33; --surface-3:#33353f;
+  --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.13); --hairline:rgba(255,255,255,.07);
+  --text:#e9eaee; --dim:#a1a4ad; --faint:#686b74; --danger:#e06a6a;
+  --accent:#e18063; --accent-deep:#c25a3c; --accent-ink:#1a0d09; --accent-glow:rgba(225,128,99,.35);
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Roboto,sans-serif;
+  --ease:cubic-bezier(.32,.72,0,1);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:#ebedf0; --surface-1:#f1f2f5; --surface-2:#e7e9ed; --surface-3:#dee1e6;
+    --border:rgba(28,24,20,.10); --border-strong:rgba(28,24,20,.17); --hairline:rgba(28,24,20,.08);
+    --text:#1b1c20; --dim:#5c5f66; --faint:#7c7f86; --danger:#b5342a;
+    --accent:#b3452a; --accent-deep:#9c3a22; --accent-ink:#fff8f4; --accent-glow:rgba(179,69,42,.22);
+    color-scheme:light;
+  }
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { height:100%; }
+body { display:grid; place-items:center; background:var(--bg); color:var(--text); font:14px/1.6 var(--sans); -webkit-font-smoothing:antialiased; -webkit-app-region:drag; user-select:none; cursor:default; overflow:hidden; }
+/* macOS vibrancy window: let the material through, tinted so text keeps its contrast */
+html.vibrancy body { background:color-mix(in srgb, var(--bg) 62%, transparent); }
+
+.stage { width:min(440px, calc(100vw - 48px)); display:flex; flex-direction:column; align-items:center; text-align:center; animation:rise .6s var(--ease) both; }
+/* the Dock icon itself, so launching reads as one continuous gesture; its canvas includes the macOS margin + shadow */
+.mark { width:104px; height:104px; margin:-10px 0 10px; animation:breathe 2.8s ease-in-out .6s infinite; -webkit-user-drag:none; }
+.title { font-size:21px; font-weight:650; letter-spacing:-.2px; }
+.sub { min-height:21px; margin-top:4px; color:var(--dim); font-size:13px; opacity:0; transition:opacity .3s ease; }
+.sub.show { opacity:1; }
+.bar { position:relative; width:150px; height:2px; margin-top:22px; overflow:hidden; border-radius:2px; background:var(--hairline); opacity:0; transition:opacity .3s ease; }
+.sub.show + .bar { opacity:1; }
+.bar i { position:absolute; top:0; bottom:0; width:40%; border-radius:2px; background:var(--accent); animation:slide 1.3s var(--ease) infinite; }
+
+/* failure: the mark goes quiet, the message and the way out take over */
+.stage[data-state="error"] .mark { animation:none; filter:saturate(.15); opacity:.7; }
+.stage[data-state="error"] .bar { display:none; }
+.problem { width:100%; margin-top:18px; animation:rise .4s var(--ease) both; }
+.problem[hidden] { display:none; }
+.detail { position:relative; }
+.error { max-height:150px; padding:11px 40px 11px 13px; overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--surface-1); color:var(--dim); font:11.5px/1.55 var(--mono); text-align:left; white-space:pre-wrap; word-break:break-word; user-select:text; -webkit-app-region:no-drag; cursor:text; }
+.error:empty { display:none; }
+.error:empty + .copy { display:none; }
+.copy { position:absolute; top:6px; right:6px; display:grid; place-items:center; width:26px; height:26px; border:0; border-radius:7px; background:transparent; color:var(--faint); cursor:pointer; transition:background .12s, color .12s; }
+.copy:hover { background:var(--surface-2); color:var(--text); }
+.copy.done { color:var(--accent); }
+.actions { display:flex; justify-content:center; gap:8px; margin-top:16px; }
+button { -webkit-app-region:no-drag; font-family:var(--sans); }
+button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.btn { height:31px; padding:0 14px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface-2); color:var(--text); font-size:12.5px; font-weight:550; cursor:pointer; transition:background .13s, border-color .13s, color .13s, opacity .13s; }
+.btn:hover { background:var(--surface-3); }
+.btn.primary { border-color:transparent; background:var(--accent); color:var(--accent-ink); }
+.btn.primary:hover { background:var(--accent-deep); }
+.btn.quiet { border-color:transparent; background:none; color:var(--faint); }
+.btn.quiet:hover { color:var(--text); }
+.btn:disabled { opacity:.55; cursor:default; }
+.btn[hidden] { display:none; }
+.foot { position:fixed; left:0; right:0; bottom:16px; text-align:center; color:var(--faint); font:11px/1 var(--sans); font-variant-numeric:tabular-nums; opacity:.8; }
+
+@keyframes rise { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
+@keyframes breathe { 0%,100% { transform:none; } 50% { transform:scale(1.03); } }
+@keyframes slide { from { left:-40%; } to { left:100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .stage, .problem, .mark, .bar i { animation:none; }
+  .bar i { left:30%; }
+}

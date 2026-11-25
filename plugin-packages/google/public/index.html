@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Google Workspace</title>
+<!--
+  Google Workspace — the plugin's account/status tab. Sandboxed, opaque origin (no allow-same-origin): it links
+  the host's app.css and uses the same classes as Settings (set-card, set-row, plg-*), so it reads as part of
+  CliDeck. Everything else crosses postMessage: clideck.ready up; clideck.init / message / theme down;
+  clideck.send to the plugin server; clideck.open for external https links. It never runs gog itself.
+-->
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:auto; }
+  .page { max-width:720px; margin:0 auto; padding:26px 24px 40px; box-sizing:border-box; }
+  .gw-head { display:flex; align-items:flex-start; gap:12px; margin-bottom:22px; }
+  .gw-ic { width:38px; height:38px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; color:#4285f4; background:color-mix(in srgb,#4285f4 14%,transparent); }
+  .gw-titles { flex:1; min-width:0; }
+  .gw-name { font-size:16px; font-weight:650; color:var(--text); }
+  .gw-sub { margin-top:3px; font-size:12.5px; line-height:1.5; color:var(--faint); }
+  .gw-head .plg-status { flex:0 0 auto; margin-top:3px; }
+  .gw-sec-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .gw-sec-head .set-sec-h { margin-bottom:0; }
+  .gw-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .gw-actions .plg-primary, .gw-actions .plg-btn { height:32px; padding-top:0; padding-bottom:0; box-sizing:border-box; }
+  .gw-acct { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:11px 0; }
+  .gw-acct:first-child { padding-top:2px; }
+  .gw-acct:last-child { padding-bottom:2px; }
+  .gw-acct + .gw-acct { border-top:1px solid var(--border); }
+  .gw-acct-main { flex:1; min-width:0; }
+  .gw-email { display:flex; align-items:center; gap:8px; min-width:0; font-size:13px; font-weight:550; color:var(--text); }
+  .gw-email span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* A new account no agent can use yet: the next step sits right beside its email, in the "waiting on you" amber.
+     A pill, not a banner — it names the step and takes you there (scrolls to the account's Agent access). */
+  .gw-setup { flex:0 1 auto; min-width:0; display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 7px 0 6px; border:1px solid color-mix(in srgb,var(--working) 30%,transparent); border-radius:99px; background:color-mix(in srgb,var(--working) 11%,transparent); color:var(--working); font:600 11.5px/1 var(--sans); white-space:nowrap; cursor:pointer; transition:background-color .15s ease, border-color .15s ease; }
+  .gw-setup > span { overflow:hidden; text-overflow:ellipsis; }
+  .gw-setup-ic { display:inline-flex; flex:0 0 auto; font-style:normal; }
+  .gw-setup svg { width:13px; height:13px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .gw-setup .gw-setup-go { width:11px; height:11px; stroke-width:1.9; margin-left:-1px; transition:transform .15s ease; }
+  .gw-setup:hover:not(:disabled) { background:color-mix(in srgb,var(--working) 18%,transparent); border-color:color-mix(in srgb,var(--working) 45%,transparent); }
+  .gw-setup:hover:not(:disabled) .gw-setup-go { transform:translateX(2px); }
+  .gw-setup:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .gw-setup:disabled { opacity:.55; cursor:default; }
+  /* Arriving at an account's access from its pill: one soft ring that fades, so the eye lands on the right block. */
+  .gw-acct-access { border-radius:9px; }
+  .gw-flash { animation:gw-flash 1.4s ease-out; }
+  @keyframes gw-flash { 0%, 25% { box-shadow:0 0 0 2px color-mix(in srgb,var(--working) 55%,transparent), 0 0 0 7px color-mix(in srgb,var(--working) 14%,transparent); } 100% { box-shadow:0 0 0 2px transparent, 0 0 0 7px transparent; } }
+  @media (prefers-reduced-motion:reduce) { .gw-flash { animation:none; } .gw-setup, .gw-setup .gw-setup-go { transition:none; } }
+  .gw-default { flex:0 0 auto; padding:1px 6px; border-radius:99px; background:var(--surface-3); color:var(--dim); font-size:10.5px; font-weight:600; }
+  .gw-services { margin-top:3px; font-size:12px; line-height:1.5; color:var(--dim); }
+  .gw-meta { margin-top:1px; font-size:11.5px; color:var(--faint); }
+  .gw-err { margin-top:4px; font-size:12px; line-height:1.45; color:var(--danger); overflow-wrap:anywhere; }
+  .gw-acct .plg-status { margin-top:2px; }
+  /* Settings hides plugin status chips on narrow screens; here they are the answer, so they stay. */
+  .gw-head .plg-status, .gw-acct .plg-status { display:inline-flex; }
+  .gw-next { margin:0 0 12px; padding:10px 12px; border:1px solid var(--border-strong); border-radius:9px; background:var(--surface-2); font-size:12.5px; line-height:1.5; color:var(--text); }
+  .gw-next .gw-link { margin-left:6px; }
+  .gw-link { padding:0; border:0; background:none; color:var(--accent); font:550 12.5px var(--sans); cursor:pointer; }
+  .gw-link:hover { text-decoration:underline; }
+  .gw-link:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+  .gw-mono { font-family:var(--mono); font-size:11.5px; overflow-wrap:anywhere; }
+  .gw-value { color:var(--dim); font-size:12.5px; text-align:right; min-width:0; }
+  .set-card .set-row { border-bottom:0; padding:8px 0; }
+  .set-card .set-row + .set-row { border-top:1px solid var(--border); }
+  .set-row-lbl { min-width:0; }
+  .gw-foot { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin-top:4px; font-size:12px; color:var(--faint); }
+  .gw-foot code { padding:1px 5px; border-radius:5px; background:var(--surface-3); color:var(--dim); font:11.5px var(--mono); }
+  /* gog setup: one quiet card with the server's message and a thin progress bar */
+  .gw-install { margin-bottom:18px; }
+  .gw-progress-line { display:flex; align-items:center; gap:10px; margin-top:10px; }
+  .gw-progress { position:relative; flex:1; height:6px; overflow:hidden; border-radius:99px; background:var(--surface-3); }
+  .gw-progress-fill { width:0; height:100%; border-radius:inherit; background:var(--accent); transition:width .3s ease; }
+  .gw-indeterminate .gw-progress-fill { width:35%; animation:gw-slide 1.3s ease-in-out infinite; }
+  @keyframes gw-slide { from { transform:translateX(-100%); } to { transform:translateX(290%); } }
+  @media (prefers-reduced-motion:reduce) { .gw-indeterminate .gw-progress-fill { animation:none; width:100%; opacity:.45; } .gw-progress-fill { transition:none; } }
+  .gw-pct { flex:0 0 auto; min-width:34px; text-align:right; color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; }
+  .gw-retry { margin-top:10px; }
+  .gw-install .plg-notice, .set-card > .plg-notice { margin:8px 0 0; }
+  .gw-path { margin-top:2px; color:var(--faint); }
+  /* Agent access */
+  .gw-acct-access { padding:12px 0; }
+  .gw-acct-access:first-child { padding-top:2px; }
+  .gw-acct-access:last-child { padding-bottom:2px; }
+  .gw-acct-access + .gw-acct-access { border-top:1px solid var(--border); }
+  .set-card .gw-acct-access > .set-row { padding:0; }
+  .gw-access-email { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gw-defaults { margin-top:10px; }
+  .gw-defaults-s { margin-bottom:4px; }
+  .gw-select { flex:0 0 auto; height:32px; padding:0 8px; background:var(--surface-1); }
+  .gw-select:disabled { opacity:.5; cursor:default; }
+  .gw-projects { display:grid; gap:8px; margin-top:8px; }
+  .gw-projects:empty { display:none; }
+  .gw-project { padding:10px 10px 10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface-1); }
+  .gw-project-head { display:flex; align-items:center; gap:8px; }
+  .gw-project-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:550; color:var(--text); }
+  .gw-remove { flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; padding:0; border:0; border-radius:7px; background:transparent; color:var(--faint); cursor:pointer; }
+  .gw-remove:hover:not(:disabled) { background:var(--surface-3); color:var(--text); }
+  .gw-remove:focus-visible, .gw-agent input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .gw-agents { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:2px 12px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+  .gw-agents .set-hint { grid-column:1 / -1; margin-top:2px; }
+  .gw-agent { display:flex; align-items:center; gap:8px; min-width:0; padding:5px 4px; border-radius:7px; font-size:12.5px; color:var(--text); cursor:pointer; }
+  .gw-agent:hover { background:var(--surface-2); }
+  .gw-agent input { flex:0 0 auto; margin:0; accent-color:var(--accent); }
+  .gw-agent-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gw-agent-meta { flex:0 0 auto; margin-left:auto; color:var(--faint); font-size:11.5px; }
+  .gw-add { display:block; margin-top:8px; }
+  .gw-access .set-hint.warn { margin-top:8px; }
+  .gw-elsewhere { margin:10px 0 0; }
+  .gw-access .plg-notice { margin:10px 0 0; }
+  .gw-save { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:12px; }
+  .gw-save .plg-primary, .gw-save .plg-btn { height:32px; padding-top:0; padding-bottom:0; box-sizing:border-box; }
+  .gw-unsaved { margin-right:auto; color:var(--working); font-size:12px; }
+  /* Accounts: quiet actions under each account */
+  .gw-perm { color:var(--text); }
+  .gw-acct-actions { display:flex; gap:2px; margin:6px 0 0 -8px; }
+  .gw-act { height:26px; padding:0 8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--dim); font:500 12px var(--sans); cursor:pointer; }
+  .gw-act:hover:not(:disabled) { background:var(--surface-3); color:var(--text); }
+  .gw-act.danger:hover:not(:disabled) { color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); }
+  .gw-act:disabled { opacity:.45; cursor:default; }
+  .gw-act:focus-visible, .gw-fold > summary:focus-visible, .gw-drop .plg-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .gw-confirm { margin:2px 0 10px; padding:12px 13px; border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border)); border-radius:10px; background:var(--surface-1); display:grid; gap:6px; }
+  .gw-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+  .gw-confirm-actions > button { height:32px; padding-top:0; padding-bottom:0; box-sizing:border-box; }
+
+  /* Connect: services + access, the one-time guide, account email, go */
+  .gw-form { display:grid; gap:14px; }
+  .gw-form > .set-row-t { margin-bottom:-6px; }
+  .gw-services-pick { margin:0; padding:0; border:0; }
+  .gw-level { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .gw-level .tasks-seg { flex:0 0 auto; margin:0; }
+  .gw-level .tasks-seg-b { padding:0 12px; }
+  .gw-guide { padding:13px 14px; border:1px dashed color-mix(in srgb,var(--accent) 40%,var(--border-strong)); border-radius:11px; background:color-mix(in srgb,var(--accent) 4%,var(--surface-1)); }
+  .gw-steps { margin:12px 0 10px; padding:0; list-style:none; counter-reset:gw; display:grid; gap:12px; }
+  .gw-step { position:relative; padding-left:30px; counter-increment:gw; }
+  .gw-step::before { content:counter(gw); position:absolute; left:0; top:0; width:20px; height:20px; display:grid; place-items:center; border-radius:50%; background:var(--surface-3); color:var(--dim); font-size:11px; font-weight:650; }
+  .gw-step-t { font-size:12.5px; font-weight:600; color:var(--text); line-height:20px; }
+  .gw-step-s { margin-top:1px; font-size:12px; line-height:1.5; color:var(--dim); }
+  .gw-step-links { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:4px; }
+  .gw-link:disabled { color:var(--faint); cursor:default; text-decoration:none; }
+  .gw-upload { margin-top:8px; display:grid; gap:8px; }
+  .gw-drop { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border-strong); border-radius:10px; background:var(--surface-1); }
+  .gw-drop.over { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--surface-1)); }
+  .gw-drop.off { opacity:.55; }
+  .gw-drop .plg-btn { height:32px; }
+  .gw-drop-t { color:var(--faint); font-size:12px; }
+  .gw-file { display:none; }
+  .gw-who { display:flex; align-items:center; gap:16px; }
+  .gw-who .set-row-lbl { flex:0 0 auto; }
+  .gw-who .set-input { flex:1; min-width:0; background:var(--surface-1); }
+  .gw-who .set-input[readonly] { color:var(--dim); }
+  .gw-summary { padding:8px 11px; border-radius:8px; background:var(--surface-1); color:var(--dim); font-size:12px; line-height:1.5; }
+  .gw-go { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+  .gw-go > button { height:34px; padding-top:0; padding-bottom:0; box-sizing:border-box; }
+  .gw-why { margin-right:auto; color:var(--faint); font-size:12px; }
+  .gw-fold > summary { cursor:pointer; color:var(--dim); font-size:12.5px; font-weight:550; list-style:none; display:inline-flex; align-items:center; gap:6px; border-radius:6px; }
+  .gw-fold > summary::-webkit-details-marker { display:none; }
+  .gw-fold > summary::before { content:""; width:6px; height:6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
+  .gw-fold[open] > summary::before { transform:rotate(45deg); }
+  .gw-fold > summary:hover { color:var(--text); }
+  .gw-fold[open] > summary { margin-bottom:8px; }
+  .gw-form .gw-fold .set-row { padding:6px 0; }
+
+  .gw-mini-steps { margin:6px 0 6px; padding-left:20px; display:grid; gap:3px; font-size:12px; line-height:1.5; color:var(--dim); }
+  /* Google's page is open */
+  .gw-auth { display:grid; gap:10px; }
+  .gw-wait { display:flex; align-items:center; gap:8px; color:var(--dim); font-size:12.5px; }
+  .gw-auth-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+  .gw-auth-actions .plg-primary { height:34px; }
+  .gw-expiry { color:var(--faint); font-size:12px; }
+  .gw-paste { display:flex; gap:8px; margin-top:8px; }
+  .gw-paste .set-input { flex:1; min-width:0; background:var(--surface-1); }
+  .gw-paste .plg-btn { height:34px; }
+  .gw-cancel { justify-self:start; color:var(--dim); }
+  .gw-result { display:flex; align-items:center; gap:12px; }
+  .gw-result-actions { margin-left:auto; display:flex; gap:12px; flex:0 0 auto; }
+  .gw-connect .plg-notice { margin:0 0 10px; }
+
+  /* Connection request from an agent */
+  .gw-request { display:grid; gap:10px; border-color:color-mix(in srgb,var(--accent) 35%,var(--border)); }
+  .gw-request + .gw-request { margin-top:10px; }
+  .gw-request-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+  .gw-request-main { flex:1; min-width:0; }
+  .gw-request-main .set-row-t { overflow-wrap:anywhere; }
+  .gw-request .plg-status { display:inline-flex; flex:0 0 auto; margin-top:2px; }
+  .gw-request .plg-notice { margin:0; }
+  .gw-request .gw-go > button { height:32px; }
+  /* Advanced */
+  .gw-advanced { margin:4px 0 22px; }
+  .gw-advanced > summary { font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:var(--faint); font-weight:600; }
+  .gw-clients { display:grid; gap:4px; }
+  .gw-clients > .set-row-s { margin-bottom:4px; }
+  .gw-client-add { margin-top:8px; padding-top:12px; border-top:1px solid var(--border); display:grid; gap:8px; }
+  .gw-client-add .set-input { background:var(--surface-1); max-width:240px; }
+  .gw-replace { padding-left:0; }
+  .gw-loading { padding:30px 0; text-align:center; font-size:12.5px; color:var(--faint); }
+  /* One account state: a failing sign-in leads with its next step; the exact error waits under Details. */
+  .gw-fail { display:flex; align-items:center; gap:12px; margin:6px 0 4px; padding:8px 8px 8px 11px; border:1px solid color-mix(in srgb,var(--danger) 28%,transparent); border-radius:9px; background:color-mix(in srgb,var(--danger) 8%,transparent); }
+  .gw-fail-t { flex:1; min-width:0; font-size:12.5px; line-height:1.45; color:var(--danger); }
+  .gw-fail .plg-primary, .gw-fail .plg-btn { flex:0 0 auto; height:30px; padding-top:0; padding-bottom:0; box-sizing:border-box; }
+  .gw-unsure { border-color:color-mix(in srgb,var(--working) 30%,transparent); background:color-mix(in srgb,var(--working) 8%,transparent); }
+  .gw-unsure .gw-fail-t { color:var(--text); }
+  .gw-tech { margin-top:6px; }
+  .gw-tech > summary { font-size:12px; font-weight:500; color:var(--faint); }
+  .gw-tech-line { margin-top:3px; font:11.5px/1.5 var(--mono); color:var(--dim); overflow-wrap:anywhere; white-space:pre-wrap; }
+  .gw-problem .gw-tech { margin-top:8px; }
+  .gw-agent.off { opacity:.55; cursor:default; }
+  .gw-agent.off:hover { background:transparent; }
+  .gw-more { margin-top:0; padding-top:0; border-top:0; }
+  .gw-form > .gw-fold > .gw-more { margin-top:4px; }
+  .gw-readonly-note { margin-top:-6px; }
+  @media (max-width:560px) {
+    .page { padding:18px 14px 32px; }
+    .gw-sec-head { flex-direction:column; align-items:stretch; }
+    .gw-actions { justify-content:flex-end; }
+    .gw-acct { gap:10px; }
+    .gw-email { flex-wrap:wrap; row-gap:6px; }
+    .gw-acct-access > .set-row, .gw-defaults .set-row { flex-direction:column; align-items:stretch; gap:8px; }
+    .gw-project-head { flex-wrap:wrap; }
+    .gw-level, .gw-who { flex-direction:column; align-items:stretch; gap:8px; }
+    .gw-go { flex-wrap:wrap; }
+    .gw-why { flex-basis:100%; }
+    .gw-paste { flex-direction:column; }
+    .gw-fail { flex-direction:column; align-items:stretch; gap:8px; }
+  }
+</style>
+</head>
+<body>
+<main class="page" id="root" aria-live="polite"><div class="gw-loading">Loading…</div></main>
+<script src="app.js"></script>
+</body>
+</html>

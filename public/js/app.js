@@ -1,6 +1,10 @@
 import { initArchiveStatus } from "./ui/archive-status.js";
 import { initTaskManager } from "./ui/task-manager.js";
+import { initMonitors } from "./ui/monitors.js";
+import { initAppMenu } from "./ui/app-menu.js";
+import { initUserNotices } from "./ui/user-notices.js";
 import { initUpdates } from "./ui/updates.js";
+import { initUiVersion } from "./ui/ui-version.js";
 // Bootstrap: wire the store to the components and open the socket.
 import { initSidebar } from "./ui/sidebar.js";
 import { initSidebarResize } from "./ui/sidebar-resize.js";
@@ -16,11 +20,17 @@ import { initVoice } from "./ui/voice.js";
 import { initReadAloud } from "./ui/read-aloud.js";
 import { initPluginHost } from "./ui/plugin-host.js";
 import { initTour } from "./ui/tour.js";
+import { initDesktop } from "./ui/desktop.js";
 import { connectWs } from "./ws.js";
 
+initDesktop();         // desktop app only (Electron bridge present): title-bar chrome, menu actions, badge
 initUpdates();
+initUiVersion();        // stale browser UI after an update → sticky Refresh notice (reloads this tab only)
 initArchiveStatus();
 initTaskManager();
+initMonitors();        // engine-run checks that wake a session; opened from the footer app menu
+initAppMenu();         // footer: Prompts, Task Manager, Monitors, plugin tools, Theme — words, not icons
+initUserNotices();     // `clideck notify` messages for the person: sticky toasts with Open session
 initSidebar();
 initSidebarResize();   // E1: drag handle on the sidebar/terminal divider
 initTerminal();

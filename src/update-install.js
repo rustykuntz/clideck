@@ -72,7 +72,7 @@ function npmCli(node) {
 }
 
 function createUpdateInstaller({ root = PACKAGE_ROOT, node = process.execPath, run = runNpm,
-  findNpm = npmCli } = {}) {
+  findNpm = npmCli, distribution = process.env.CLIDECK_DESKTOP_ENGINE === '1' ? 'desktop' : 'npm' } = {}) {
   const source = fs.existsSync(join(root, '.git'));
   async function target() {
     if (source) throw new Error('source');
@@ -89,11 +89,14 @@ function createUpdateInstaller({ root = PACKAGE_ROOT, node = process.execPath, r
   }
   return {
     async capability() {
+      if (distribution === 'desktop') return { canInstall: false,
+        instruction: 'Update the CliDeck desktop app. Restart the engine when your running sessions are finished.' };
       if (source) return { canInstall: false, instruction: 'Update your source checkout, then restart CliDeck.' };
       try { await target(); return { canInstall: true }; }
       catch { return { canInstall: false, instruction: 'Run npm install -g clideck@latest, then restart CliDeck.' }; }
     },
     async install(version) {
+      if (distribution === 'desktop') throw new Error('Bundled engines are updated with the CliDeck desktop app.');
       if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) throw new Error('Invalid update version.');
       try {
         const { cli, prefix } = await target();

@@ -42,16 +42,32 @@ const check = (name, yes, detail) => { yes ? passes++ : fails++; console.log(`${
     await cmd('Runtime.enable');await cmd('Page.enable');await cmd('Emulation.setFocusEmulationEnabled',{enabled:true});
     await cmd('Emulation.setUserAgentOverride',{userAgent:'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',platform:'Linux x86_64'});
     await cmd('Page.navigate',{url:base});await sleep(2200);
-    await js(`(async()=>{window.store=(await import('/js/store.js')).store;store.applyEvent({type:'session.created',sessionId:'synthetic',provider:'shell',live:false,cwd:'/tmp',name:'Task Manager test'});store.select('synthetic');window.openTasks=()=>document.getElementById('task-manager').click();window.choose=(label,value)=>{const s=document.querySelector('[aria-label="'+label+'"]');if(s.tagName!=='SELECT')return s.querySelector('[data-value="'+value+'"]').click();s.value=value;s.dispatchEvent(new Event('change',{bubbles:true}));};})()`);
+    await js(`(async()=>{window.store=(await import('/js/store.js')).store;store.applyEvent({type:'session.created',sessionId:'synthetic',provider:'shell',live:false,cwd:'/tmp',name:'Task Manager test'});store.select('synthetic');window.openTasks=()=>import('/js/ui/task-manager.js').then(m=>m.openTaskManager());window.choose=(label,value)=>{const s=document.querySelector('[aria-label="'+label+'"]');if(s.tagName!=='SELECT')return s.querySelector('[data-value="'+value+'"]').click();s.value=value;s.dispatchEvent(new Event('change',{bubbles:true}));};})()`);
     check('zero process scans while Task Manager is closed',scans===0,scans);
     await js('openTasks()');await sleep(300);
     check('agent/process groups and aggregate CPU are rendered',await js("document.querySelector('.tasks-stat strong').textContent==='6'&&document.querySelector('.tasks-summary').textContent.includes('18 cores')&&document.querySelector('.tasks-table').textContent.includes('AI Trading / Strategy manager')&&document.querySelector('.tasks-table').textContent.includes('Studio / Video researcher')"));
-    check('high CPU project listed first',await js("document.querySelector('.tasks-group').textContent.includes('Studio')"));
-    check('agent roots protected; jobs have stop controls',await js("[...document.querySelectorAll('.tasks-table tr')].some(r=>r.textContent.includes('codex')&&r.textContent.includes('Protected'))&&document.querySelectorAll('.tasks-stop').length===2"));
+    check('agents keep a stable A–Z order (project, then session), not a CPU race',await js("[...document.querySelectorAll('.tasks-group')].map(g=>g.textContent.split('%')[0]).join('|').startsWith('AI Trading / Strategy manager')"));
+    // Sortable headers: one sort for agents and jobs; click reverses; the choice survives reopening.
+    await js(`window.groupsOrder=()=>[...document.querySelectorAll('.tasks-group .tasks-group-project')].map(n=>n.textContent).join('|');window.sortBy=label=>[...document.querySelectorAll('.tasks-sort')].find(b=>b.textContent===label).click();window.ariaSort=label=>[...document.querySelectorAll('.tasks-table th')].find(t=>t.textContent===label).getAttribute('aria-sort');`);
+    check('the table opens sorted by Process A→Z, shown on its header',await js("ariaSort('Process')==='ascending'&&ariaSort('CPU')==='none'&&!document.querySelector('[aria-label=\"Sort processes\"]')"));
+    await js("sortBy('CPU')");
+    check('clicking CPU sorts agents by their total CPU, heaviest first',await js("ariaSort('CPU')==='descending'&&ariaSort('Process')==='none'&&groupsOrder()==='Studio|AI Trading'"),await js('groupsOrder()'));
+    await js("sortBy('CPU')");
+    check('clicking CPU again reverses it',await js("ariaSort('CPU')==='ascending'&&groupsOrder()==='AI Trading|Studio'"));
+    await js("document.querySelector('.tasks-close').click();openTasks()");await sleep(300);
+    check('the sort survives closing and reopening',await js("ariaSort('CPU')==='ascending'&&groupsOrder()==='AI Trading|Studio'"));
+    await js("sortBy('RAM')");
+    check('a new column starts in its natural direction (RAM high→low)',await js("ariaSort('RAM')==='descending'&&groupsOrder()==='Studio|AI Trading'"));
+    await snap('task-manager-sorted.png');
+    await js("sortBy('Process')");
+    check('Process returns to the A→Z order',await js("ariaSort('Process')==='ascending'&&groupsOrder()==='AI Trading|Studio'"));
+    check('the agent itself is its group row: no codex/claude rows, no Protected label; jobs have stop controls',await js("![...document.querySelectorAll('.tasks-proc-name')].some(n=>/^(codex|claude)$/.test(n.textContent))&&!document.querySelector('.tasks-table').textContent.includes('Protected')&&document.querySelectorAll('.tasks-stop').length===2"));
+    check('process names read as program + arguments',await js("[...document.querySelectorAll('.tasks-row')].some(r=>r.querySelector('.tasks-proc-name')?.textContent==='python'&&r.querySelector('.tasks-proc-args')?.textContent==='fetch_options.py --resume')"));
+    check('a collapsed job says how many processes are inside',await js("[...document.querySelectorAll('.tasks-row')].some(r=>r.textContent.includes('fetch_options')&&r.querySelector('.tasks-proc-more')?.textContent==='+1')"));
     await js("document.querySelector('[aria-label=\"Show children of PID 31\"]').click()");
     check('expanding reveals children and treats command as plain text',await js("document.querySelector('.tasks-table').textContent.includes('ffmpeg -i clip.mp4 <untrusted>')&&!document.querySelector('untrusted')"));
-    check('group rows show per-agent totals and process count',await js("(()=>{const g=document.querySelector('.tasks-group');return g.querySelector('.tasks-group-count').textContent==='3'&&g.textContent.includes('357.1%')})()"));
-    check('busy CPU is emphasised, idle values recede',await js("[...document.querySelectorAll('.tasks-number.hot')].some(c=>c.textContent==='346.2%')&&[...document.querySelectorAll('.tasks-number.quiet')].some(c=>c.textContent==='0.4%')"));
+    check('group rows show per-agent totals (agent included)',await js("[...document.querySelectorAll('.tasks-group')].some(g=>g.textContent.includes('Studio')&&g.textContent.includes('357.1%')&&g.querySelector('.tasks-number.hot'))"));
+    check('busy CPU is emphasised, running time and PID recede',await js("[...document.querySelectorAll('.tasks-number.hot')].some(c=>c.textContent==='346.2%')&&[...document.querySelectorAll('.tasks-number.meta')].some(c=>c.textContent==='31')"));
     for(const theme of ['dark','light']){await js(`import('/js/theme.js').then(m=>m.setThemePref('${theme}'))`);await sleep(100);await snap('task-manager-'+theme+'.png');}
     const before=scans;
     await js("document.querySelector('.tasks-refresh').click()");await sleep(150);

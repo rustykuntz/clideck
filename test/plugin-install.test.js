@@ -33,7 +33,7 @@ test('failed install permissions leave no plugin behind and allow a successful r
   });
   // Load after the mock: PluginManager captures filesystem functions when required.
   const { PluginManager } = require('../src/plugin-manager');
-  manager = new PluginManager({ dataDir, bundledDir: join(root, 'empty'), log: () => {} });
+  manager = new PluginManager({ dataDir, bundledDir: join(root, 'empty'), catalogDir: join(root, 'catalog'), log: () => {} });
   await manager.start();
 
   await assert.rejects(manager.install(source), (error) => error === permissionError);

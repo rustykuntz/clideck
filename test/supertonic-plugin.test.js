@@ -137,18 +137,19 @@ test('Supertonic dispatches manual speech; global auto-read cannot broadcast aut
   const result = await manager.runCommand('supertonic', 'speak', {
     args: ['hello', 'world'], sessionId: 'one',
   });
-  assert.equal(result.stdout, 'Sent to Supertonic.\n');
-  const manual = await waitFor(events, (event) => event.event === 'speak');
-  assert.deepEqual(manual.data, {
-    text: 'hello world', sessionId: 'one', source: 'agent',
+  // No browser claims it here; the agent is told nothing played (full flow: supertonic-agent-speech.test.js).
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /No open CliDeck window is showing this session/);
+  const manual = await waitFor(events, (event) => event.event === 'speak-request');
+  assert.deepEqual({ ...manual.data, requestId: typeof manual.data.requestId }, {
+    text: 'hello world', sessionId: 'one', requestId: 'string',
   });
   await assert.rejects(
     () => manager.runCommand('supertonic', 'speak', { args: [] }),
     /Provide text/,
   );
-  await assert.doesNotReject(
-    () => manager.runCommand('supertonic', 'speak', { args: ['x'.repeat(8_001)] }),
-  );
+  const long = await manager.runCommand('supertonic', 'speak', { args: ['x'.repeat(8_001)] });
+  assert.equal(long.exitCode, 1, 'long text is accepted and dispatched');
 
   manager.clientMessage('supertonic', 'ready', null, {
     requestId: 'settings-1',

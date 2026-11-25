@@ -7,8 +7,8 @@ const {
   rmSync,
   writeFileSync,
 } = require('fs');
-const { tmpdir } = require('os');
-const { join } = require('path');
+const { homedir, tmpdir } = require('os');
+const { join, relative } = require('path');
 const WebSocket = require('ws');
 const { HeadlessServer } = require('../src/server');
 const { ContentStore } = require('../src/content-store');
@@ -59,6 +59,8 @@ test('content.resolve returns existing viewer files to its requester only', asyn
   const cwd = join(dataDir, 'project');
   const first = 'docs/STRATEGY-IMPLEMENTATION-SPEC.md';
   const second = 'docs/archive/PROGRAMMER-INPUT-STRATEGY-IMPLEMENTATION-SPEC.md';
+  const homePath = `~/${relative(homedir(), join(cwd, first))}`;
+  const homeMissing = `~/${relative(homedir(), join(cwd, 'docs/missing.md'))}`;
   const outside = join(dataDir, 'outside.pdf');
   mkdirSync(join(cwd, 'docs', 'archive'), { recursive: true });
   writeFileSync(join(cwd, first), '# Strategy\n');
@@ -85,7 +87,7 @@ test('content.resolve returns existing viewer files to its requester only', asyn
   server.clients.add(peer);
 
   try {
-    const paths = [first, second, 'notes.txt', 'positions.csv', 'docs/missing.md', 'unsupported.bin', outside];
+    const paths = [first, second, homePath, homeMissing, 'notes.txt', 'positions.csv', 'docs/missing.md', 'unsupported.bin', outside];
     while (paths.length < 50) paths.push(`docs/missing-${paths.length}.md`);
     paths.push('docs/ignored.md');
     server.handleControl(requester, Buffer.from(JSON.stringify({
@@ -101,6 +103,8 @@ test('content.resolve returns existing viewer files to its requester only', asyn
     assert.equal(result.sessionId, 'resolve-session');
     assert.equal(result.resolved[first], realpathSync(join(cwd, first)));
     assert.equal(result.resolved[second], realpathSync(join(cwd, second)));
+    assert.equal(result.resolved[homePath], realpathSync(join(cwd, first)));
+    assert.equal(result.resolved[homeMissing], null);
     assert.equal(result.resolved['notes.txt'], realpathSync(join(cwd, 'notes.txt')));
     assert.equal(result.resolved['positions.csv'], realpathSync(join(cwd, 'positions.csv')));
     assert.equal(result.resolved['docs/missing.md'], null);

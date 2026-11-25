@@ -7,6 +7,7 @@
   --text:#e9eaee; --dim:#a1a4ad; --faint:#686b74;
   --accent:#e18063; --accent-ink:#1a0d09; --accent-soft:rgba(225,128,99,.14); --accent-glow:rgba(225,128,99,.35);
   --working:#e6b04a; --idle:#74b98f; --danger:#e06a6a;
+  --ctx-yellow:#e3c24a; --ctx-orange:#e88a3c;   /* context bar steps between idle green and danger red */
   /* theming tokens — dark values; the light block below overrides them (these were hardcoded literals) */
   --accent-deep:#c25a3c;
   --hairline:rgba(255,255,255,.07); --fill-subtle:rgba(255,255,255,.14); --fill-strong:rgba(255,255,255,.2);
@@ -110,11 +111,13 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 
 /* drag & drop */
 .row.dragging, .project.dragging { opacity:.35; }
-.drag-ghost { position:fixed; z-index:500; left:0; top:0; margin:0; pointer-events:none; opacity:.92; border-radius:12px; background:var(--surface-2); box-shadow:0 22px 48px -12px var(--shadow); }
+body > .drag-ghost { position:fixed; z-index:500; left:0; top:0; margin:0; pointer-events:none; opacity:.92; border-radius:12px; background:var(--surface-2); box-shadow:0 22px 48px -12px var(--shadow); }   /* body > … outranks .row's later position:relative/margin, else a row ghost lands off-screen */
 .group-head.drop-target { border-radius:9px; box-shadow:inset 0 0 0 1px var(--border); }   /* session-drag highlight — renamed off the file-veil's .drop-zone collision */
 .group-head.drop-highlight { background:color-mix(in srgb, var(--accent) 16%, transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); border-radius:9px; }
 .group-head.drop-highlight .group-name, .group-head.drop-highlight .group-dot { color:var(--accent); }
 .project-drop-line { height:2px; margin:2px 14px; border-radius:2px; background:var(--accent); box-shadow:0 0 8px var(--accent-glow); }
+.rows { position:relative; }
+.session-drop-line { position:absolute; left:16px; right:16px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 8px var(--accent-glow); pointer-events:none; z-index:2; }
 
 /* new-project creator card (top of the list) */
 .menu.menu-form { padding:0; }   /* a hosted form owns its own padding (below); the menu just frames it */
@@ -393,6 +396,8 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .plg-detail-name { font-size:15px; font-weight:650; color:var(--text); }
 .plg-detail-id { margin-top:2px; font-size:10.8px; color:var(--faint); }
 .plg-detail-desc { margin:0 0 18px; font-size:12.5px; line-height:1.6; color:var(--dim); }
+.plg-card-actions { display:flex; flex-wrap:wrap; gap:8px; margin:-4px 0 20px; }
+.plg-card-actions[hidden] { display:none; }
 .plg-failure { margin:0 0 18px; padding:12px 13px; border:1px solid color-mix(in srgb,var(--danger) 28%,var(--border)); border-radius:10px; background:color-mix(in srgb,var(--danger) 7%,transparent); }
 .plg-failure-title { font-size:12.5px; font-weight:650; color:var(--danger); }.plg-failure-copy { margin-top:3px; font:11.5px/1.55 var(--mono); color:var(--dim); overflow-wrap:anywhere; }
 .plg-setting { display:grid; grid-template-columns:minmax(160px,1fr) minmax(190px,1.1fr); align-items:center; gap:18px; padding:11px 0; border-bottom:1px solid var(--border); }
@@ -496,10 +501,24 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .r-menu-btn:hover, .r-menu-btn[aria-expanded="true"] { background:var(--surface-2); color:var(--dim); border-color:var(--border); }
 
 .list-empty { color:var(--faint); font-size:12.5px; padding:10px 18px; }
-.side-foot { border-top:1px solid var(--border); padding:10px 14px; display:flex; align-items:center; gap:7px; color:var(--dim); font-size:12.5px; }
+.side-foot { container-type:inline-size; border-top:1px solid var(--border); padding:8px 10px; display:flex; align-items:center; gap:6px; color:var(--dim); font-size:12.5px; }
 .side-foot .av { flex:0 0 auto; width:22px; height:22px; border-radius:50%; background:linear-gradient(135deg,var(--avatar-a),var(--avatar-b)); display:grid; place-items:center; font-size:11px; }
-.side-foot .who { flex:0 0 auto; white-space:nowrap; }   /* identity never wraps to a second line (B3); regroup stays pending */
-.conn { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:11px; color:var(--faint); }
+.side-foot .who { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The app menu: you + a chevron, one labelled entry for every app-wide tool (see ui/app-menu.js). */
+.foot-me { position:relative; min-width:0; flex:0 1 auto; display:flex; align-items:center; gap:8px; height:30px; padding:0 8px 0 4px; border:0; border-radius:8px; background:transparent; color:var(--dim); font:inherit; cursor:pointer; transition:background .12s, color .12s; }
+.foot-me:hover, .foot-me[aria-expanded="true"] { background:var(--surface-2); color:var(--text); }
+.foot-me:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.foot-me-chev { flex:0 0 auto; color:var(--faint); }
+@container (max-width:280px) { .side-foot .who-where { display:none; } }
+.foot-me.has-alert .av::after { content:""; position:absolute; left:22px; top:4px; width:7px; height:7px; border-radius:50%; background:var(--danger); box-shadow:0 0 0 2px var(--bg-side); }
+.foot-tools { flex:0 0 auto; margin-left:auto; display:flex; align-items:center; gap:2px; }
+.app-menu { min-width:236px; }
+.app-menu .mi-badge { margin-left:8px; min-width:18px; height:18px; padding:0 5px; box-sizing:border-box; border-radius:9px; display:inline-grid; place-items:center; background:color-mix(in srgb,var(--danger) 16%,transparent); color:var(--danger); font-size:11px; font-weight:650; }
+.app-theme { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 6px 4px 10px; }
+.app-theme-l { font-size:13px; color:var(--dim); }
+.app-theme .tasks-seg { margin:0; }
+.app-theme .tasks-seg-b { height:24px; padding:0 9px; font-size:11.5px; }
+.conn { flex:0 0 auto; display:flex; align-items:center; gap:6px; font-size:11px; color:var(--faint); }
 .conn i { width:6px; height:6px; border-radius:50%; background:var(--idle); }
 .conn.down i { background:var(--danger); }
 /* theme switch — one quiet control at the sidebar foot; cycles auto→light→dark. No coral spent. */
@@ -507,10 +526,12 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .theme-btn:hover { background:var(--surface-2); color:var(--dim); border-color:var(--border-strong); }
 
 /* ── Increment 3: mute row · save indicator · notification master toggle ── */
-.foot-btn { flex:0 0 auto; width:26px; height:26px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--faint); cursor:pointer; display:grid; place-items:center; transition:.14s; }
-.foot-btn:hover { background:var(--surface-2); color:var(--dim); border-color:var(--border-strong); }
+.foot-btn { position:relative; flex:0 0 auto; width:26px; height:26px; border-radius:7px; border:1px solid transparent; background:transparent; color:var(--faint); cursor:pointer; display:grid; place-items:center; transition:.14s; }
+.foot-btn:hover { background:var(--surface-2); color:var(--dim); }
+.foot-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .foot-btn svg { display:block; }
-.foot-btn[aria-expanded="true"] { background:var(--surface-2); color:var(--accent); border-color:var(--border-strong); }
+.foot-btn[aria-expanded="true"] { background:var(--surface-2); color:var(--accent); }
+
 .notify-bell { transition:opacity .14s; }
 .notify-slash { opacity:0; transition:opacity .14s; }
 #notify-btn.notify-off .notify-slash { opacity:1; }
@@ -818,8 +839,9 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .tb-status .dot.working { background:var(--working); animation:pulse-a 1.9s infinite; } .tb-status .dot.idle { background:var(--idle); } .tb-status .dot.attention { background:var(--accent); animation:pulse-c 1.6s infinite; } .tb-status .dot.offline { background:var(--faint); }
 .th-insights { display:flex; align-items:center; gap:6px; flex:0 0 auto; min-width:0; }
 .th-context { padding:0 7px 0 6px; color:var(--faint); --ctx-fill:var(--idle); }
-.th-context.warm { --ctx-fill:var(--working); }
-.th-context.hot { --ctx-fill:var(--danger); }
+.th-context.ctx-yellow { --ctx-fill:var(--ctx-yellow); }
+.th-context.ctx-orange { --ctx-fill:var(--ctx-orange); }
+.th-context.ctx-red { --ctx-fill:var(--danger); }
 .th-context.estimated .th-context-track i { opacity:.72; }
 .th-context-track { width:34px; height:4px; overflow:hidden; border-radius:99px; background:var(--surface-3); }
 .th-context-track i { display:block; height:100%; width:0; border-radius:inherit; background:var(--ctx-fill); transition:width .22s ease, background .18s; }
@@ -828,6 +850,22 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .th-last svg { color:var(--faint); flex:0 0 auto; }
 .th-last span { color:var(--dim); font-variant-numeric:tabular-nums; }
 .th-context[hidden], .th-last[hidden] { display:none; }
+/* cache likely expired: the clock turns red and explains itself on hover/focus (the card is information, not a control) */
+.th-last { position:relative; transition:color .16s, border-color .16s, background .16s; }
+.th-last-info { display:none; }
+.th-last.cold { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 42%,var(--border)); background:color-mix(in srgb,var(--danger) 9%,transparent); cursor:help; outline:none; }
+.th-last.cold svg, .th-last.cold span { color:var(--danger); }
+.th-last.cold .th-last-info { display:block; opacity:.85; }
+.th-last.cold:focus-visible { box-shadow:0 0 0 2px color-mix(in srgb,var(--danger) 45%,transparent); }
+.th-tip { position:absolute; top:calc(100% + 9px); right:0; z-index:55; width:288px; box-sizing:border-box; padding:12px 14px 11px; border:1px solid var(--border-strong); border-radius:11px; background:var(--surface-1); box-shadow:0 14px 40px var(--shadow); color:var(--dim); font:12px/1.5 var(--sans); white-space:normal; text-align:left; pointer-events:none; visibility:hidden; opacity:0; transform:translateY(-4px); transition:opacity .14s ease, transform .18s cubic-bezier(.2,.7,.3,1), visibility 0s linear .18s; }
+.th-last.cold:hover .th-tip, .th-last.cold:focus-visible .th-tip { visibility:visible; opacity:1; transform:none; transition-delay:.08s,.08s,0s; }
+.th-tip-title { display:flex; align-items:center; gap:7px; margin-bottom:4px; color:var(--text); font-weight:600; font-size:12.5px; }
+.th-tip-title::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--danger); flex:0 0 auto; }
+.th-tip p { margin:0; }
+.th-tip b { color:var(--text); font-weight:600; font-variant-numeric:tabular-nums; }
+.th-tip .th-tip-foot { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); color:var(--faint); font-size:11px; }
+.th-tip code { font-family:var(--mono); font-size:10.5px; color:var(--text); padding:1px 5px; border-radius:5px; background:var(--surface-3); }
+@media (prefers-reduced-motion:reduce) { .th-tip { transition:none; } }
 .th-spacer { flex:1; min-width:12px; }
 /* the pid and the model are static facts, not live state — captions alongside the pills, never boxed like one */
 .th-meta, .th-model { margin-left:2px; font-family:var(--mono); font-size:10.5px; color:var(--faint); white-space:nowrap; }
@@ -845,7 +883,7 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
   .th-meta, .th-model { display:none; }
 }
 @container (max-width:650px) {
-  .th-context-track, .th-last svg { display:none; }
+  .th-context-track, .th-last svg:not(.th-last-info) { display:none; }
   .th-context, .th-last { padding:0 6px; }
   .term-head { gap:10px; padding-inline:12px; }
   .th-id { gap:7px; }
@@ -896,21 +934,46 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .tasks-table th:nth-child(4) { width:100px; }
 .tasks-table th:nth-child(5) { width:76px; }
 .tasks-table th:last-child { width:132px; padding-right:24px; }
-.tasks-table td { height:38px; padding:0 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+/* Sortable headers: the label is the control. The arrow keeps its space so nothing shifts when a column becomes the
+   sort; it previews (faint) on hover, in the direction a click would sort, and on number columns sits before the
+   label so the label stays aligned with the figures under it. */
+.tasks-sort { display:inline-flex; align-items:center; gap:5px; height:24px; margin:0 -6px; padding:0 6px; border:0; border-radius:6px; background:transparent; color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit; white-space:nowrap; cursor:pointer; transition:color .12s, background .12s; }
+.tasks-num .tasks-sort { flex-direction:row-reverse; }
+.tasks-sort:hover { color:var(--dim); background:var(--surface-2); }
+.tasks-sort:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.tasks-sort-arrow { flex:0 0 auto; display:grid; place-items:center; opacity:0; transition:opacity .12s, transform .18s cubic-bezier(.32,.72,0,1); }
+.tasks-sort-arrow svg { display:block; }
+.tasks-sort:hover .tasks-sort-arrow { opacity:.45; }
+.tasks-table th[data-first="asc"]:not(.sorted) .tasks-sort-arrow, .tasks-table th.sorted.asc .tasks-sort-arrow { transform:rotate(180deg); }
+.tasks-table th.sorted .tasks-sort { color:var(--text); }
+.tasks-table th.sorted .tasks-sort-arrow { opacity:1; }
+.tasks-table td { height:34px; padding:0 12px; vertical-align:middle; }
 .tasks-table td:first-child { padding-left:24px; }
 .tasks-table td:last-child { padding-right:24px; }
 .tasks-row:hover td { background:color-mix(in srgb,var(--surface-2) 55%,transparent); }
-.tasks-number { text-align:right; white-space:nowrap; color:var(--text); font:11.5px var(--mono); font-variant-numeric:tabular-nums; }
-.tasks-number.quiet { color:var(--faint); }
+/* Numbers in the UI face with tabular figures: calmer than a terminal font, still column-aligned. */
+.tasks-number { text-align:right; white-space:nowrap; color:var(--dim); font:12px var(--sans); font-variant-numeric:tabular-nums; }
+.tasks-number:is(.quiet,.meta) { color:var(--faint); }
 .tasks-number.hot { color:var(--working); font-weight:600; }
-.tasks-group td { height:36px; padding-top:10px; background:var(--surface-1); border-bottom-color:var(--border-strong); }
-.tasks-group .tasks-number { color:var(--dim); }
-.tasks-group-name { display:flex; align-items:center; min-width:0; color:var(--text); font:600 12.5px var(--sans); white-space:nowrap; overflow:hidden; }
-.tasks-group-project,.tasks-group-sep { color:var(--faint); font-weight:500; }
-.tasks-group-sep { white-space:pre; }
+/* An agent = its group row (name + totals); its jobs sit under it. Groups are separated by space and one
+   hairline, rows by nothing, so the eye reads blocks instead of a ruled grid. */
+.tasks-group td { height:44px; padding-top:10px; background:var(--surface-1); }
+.tasks-group:not(:first-child) td { border-top:1px solid var(--border); }
+.tasks-group .tasks-number { color:var(--text); font-weight:550; }
+.tasks-group .tasks-number.hot { color:var(--working); font-weight:600; }
+.tasks-group-name { display:flex; align-items:center; min-width:0; color:var(--text); font:600 13px var(--sans); white-space:nowrap; overflow:hidden; }
+.tasks-group-project,.tasks-group-sep { color:var(--dim); font-weight:500; }
+.tasks-group-sep { white-space:pre; color:var(--faint); }
+/* On a narrow window the project yields first, so the session name stays readable. */
+.tasks-group-name > span { min-width:0; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; }
+.tasks-group-name > .tasks-group-project { flex-shrink:12; min-width:3ch; }
+.tasks-group-name > :is(.tasks-group-sep,.tasks-group-count) { flex-shrink:0; }
 .tasks-group-count { margin-left:8px; padding:0 6px; border-radius:20px; background:var(--fill-subtle); color:var(--dim); font:600 10.5px/17px var(--sans); font-variant-numeric:tabular-nums; }
 .tasks-command-line { display:flex; align-items:center; min-width:0; gap:6px; }
-.tasks-command-text { min-width:0; font:12px/1.5 var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tasks-command-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--faint); }
+.tasks-proc-name { color:var(--text); font:500 12.5px/1.5 var(--sans); }
+.tasks-proc-args { margin-left:4px; font:11.5px/1.5 var(--mono); }
+.tasks-proc-more { flex:0 0 auto; margin-left:auto; padding:0 6px; border-radius:20px; background:var(--fill-subtle); color:var(--dim); font:600 10.5px/17px var(--sans); font-variant-numeric:tabular-nums; }
 .tasks-expand,.tasks-tree-spacer { width:20px; height:20px; flex:0 0 20px; }
 .tasks-expand { display:grid; place-items:center; padding:0; border:0; border-radius:5px; background:transparent; color:var(--faint); cursor:pointer; }
 .tasks-expand:hover { background:var(--surface-3); color:var(--text); }
@@ -919,7 +982,13 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .tasks-action { text-align:right; }
 .tasks-stop { height:26px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:transparent; color:var(--dim); font:500 11.5px var(--sans); white-space:nowrap; cursor:pointer; transition:background .12s,color .12s,border-color .12s; }
 .tasks-stop:hover:not(:disabled),.tasks-stop.force { border-color:color-mix(in srgb,var(--danger) 45%,transparent); color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); }
-.tasks-protected { display:inline-flex; align-items:center; gap:5px; color:var(--faint); font-size:11px; }
+/* Row actions appear with the row, as in the prompt library; keyboard focus and touch always show them, and
+   a stop already in progress (Stopping… / Force stop…) stays visible. */
+@media (hover:hover) and (min-width:801px) {
+  .tasks-stop, .mon-act { transition:opacity .12s, background .12s, color .12s, border-color .12s; }
+  .tasks-row:not(:hover):not(:focus-within) .tasks-stop:not(.force):not(.stopping),
+  .mon-row:not(:hover):not(:focus-within) .mon-act:not(.keep) { opacity:0; }
+}
 .tasks-state { display:flex; flex-direction:column; align-items:center; gap:12px; padding:44px 24px; color:var(--dim); font-size:12.5px; text-align:center; }
 .tasks-state p { max-width:440px; line-height:1.55; }
 .tasks-state[hidden],.tasks-table[hidden],.tasks-pager[hidden] { display:none; }
@@ -961,6 +1030,68 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
   .tasks-table :is(th,td):last-child { width:96px; padding-right:16px; }
   .tasks-table th:nth-child(2),.tasks-table th:nth-child(3) { width:72px; }
   .tasks-table :is(th,td):is(:nth-child(4),:nth-child(5)) { display:none; }
+}
+
+/* Monitors: the Task Manager window family, with a calm grouped list instead of a process table. */
+
+.mon-dialog { width:min(940px,100%); }
+.mon-seg-count { margin-left:6px; color:var(--accent); font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; }
+.mon-seg-count:empty { display:none; }
+.tasks-notice.mon-offline { border-color:var(--border-strong); background:var(--surface-2); color:var(--dim); }
+.mon-stale .mon-list { opacity:.6; }
+.mon-list { padding:2px 0 14px; }
+.mon-list[hidden] { display:none; }
+.mon-group { padding:16px 24px 6px; }
+.mon-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; column-gap:8px; align-items:center; margin:0 16px; padding:10px 8px; border-bottom:1px solid var(--border); border-radius:8px; }
+.mon-row > .mon-expand { grid-row:1; grid-column:1; }
+.mon-row > .mon-title { grid-row:1; grid-column:2; }
+.mon-row > .mon-actions { grid-row:1; grid-column:3; }
+.mon-row > :is(.mon-meta,.mon-message,.mon-confirm,.mon-details) { grid-column:2 / -1; }
+.mon-row:hover { background:color-mix(in srgb,var(--surface-2) 45%,transparent); }
+.mon-title { flex:1; min-width:0; display:flex; align-items:center; gap:8px; }
+.mon-dot { flex:0 0 8px; width:8px; height:8px; border-radius:50%; background:var(--idle); }
+.mon-checking .mon-dot { background:var(--dim); }
+.mon-waiting .mon-dot { background:var(--working); }
+.mon-uncertain .mon-dot { background:var(--accent); }
+.mon-error .mon-dot { background:var(--danger); }
+.mon-paused .mon-dot, .mon-complete .mon-dot { background:transparent; box-shadow:inset 0 0 0 1.5px var(--faint); }
+.mon-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 13px/1.4 var(--sans); }
+.mon-paused .mon-name, .mon-complete .mon-name { color:var(--dim); }
+.mon-actions { display:flex; gap:2px; flex-shrink:0; }
+/* Quiet text buttons (no box at rest) so a list of monitors isn't a wall of outlines; the one action a row is
+   waiting for (Clear pending…) keeps its outline. */
+.mon-act { height:26px; padding:0 9px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--dim); font:500 12px var(--sans); white-space:nowrap; cursor:pointer; transition:background .12s,color .12s,border-color .12s; }
+.mon-act.keep { order:1; border-color:var(--border-strong); color:var(--text); }   /* last, so hidden buttons never leave a gap to its right */
+.mon-act:hover:not(:disabled) { background:var(--surface-3); color:var(--text); border-color:var(--border-strong); }
+.mon-act.danger:hover:not(:disabled) { border-color:color-mix(in srgb,var(--danger) 45%,transparent); color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); }
+.mon-meta { display:flex; flex-wrap:wrap; gap:2px 0; padding-left:16px; margin-top:3px; color:var(--dim); font-size:12px; }
+.mon-meta > span + span::before { content:"·"; margin:0 7px; color:var(--faint); }
+.mon-meta > span:first-child { color:var(--text); font-weight:600; }
+.mon-waiting .mon-meta > span:first-child { color:var(--working); }
+.mon-uncertain .mon-meta > span:first-child { color:var(--accent); }
+.mon-error .mon-meta > span:first-child, .mon-error .mon-message { color:var(--danger); }
+.mon-message { padding-left:16px; margin-top:3px; color:var(--dim); font-size:12px; line-height:1.5; }
+.tasks-confirm.mon-confirm { margin:10px 0 2px; }
+.mon-primary { color:var(--text); border-color:var(--border-strong); }
+.mon-details { display:grid; gap:8px; margin:10px 0 2px; padding:12px 14px; border-radius:10px; background:var(--surface-2); }
+.mon-field { display:grid; grid-template-columns:70px minmax(0,1fr); gap:10px; align-items:baseline; font-size:12px; }
+.mon-label { color:var(--faint); font-size:11.5px; }
+.mon-code { max-height:120px; overflow:auto; color:var(--text); font:11.5px/1.5 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+.mon-opt { display:flex; align-items:center; gap:8px; padding-left:80px; color:var(--dim); font-size:12px; cursor:pointer; }
+.mon-opt input { accent-color:var(--accent); margin:0; }
+.mon-history { display:grid; gap:3px; list-style:none; }
+.mon-history li { display:grid; grid-template-columns:auto auto minmax(0,1fr); gap:8px; color:var(--dim); font-size:11.5px; }
+.mon-history time { color:var(--faint); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.mon-h-status { font-weight:600; }
+.mon-h-error .mon-h-status { color:var(--danger); }
+@media (max-width:800px) {
+  .mon-group { padding-inline:16px; }
+  .mon-row { margin-inline:8px; }
+  /* Buttons drop below the status line; confirmations and details follow them. */
+  .mon-row > .mon-actions { grid-row:auto; grid-column:2 / -1; order:1; margin-top:8px; flex-wrap:wrap; }
+  .mon-row > :is(.mon-confirm,.mon-details) { order:2; grid-column:1 / -1; }
+  .mon-field { grid-template-columns:1fr; gap:2px; }
+  .mon-opt { padding-left:0; }
 }
 
 /* Terminal find stays outside xterm's input/paste surface. */
@@ -1022,6 +1153,15 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 .hist-subtitle { margin-top:2px; font-size:11.5px; color:var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hist-close { flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; background:transparent; color:var(--faint); cursor:pointer; }
 .hist-close:hover { background:var(--surface-2); color:var(--text); }
+.hist-act { flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; background:transparent; color:var(--dim); cursor:pointer; }
+.hist-act:hover:not(:disabled) { background:var(--surface-2); color:var(--text); }
+.hist-act:disabled { cursor:progress; opacity:.5; }
+.hist-act:focus-visible, .hist-turn-copy:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hist-head .hist-act + .hist-act, .hist-head .hist-act + .hist-close { margin-left:-8px; }
+.hist-turn-copy { margin-left:auto; width:22px; height:22px; display:grid; place-items:center; padding:0; border:0; border-radius:5px; background:transparent; color:var(--faint); cursor:pointer; opacity:0; transition:opacity .12s; }
+.hist-turn:hover .hist-turn-copy, .hist-turn-copy:focus-visible { opacity:1; }
+.hist-turn-copy:hover { background:var(--surface-3); color:var(--text); }
+@media (hover:none) { .hist-turn-copy { opacity:.7; } }
 .hist-list { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:14px 18px 22px; overscroll-behavior:contain; }
 .hist-more { order:-1; align-self:center; flex:0 0 auto; padding:4px 2px 2px; color:var(--faint); font:500 11px var(--sans); letter-spacing:.2px; user-select:none; }
 .hist-more.error { color:var(--danger); }
@@ -1135,6 +1275,7 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
   --text:#1b1c20; --dim:#5c5f66; --faint:#7c7f86;
   --accent:#b3452a; --accent-ink:#fff8f4; --accent-soft:rgba(179,69,42,.10); --accent-glow:rgba(179,69,42,.22);
   --working:#8c610e; --idle:#2f7d55; --danger:#b5342a;
+  --ctx-yellow:#cfa514; --ctx-orange:#d4691c;
   --accent-deep:#9c3a22;
   --hairline:rgba(28,24,20,.07); --fill-subtle:rgba(28,24,20,.12); --fill-strong:rgba(28,24,20,.26);
   --shadow:rgba(60,45,35,.18); --avatar-a:#e7e3dd; --avatar-b:#dad5cd; --avatar-ink:#4c4f57;
@@ -1214,6 +1355,8 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
    so its scrollback survives. With no documents open the strip is absent and the terminal fills the pane. */
 .pane-body { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; }
 .pane-body > * { flex:1; min-height:0; }
+.app-ws { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }   /* a plugin workspace opened with no session selected */
+.app-ws[hidden] { display:none; }
 /* ⚠️ The pane keeps every open tab MOUNTED and hides the ones you are not looking at (a document that is
    unmounted loses its iframe and its read-along ranges — see content-dock.js). `hidden` alone cannot do that
    job here: it is a USER-AGENT rule, and any author `display` beats it — `.cd-html` is flex, `.cd-media` is
@@ -1225,11 +1368,22 @@ body.resizing iframe { pointer-events:none; } /* Embedded documents must not tak
 #term-panel[hidden] { display:none; }
 .cd-tabs { flex:0 0 auto; display:flex; gap:2px; padding:7px 10px 0; overflow-x:auto; scrollbar-width:thin; border-bottom:1px solid var(--border); background:var(--bg-side); }
 .cd-tabs[hidden] { display:none; }
+/* Dragging a tab (tab-drag.js): the held tab lifts and follows the pointer; the others slide to open its slot. */
+.cd-tabs { position:relative; }
+.cd-tab[data-item-id] { position:relative; touch-action:pan-x; user-select:none; -webkit-user-select:none; }
+.cd-tabs.tab-dragging { cursor:grabbing; }
+.cd-tabs.tab-dragging .cd-tab:not(.dragging) { transition:transform .18s cubic-bezier(.2,.7,.3,1), background .13s, color .13s; }
+.cd-tabs.tab-dragging .cd-tab:not(.dragging):hover { background:transparent; }
+.cd-tab.dragging { z-index:2; cursor:grabbing; color:var(--text); background:var(--bg); border-color:var(--border); box-shadow:0 6px 18px -8px var(--shadow); }
+.cd-tab.settling { z-index:2; transition:transform .16s cubic-bezier(.2,.7,.3,1); }
+@media (prefers-reduced-motion:reduce) { .cd-tabs.tab-dragging .cd-tab:not(.dragging), .cd-tab.settling { transition:none; } }
 .cd-tab { flex:0 0 auto; max-width:190px; display:flex; align-items:center; gap:7px; padding:7px 9px 8px; border-radius:9px 9px 0 0; cursor:pointer; color:var(--dim); font-size:12.5px; border:1px solid transparent; border-bottom:0; transition:background .13s, color .13s; }
 .cd-tab:hover { color:var(--text); background:var(--surface-1); }
 .cd-tab.on { color:var(--text); background:var(--bg); border-color:var(--border); }
 .cd-tab-ic { flex:0 0 auto; display:grid; place-items:center; color:var(--faint); }
 .cd-tab.on .cd-tab-ic { color:var(--accent); }
+.cd-tab-ic-plugin span { display:grid; place-items:center; width:14px; height:14px; font-size:12px; line-height:1; }
+.cd-tab-ic-plugin svg { width:14px; height:14px; }
 .cd-tab-name { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cd-tab-x { flex:0 0 auto; display:grid; place-items:center; width:16px; height:16px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--faint); cursor:pointer; opacity:0; transition:opacity .12s, background .12s, color .12s; }
 .cd-tab:hover .cd-tab-x, .cd-tab.on .cd-tab-x { opacity:.75; }
@@ -1664,7 +1818,7 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
 
 /* One host-owned player for every sandboxed plugin: compact enough to stay out of the work, explicit enough
    that local model playback never feels like mystery audio. */
-.plugin-audio { position:fixed; right:18px; bottom:18px; z-index:910; display:grid; grid-template-columns:38px minmax(120px,220px) minmax(72px,150px) 36px 32px 32px; align-items:center; gap:9px; min-width:422px; padding:10px 11px; border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line)); border-radius:15px; color:var(--text); background:color-mix(in srgb,var(--surface-1) 91%,transparent); box-shadow:0 18px 55px var(--shadow), inset 0 1px color-mix(in srgb,#fff 7%,transparent); backdrop-filter:blur(18px) saturate(1.25); }
+.plugin-audio { position:fixed; right:18px; bottom:18px; z-index:910; display:grid; grid-template-columns:38px minmax(120px,220px) minmax(72px,150px) auto 36px 32px 32px; align-items:center; gap:9px; min-width:422px; padding:10px 11px; border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line)); border-radius:15px; color:var(--text); background:color-mix(in srgb,var(--surface-1) 91%,transparent); box-shadow:0 18px 55px var(--shadow), inset 0 1px color-mix(in srgb,#fff 7%,transparent); backdrop-filter:blur(18px) saturate(1.25); }
 .plugin-audio[hidden] { display:none; }
 .plugin-audio-mark { display:grid; place-items:center; width:38px; height:38px; border-radius:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 13%,transparent); }
 .plugin-audio-mark svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
@@ -1682,15 +1836,31 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
   transform:translateY(-50%); border-radius:2px; pointer-events:none;
   background:color-mix(in srgb,var(--accent) 22%,transparent); transition:width .3s linear;
 }
-.plugin-audio-rate,.plugin-audio-play,.plugin-audio-stop { display:grid; place-items:center; height:32px; padding:0; border:0; border-radius:9px; color:var(--dim); background:transparent; cursor:pointer; }
+.plugin-audio-follow,.plugin-audio-rate,.plugin-audio-play,.plugin-audio-stop { display:grid; place-items:center; height:32px; padding:0; border:0; border-radius:9px; color:var(--dim); background:transparent; cursor:pointer; }
 .plugin-audio-rate { width:36px; font:600 10.5px var(--mono); letter-spacing:-.02em; }
 .plugin-audio-play,.plugin-audio-stop { width:32px; }
-.plugin-audio-rate:hover,.plugin-audio-play:hover,.plugin-audio-stop:hover { color:var(--text); background:var(--surface-2); }
-.plugin-audio-rate:focus-visible,.plugin-audio-play:focus-visible,.plugin-audio-stop:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+/* Close sits apart from the transport controls: quieter, smaller, after a hairline — dismissing is not playback. */
+.plugin-audio-stop { position:relative; width:28px; height:28px; margin-left:4px; justify-self:end; border-radius:8px; color:var(--faint); }
+.plugin-audio-stop::before { content:""; position:absolute; left:-7px; top:4px; bottom:4px; width:1px; background:var(--border); }
+.plugin-audio-follow:hover,.plugin-audio-rate:hover,.plugin-audio-play:hover,.plugin-audio-stop:hover { color:var(--text); background:var(--surface-2); }
+.plugin-audio-follow:focus-visible,.plugin-audio-rate:focus-visible,.plugin-audio-play:focus-visible,.plugin-audio-stop:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .plugin-audio-play { color:var(--accent); background:color-mix(in srgb,var(--accent) 11%,transparent); }
 .plugin-audio-play svg,.plugin-audio-stop svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.1; stroke-linecap:round; stroke-linejoin:round; }
+.plugin-audio-stop svg { width:14px; height:14px; stroke-width:2; }
+/* Text-marking switch. On wears the read-along amber (the mark it controls) as a soft chip; off is quiet and
+   struck through. The slash draws in/out so the state change is felt, not just swapped. */
+.plugin-audio-follow { width:32px; }
+.plugin-audio-follow[hidden] { display:none; }
+.plugin-audio-follow svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; overflow:visible; }
+.plugin-audio-slash { stroke-dasharray:23; stroke-dashoffset:23; transition:stroke-dashoffset .2s cubic-bezier(.2,.7,.3,1); }
+.plugin-audio-follow[aria-pressed="false"] { color:var(--faint); }
+.plugin-audio-follow[aria-pressed="false"] .plugin-audio-slash { stroke-dashoffset:0; }
+.plugin-audio-follow[aria-pressed="true"] { color:color-mix(in srgb,#d9a12c 82%,var(--text)); background:color-mix(in srgb,#f0be4d 16%,transparent); }
+.plugin-audio-follow[aria-pressed="true"]:hover { background:color-mix(in srgb,#f0be4d 24%,transparent); }
+.plugin-audio-follow { transition:color .15s ease, background-color .15s ease; }
+@media (prefers-reduced-motion:reduce) { .plugin-audio-slash,.plugin-audio-follow { transition:none; } }
 @media (max-width:620px) {
-  .plugin-audio { left:10px; right:10px; bottom:10px; min-width:0; grid-template-columns:36px minmax(0,1fr) 36px 32px 32px; }
+  .plugin-audio { left:10px; right:10px; bottom:10px; min-width:0; grid-template-columns:36px minmax(0,1fr) auto 36px 32px 32px; }
   .plugin-audio-seek { grid-column:1 / -1; grid-row:2; }
 }
 
@@ -1838,3 +2008,74 @@ h5.md-h { margin:1.9em 0 .45em; font-size:.94em; font-weight:650; color:var(--di
 }
 
 .hist-highlight-note { margin-top:6px; font:11px var(--sans); color:var(--faint); }
+
+/* ══════════ DESKTOP APP (html.desktop — only when the Electron bridge is present) ══════════
+   The two 54px headers (sidebar + session) ARE the title bar: they drag the window, double-click zooms it, and on
+   macOS the traffic lights sit in the sidebar's head. --dk-lights is the room they take (zoom-compensated, gone in
+   full screen); the sidebar toggle is pinned just after them so it never moves when the sidebar opens or closes. */
+html.desktop { --dk-head:54px; --dk-lights:0px; --dk-ease:cubic-bezier(.32,.72,0,1); }
+html.desktop[data-platform="darwin"]:not(.dk-fullscreen) { --dk-lights:calc(74px / var(--dk-zoom,1)); }
+html.desktop .side-head { height:var(--dk-head); flex:0 0 var(--dk-head); padding:0 12px 0 calc(var(--dk-lights) + 50px); }
+html.desktop[data-platform="darwin"] .brand { display:none; }   /* the Dock and menu bar already name the app */
+html.desktop .side-head .head-actions { margin-left:auto; }
+html.desktop .term-head { height:var(--dk-head); flex-basis:var(--dk-head); transition:padding-left .28s var(--dk-ease); }
+html.desktop:not([data-platform="linux"]) :is(.side-head, .term-head) { -webkit-app-region:drag; user-select:none; }
+html.desktop :is(.side-head, .term-head) :is(button, input, a, select, [role="button"], [contenteditable="true"], .th-pill, .tb-status) { -webkit-app-region:no-drag; }
+/* An empty pane still needs a grip along its top edge. */
+html.desktop:not([data-platform="linux"]) .rp-empty { position:relative; }
+html.desktop:not([data-platform="linux"]) .rp-empty::before { content:""; position:absolute; top:0; left:0; right:0; height:var(--dk-head); -webkit-app-region:drag; }
+/* Everything layered over the app (menus, dialogs, toasts, overlays) is mounted on <body>: carve it out of the
+   drag regions so a popover that overlaps a header stays clickable. */
+html.desktop body > :not(.app) { -webkit-app-region:no-drag; }
+/* Windows draws its caption buttons over the session header's right end. */
+html.desktop.dk-wco .term-head { padding-right:150px; }
+
+/* sidebar toggle — same chrome as the session-header icon buttons */
+.dk-sidebar-btn { display:none; }
+html.desktop .dk-sidebar-btn { position:fixed; z-index:45; top:calc((var(--dk-head) - 28px) / 2); left:calc(var(--dk-lights) + 12px); display:grid; place-items:center; width:30px; height:28px; padding:0; border:0; border-radius:7px; background:transparent; color:var(--faint); cursor:pointer; transition:background .12s, color .12s, left .28s var(--dk-ease); }
+html.desktop .dk-sidebar-btn:hover { background:var(--surface-2); color:var(--text); }
+html.desktop .dk-sidebar-btn:active { background:var(--surface-3); }
+html.desktop .dk-sidebar-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.dk-sidebar-btn svg { display:block; }
+.dk-sidebar-btn .dk-sb-fill { opacity:.55; }
+/* collapsed: the sidebar slides out under the window controls; the session header makes room for them */
+html.desktop .sidebar { transition:margin-left .28s var(--dk-ease); }
+html.dk-sidebar-hidden .sidebar { margin-left:calc(-1 * var(--sidebar-w,340px)); }
+html.dk-sidebar-hidden .resize-handle { display:none; }
+html.dk-sidebar-hidden .term-head { padding-left:calc(var(--dk-lights) + 56px); }
+html.dk-no-anim :is(.sidebar, .term-head, .dk-sidebar-btn) { transition:none !important; }
+
+/* macOS vibrancy: the window is transparent and the shell paints the sidebar material; everything else stays solid */
+html.dk-vibrancy, html.dk-vibrancy body, html.dk-vibrancy .app { background:transparent; }
+html.dk-vibrancy .sidebar { background:color-mix(in srgb, var(--bg-side) 58%, transparent); }
+html.dk-vibrancy[data-theme="light"] .sidebar { background:color-mix(in srgb, var(--bg-side) 50%, transparent); }
+html.dk-vibrancy .sidebar :is(.search, .tabs) { background:color-mix(in srgb, var(--surface-1) 62%, transparent); }
+html.dk-vibrancy .group-dot { box-shadow:none; }
+/* an inactive window quiets its chrome, as native windows do */
+html.dk-blurred .term-head .th-name, html.dk-blurred .dk-sidebar-btn { color:var(--faint); }
+html.dk-blurred .term-head .th-avatar { opacity:.7; }
+
+/* engine restart / reconnect — covers the page until the shell reports the engine ready */
+.dk-engine { position:fixed; inset:0; z-index:600; display:grid; place-items:center; padding:24px; background:color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter:blur(14px) saturate(1.15); opacity:0; transition:opacity .22s ease; }
+.dk-engine.show { opacity:1; }
+.dk-engine-card { width:min(400px,100%); display:flex; flex-direction:column; align-items:center; text-align:center; transform:translateY(6px) scale(.985); transition:transform .32s var(--dk-ease,ease); }
+.dk-engine.show .dk-engine-card { transform:none; }
+.dk-engine-mark { position:relative; width:44px; height:44px; margin-bottom:18px; border-radius:12px; background:linear-gradient(150deg,var(--accent),var(--accent-deep)); box-shadow:0 4px 18px var(--accent-glow); animation:dk-breathe 2.4s ease-in-out infinite; }
+.dk-engine-mark::after { content:""; position:absolute; inset:13px 14px; border-left:2.5px solid var(--accent-ink); border-bottom:2.5px solid var(--accent-ink); transform:rotate(-45deg) translate(1px,-1px); opacity:.85; }
+.dk-engine.failed .dk-engine-mark { animation:none; filter:saturate(.25); opacity:.7; box-shadow:none; }
+.dk-engine-title { color:var(--text); font:600 15px/1.4 var(--sans); }
+.dk-engine-sub { margin-top:6px; max-width:340px; color:var(--dim); font-size:13px; line-height:1.55; }
+.dk-engine-error { width:100%; max-height:140px; margin-top:14px; padding:10px 12px; overflow:auto; border:1px solid var(--border); border-radius:9px; background:var(--surface-1); color:var(--dim); font:11.5px/1.5 var(--mono); text-align:left; white-space:pre-wrap; word-break:break-word; user-select:text; }
+.dk-engine-error[hidden] { display:none; }
+.dk-engine-bar { position:relative; width:132px; height:2px; margin-top:20px; overflow:hidden; border-radius:2px; background:var(--hairline); }
+.dk-engine-bar i { position:absolute; top:0; bottom:0; width:40%; border-radius:2px; background:var(--accent); animation:dk-slide 1.25s var(--dk-ease,ease) infinite; }
+.dk-engine.failed .dk-engine-bar { display:none; }
+.dk-engine-actions { display:flex; gap:8px; margin-top:18px; }
+.dk-engine-actions:empty { display:none; }
+@keyframes dk-breathe { 0%,100% { box-shadow:0 4px 18px var(--accent-glow); transform:none; } 50% { box-shadow:0 6px 30px var(--accent-glow); transform:scale(1.035); } }
+@keyframes dk-slide { from { left:-40%; } to { left:100%; } }
+@media (prefers-reduced-motion:reduce) {
+  html.desktop :is(.sidebar, .term-head, .dk-sidebar-btn) { transition:none; }
+  .dk-engine-mark, .dk-engine-bar i { animation:none; }
+  .dk-engine-bar i { left:30%; }
+}

@@ -46,6 +46,7 @@ const transcripts = new Map();   // sessionId -> lowercased, tail-capped convers
 let order = 0;
 let activeId = null;
 let engineUpdate = null;
+let monitors = null;              // engine monitors snapshot { list, error } — null until the engine sends one
 let archive = { enabled: false, directory: "" }, archiveStatus = null;
 let pendingLocalCreate = false;     // one-shot: this client just asked to create a session (ws.createSession armed it).
                                     // The next brand-new LIVE session.created adopts selection+focus. Cleared on reset()
@@ -164,6 +165,11 @@ function applyEvent(ev) {
   switch (ev.type) {                                  // session-less broadcasts (no sessionId)
     case "archive.status": archiveStatus = { ...ev }; emit("archive.status", archiveStatus); return;
     case "engine.update": engineUpdate = { ...ev }; emit("engine.update", engineUpdate); return;
+    case "user.notices": emit("user:notices", ev); return;      // every unread `clideck notify` message (replay)
+    case "user.notice": emit("user:notice", ev); return;        // one new message; ui/user-notices.js shows it
+    case "monitors.updated":
+      monitors = { list: Array.isArray(ev.monitors) ? ev.monitors : [], error: typeof ev.error === "string" ? ev.error : "" };
+      emit("monitors", monitors); return;
     case "config": {
       const c = ev.config || {};
       archive = { enabled: c.archive?.enabled === true, directory: typeof c.archive?.directory === "string" ? c.archive.directory : "" };
@@ -196,6 +202,12 @@ function applyEvent(ev) {
     case "plugin.message": emit("plugin:message", ev); return;
     case "plugin.result": emit("plugin:result", ev); return;
     case "sessions.saved": emit("saved", ev.success !== false, ev.error || ""); return;
+    case "session.create.result":
+      if (ev.success === false) {
+        pendingLocalCreate = false;
+        emit("session:createRejected", ev.error, ev);
+      }
+      return;
     case "session.dispatch": emit("session:dispatch", ev); return;   // {fromId,fromName,toId,toName}
     case "content.show": emit("content:show", ev); return;   // {sessionId,contentId,kind,name,url} — re-emit only; the engine holds the asset and replays it on connect
     case "content.closed": emit("content:closed", ev); return;   // {sessionId,contentId} — the engine dropped an asset; every client retires that tab, and NONE answers back
@@ -344,7 +356,7 @@ function isNameTaken(scope, name, exceptId) {
 function unreadCount() { let n = 0; for (const s of sessions.values()) if (s.unread > 0) n++; return n; }
 
 function reset() {
-  engineUpdate = null;
+  engineUpdate = null; monitors = null; emit("monitors", null);
   archive = { enabled: false, directory: "" }; archiveStatus = null;
   sessions.clear(); transcripts.clear(); pluginsList = []; pluginsSeen = false; activeId = null; pendingLocalCreate = false;
   emit("plugins", pluginsList); emit("reset"); emit("chrome");
@@ -360,6 +372,7 @@ export const store = {
   get archive() { return archive; },
   get archiveStatus() { return archiveStatus; },
   get engineUpdate() { return engineUpdate; },
+  get monitors() { return monitors; },
   get filter() { return filter; },
   get search() { return search; },
   active() { return activeId != null ? sessions.get(activeId) : null; },

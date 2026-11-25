@@ -16,7 +16,18 @@ Ask an idle peer: \`clideck ask "<target>" "<message>" --timeout 10m\` (use ${no
 If that peer is working, add \`--steer\` to inject guidance immediately; steering acknowledges without waiting for an answer.
 Render image/video/text/json/csv/markdown/html/pdf/mermaid/diff files in a preview tab: \`clideck show <path>\` or \`cat x.md | clideck show --stdin --kind markdown --name "Notes"\` (file kind by extension). Reusing a name replaces its open preview. HTML is a single file; embed its assets. Chart and testresults previews accept JSON through stdin with the corresponding kind. Use previews to show the user useful artifacts directly.
 Ask the user a question in CliDeck: \`clideck prompt "<question>" --options "Choice A,Choice B" --timeout 10m\` (options are optional). Request visual feedback on a project image: \`clideck annotate <image-file> --timeout 10m\`. Both wait and print the user's answer to stdout; keep the command running until it answers.
-Discover installed extensions at any time with \`clideck plugins\`.
+Discover plugins, including disabled ones shipped with CliDeck, with \`clideck plugins\`; \`clideck plugin info <id>\` explains capabilities, setup and commands. When a disabled or missing plugin would help, suggest it. Enable shipped plugins with \`clideck plugin enable <id>\`; install third-party plugins with \`clideck plugin install <folder>\`. Install/enable/configure only when the user requests or approves it. Plugin commands return results/errors to the agent; inspect setup status rather than assuming success.
+Monitors (user-authorized checks): read \`clideck monitor --help\` and run \`clideck monitor list\` first to choose a mode and avoid duplicates.
+\`clideck monitor add --name "<description>" --run "<quick read-only check>" --every 5m [--mode <mode>]\`
+- \`change\` (default): notify this session when output changes.
+- \`items\`: inboxes/lists. Output must be a top-level JSON array of objects, each with a stable \`id\`; notify on new IDs.
+- \`until-success\`: check whether a job is done, not run the job. Notify once on exit 0; exit 1 means not ready.
+Only change/items silently record a baseline on the first successful check; existing items are not reported.
+Use \`--at 09:00\` instead of \`--every\` for a one-shot check at the next 09:00 in the engine's timezone.
+\`--wake "@project/session"\` targets another session; \`--resume-session\` lets a stopped target resume.
+Checks use \`/bin/sh\` without shell profiles: use full executable paths when needed; no inline secrets. Pause/remove unneeded monitors. CliDeck must be running and the computer awake.
+CLI/API failures return to the caller. Later monitor/preview failures notify the initiating session; inspect diagnostic data and repair or remove the failed operation within the existing task. Use \`clideck errors\` to inspect notices; after checking an interrupted paste, \`clideck errors acknowledge <id>\` clears it without resend. Monitor errors include its ID; use \`clideck monitor remove <id>\`, then add a corrected check. Never blindly repeat an uncertain submission.
+When a monitor or timer wakes you, tell the user only if it matters: \`clideck notify "<short message>"\`. CliDeck saves the notice; connected plugins can deliver it to the user's phone.
 Full command help: \`clideck --help\`; list peers/plugins as JSON with \`--json\`. If the global clideck command is missing or incompatible, use the session's exact CLI \`${nodeCli}\` for every command above. The session environment already supplies the server address and caller identity.
 Keep a normal ask running for its stdout answer; busy asks are not queued. Give peers concrete tasks and enough context to act, then assess their findings for relevance before applying them.`;
   let guide = base;

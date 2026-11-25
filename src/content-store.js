@@ -10,6 +10,7 @@ const {
   writeFileSync,
 } = require('fs');
 const { lstat, realpath, stat } = require('fs/promises');
+const { homedir } = require('os');
 const {
   basename,
   extname,
@@ -221,7 +222,8 @@ class ContentStore {
   async resolvePaths(cwd, candidates) {
     return Object.fromEntries(await Promise.all(
       candidates.slice(0, MAX_RESOLVE_PATHS).map(async (candidate) => {
-        const path = isAbsolute(candidate) ? candidate : resolve(cwd, candidate);
+        const path = candidate.startsWith('~/')
+          ? join(homedir(), candidate.slice(2)) : resolve(cwd, candidate);
         const resolved = await within(
           resolveFilePath(path).then((content) => content.path).catch(() => null),
           RESOLVE_TIMEOUT_MS,
@@ -371,6 +373,7 @@ class ContentStore {
       kind: content.kind,
       name: content.name,
       url: `/content/${contentId}`,
+      ...(content.agentInitiated === true && { reportErrors: true }),
       ...(content.source === 'file' && { sourcePath: content.path }),
       ...(replaces && { replaces }),
     };
@@ -404,6 +407,7 @@ class ContentStore {
         kind: content.kind,
         name: content.name,
         mime: content.mime,
+        ...(content.agentInitiated === true && { agentInitiated: true }),
         ...(content.source === 'file' ? {
           path: content.path,
           ...(content.scope === 'user' && { scope: 'user' }),
@@ -478,7 +482,7 @@ class ContentStore {
           const data = readFileSync(path);
           content = { ...type, name: asset.name, data, source: 'payload' };
         }
-        this.restore(contentId, String(sessionId), content);
+        this.restore(contentId, String(sessionId), { ...content, ...(asset.agentInitiated === true && { agentInitiated: true }) });
       } catch {}
     }
   }

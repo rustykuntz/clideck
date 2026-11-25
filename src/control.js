@@ -25,6 +25,7 @@ const CONTROL_TYPES = new Set([
   'dirs.list',
   'dirs.mkdir',
   'content.open',
+  'content.renderFailed',
   'content.close',
   'content.resolve',
   'transcript.page',
@@ -68,6 +69,10 @@ function isKnownControlType(type) {
 }
 
 function hasValidControlFields(message) {
+  if (message.type === 'content.renderFailed') {
+    return isString(message.sessionId, MAX_SESSION_ID) && isString(message.contentId, 200)
+      && isString(message.message, 2000);
+  }
   if (message.type === 'engine.update.check' || message.type === 'engine.update.install') {
     return Object.keys(message).length === 1;
   }

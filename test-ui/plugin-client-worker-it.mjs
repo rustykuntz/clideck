@@ -16,7 +16,7 @@ const source = `
   }
 `;
 const clientUrl = "data:text/javascript," + encodeURIComponent(source);
-await self.onmessage({ data: { type: "init", clientUrl, settings: { values: { voice: "warm" }, configured: { token: true } } } });
+await self.onmessage({ data: { type: "init", clientUrl, capabilities: { realtimeAudio: true }, settings: { values: { voice: "warm" }, configured: { token: true } } } });
 const initial = sent.find(({ message }) => message.type === "send" && message.event === "initial-settings")?.message.data;
 ok("client getSettings returns the masked host snapshot at activation", initial?.values.voice === "warm" && initial?.configured.token === true);
 ok("client activation completes inside the Worker", sent.some(({ message }) => message.type === "ready"));
@@ -87,6 +87,55 @@ const committed = globalThis.__pluginClientApi.commitTerminalDraft("Hello", { se
 const commitRequest = [...sent].reverse().find(({ message }) => message.type === "request" && message.method === "commit-terminal-draft")?.message;
 await self.onmessage({ data: { type: "response", requestId: commitRequest?.requestId, success: true, value: true } });
 ok("terminal draft commit carries explicit session and submit intent", await committed === true && commitRequest.text === "Hello" && commitRequest.options.sessionId === "S" && commitRequest.options.submit === true);
+
+const api = globalThis.__pluginClientApi;
+ok("realtime capability comes from the host and is frozen", api.capabilities.realtimeAudio === true && Object.isFrozen(api.capabilities));
+for (const [method, args, rpc, response] of [
+  ["openRealtimeAudio", [{ sessionId: "S", channelLabel: "voice" }], "open-realtime-audio", { id: "rtc-1", offerSdp: "v=0" }],
+  ["setRealtimeAudioAnswer", ["rtc-1", "answer"], "set-realtime-audio-answer", true],
+  ["sendRealtimeAudioData", ["rtc-1", "{}"], "send-realtime-audio-data", true],
+  ["closeRealtimeAudio", ["rtc-1"], "close-realtime-audio", false],
+  ["openSettings", [], "open-settings", true],
+]) {
+  const pending = api[method](...args), request = sent.at(-1).message;
+  await self.onmessage({ data: { type: "response", requestId: request.requestId, success: true, value: response } });
+  ok(method + " returns the host receipt through its own RPC", request.method === rpc && await pending === response && (method === "openSettings" ? !request.id : true));
+}
+const invalid = api.setRealtimeAudioAnswer("stale", "answer");
+const request = sent.at(-1).message;
+await self.onmessage({ data: { type: "response", requestId: request.requestId, success: false, error: "stale connection" } });
+let rejected = false; try { await invalid; } catch (error) { rejected = error.message === "stale connection"; }
+ok("stale/error receipts reject rather than report success", rejected);
+const controller = new AbortController();
+const cancelOpening = api.openRealtimeAudio({ sessionId: "S", signal: controller.signal });
+const cancellableRequest = sent.at(-1).message; controller.abort();
+ok("AbortSignal stays in Worker and cancellation targets exactly its pending request", !('signal' in cancellableRequest.options) && sent.at(-1).message.type === "cancel-realtime-open" && sent.at(-1).message.requestId === cancellableRequest.requestId);
+await self.onmessage({ data: { type: "response", requestId: cancellableRequest.requestId, success: false, error: "closed" } });
+try { await cancelOpening; } catch {}
+const beforeAborted = sent.length;
+try { await api.openRealtimeAudio({ sessionId: "S", signal: controller.signal }); } catch {}
+ok("an already aborted start never asks the host to capture", sent.length === beforeAborted);
+const focusEvents = [], realtimeEvents = [];
+const removeFocus = api.onActiveSessionChange(value => focusEvents.push(value));
+ok("first focus listener subscribes for an authoritative initial snapshot", sent.at(-1).message.type === "watch-active-session" && sent.at(-1).message.enabled);
+let finishSlow;
+const removeSlow = api.onRealtimeAudioEvent(() => new Promise(resolve => { finishSlow = resolve; }));
+const removeRealtime = api.onRealtimeAudioEvent(value => realtimeEvents.push(value));
+await self.onmessage({ data: { type: "realtime-audio", event: { id: "rtc-1", sessionId: "S", type: "data", data: "{}" } } });
+await self.onmessage({ data: { type: "active-session", focus: { session: { id: "S" }, focused: false, visible: true, connected: true } } });
+ok("pending async data handler cannot delay other handlers or focus loss", realtimeEvents.length === 1 && focusEvents[0]?.focused === false);
+const second = [];
+const removeSecond = api.onActiveSessionChange(value => { second.push(value); value.session.id = "mutated"; });
+await Promise.resolve(); await Promise.resolve();
+ok("later listener gets a cloned initial snapshot", second.length === 1 && focusEvents[0].session.id === "S");
+finishSlow(); removeSlow(); removeRealtime(); removeSecond(); removeFocus();
+ok("last focus unsubscribe tears down its host subscription", sent.at(-1).message.type === "watch-active-session" && sent.at(-1).message.enabled === false);
+// Node treats this import-free Worker file as CommonJS and ignores query cache keys;
+// a fresh module URL models the separate Worker that an old page would actually start.
+const workerSource = await (await import("node:fs/promises")).readFile(new URL("../public/js/plugin-client-worker.js", import.meta.url), "utf8");
+await import("data:text/javascript," + encodeURIComponent(workerSource));
+await self.onmessage({ data: { type: "init", clientUrl } });
+ok("new Worker on an old host never invents realtime support", globalThis.__pluginClientApi.capabilities.realtimeAudio === undefined);
 
 if (checks.some(([, pass]) => !pass)) process.exitCode = 1;
 else console.log(`\n${checks.length}/${checks.length} plugin client Worker checks passed`);

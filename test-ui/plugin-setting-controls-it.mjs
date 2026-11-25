@@ -46,7 +46,7 @@ store.applyEvent({ type: "plugins", plugins: [demo, other] });
 let previews = [...document.querySelectorAll(".plg-preview")];
 ok("preview controls are generic, compact toggles with accessible labels", previews.length === 2 && previews[0].getAttribute("aria-pressed") === "false" && previews[0].getAttribute("aria-label") === "Play Female One preview");
 previews[0]._fire("click");
-ok("play becomes stop and resolves a plugin-relative asset", previews[0].classList.contains("playing") && previews[0].getAttribute("aria-pressed") === "true" && previews[0].getAttribute("aria-label") === "Stop Female One preview" && FakeAudio.instances[0].url === "/plugins/voice-demo/public/previews/f1.wav");
+ok("play becomes pause and resolves a plugin-relative asset", previews[0].classList.contains("playing") && previews[0].getAttribute("aria-pressed") === "true" && previews[0].getAttribute("aria-label") === "Pause Female One preview" && FakeAudio.instances[0].url === "/plugins/voice-demo/public/previews/f1.wav");
 previews[1]._fire("click");
 ok("starting a second preview stops and resets the first", FakeAudio.instances[0].paused && FakeAudio.instances[0].loadCalls === 1 && previews[0].getAttribute("aria-pressed") === "false" && previews[1].getAttribute("aria-pressed") === "true");
 FakeAudio.instances[1].emit("ended");

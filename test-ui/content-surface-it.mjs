@@ -118,7 +118,9 @@ try {
   await flush();
   ok("replayed other-session content restores without a toast", !document.querySelector(".toast"));
   store.select("B"); await flush();
-  ok("switching to B reveals quietly restored content", dockVisible() && !!document.querySelector("#pane-body .diff"));
+  ok("switching to B lands on its terminal, with the restored document waiting as a tab", dockVisible() && termVisible() && tabs().some((t) => t.querySelector(".cd-tab-name").textContent === "restored.diff"));
+  tabs().find((t) => t.querySelector(".cd-tab-name").textContent === "restored.diff")._fire("click"); await flush();
+  ok("its tab opens the quietly restored content", !termVisible() && !!document.querySelector("#pane-body .diff"));
   store.select("A"); await flush();
 
   // ── other-session rich content → recorded + toast, no dock steal; switching reveals it ──
@@ -127,7 +129,9 @@ try {
   ok("other-session content does NOT open a tab here (A active)", !dockVisible());
   ok("other-session content raised a toast", !!document.querySelector(".toast"));
   store.select("B"); await flush();
-  ok("switching to B reveals its recorded content in the dock", dockVisible() && !!document.querySelector("#pane-body .tr"));
+  ok("switching to B shows its terminal, not the last document (Or: focus belongs to the terminal)", dockVisible() && termVisible() && document.querySelector(".cd-tab.on")?.className.includes("cd-tab-term"));
+  tabs().find((t) => t.querySelector(".cd-tab-name").textContent === "suite")._fire("click"); await flush();
+  ok("clicking its tab reveals the recorded content", !!document.querySelector("#pane-body .tr"));
   ok("B's test-results rendered (FAILED verdict)", document.querySelector("#pane-body .tr-verdict.fail") && document.querySelector("#pane-body .tr-verdict").textContent === "FAILED");
   // A video for the OTHER session used to exist only as a toast — click it or lose it, and the asset was
   // stranded either way. It is a tab in B now, whether or not the toast is ever touched.
@@ -135,6 +139,10 @@ try {
   show({ sessionId: "B", contentId: "vid1", kind: "video", name: "clip.mp4", url: "/content/vid1" });
   await flush();
   ok("other-session video does not steal the pane", !dockVisible());
+  const videoToast = [...document.querySelectorAll(".toast")].find((t) => t.textContent.includes("clip.mp4"));
+  videoToast._fire("click", { target: videoToast }); await flush();
+  ok("clicking that toast opens B on the video itself", store.activeId === "B" && document.querySelector(".cd-tab.on .cd-tab-name")?.textContent === "clip.mp4" && !termVisible());
+  store.select("A"); await flush();
   store.select("B"); await flush();
   ok("but it is waiting there as a tab", tabs().some((t) => t.querySelector(".cd-tab-name").textContent === "clip.mp4"));
 

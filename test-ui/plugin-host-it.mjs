@@ -54,6 +54,14 @@ ok("ready client starts one sandbox runtime", workers.length === 1 && __runtimeC
 const init = workers[0].sent.find((message) => message.type === "init");
 ok("host Worker bootstrap never imports plugin code into the window", workers[0].url === "/js/plugin-client-worker.js?id=safe-client" && init?.clientUrl.startsWith("/plugins/safe-client/client.js?v="));
 ok("client settings expose ordinary values and mask configured secrets", init?.settings.values.label === "First" && !("token" in init.settings.values) && init.settings.configured.token === true);
+ok("browser host advertises its own realtime implementation", init.capabilities?.realtimeAudio === true);
+workers[0].emit({ type: "watch-active-session", enabled: true });
+ok("focus subscription sends its initial session without polling", workers[0].sent.at(-1)?.type === "active-session" && workers[0].sent.at(-1).focus.session.id === "S");
+store.setConnected(true);
+ok("connection changes reach subscribed Workers", workers[0].sent.at(-1)?.type === "active-session" && workers[0].sent.at(-1).focus.connected === true);
+workers[0].emit({ type: "request", method: "open-realtime-audio", requestId: "unfocused-rtc", options: { sessionId: "S" } });
+await tick();
+ok("host refuses unfocused audio through the caller receipt", workers[0].sent.some(message => message.requestId === "unfocused-rtc" && message.type === "response" && !message.success && /Focus this session/.test(message.error)));
 
 workers[0].emit({ type: "request", method: "get-viewer-text", requestId: "viewer-empty", contentId: "missing" });
 await tick();

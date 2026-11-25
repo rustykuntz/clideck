@@ -267,7 +267,7 @@ test('plugin backup excludes secrets; restore applies declared settings to a rea
   });
   assert.equal(response.status, 200);
   assert.match((await response.json()).warnings.join(' '), /not installed/);
-  assert.equal(server.pluginManager.snapshot()[0].status, 'ready');
+  assert.equal(server.pluginManager.snapshot().find(plugin => plugin.id === 'sample').status, 'ready');
   assert.equal(server.configStore.get().plugins.sample.settings.token, 'local-secret');
   const record = server.pluginManager.records.get('sample');
   assert.equal(record.settings.label, 'Restored');

@@ -6,7 +6,7 @@ const add = (tag, id, parent = document.body) => { const node = document.createE
 for (const id of ["term", "term-head", "th-avatar", "th-chip", "th-copy", "th-meta", "th-model", "th-name", "th-rename", "rp", "rp-empty", "rp-empty-big", "rp-empty-sub", "scroll-btn"]) add("div", id);
 const context = add("div", "th-context"); context.hidden = true;
 add("i", "th-context-fill", context); add("span", "th-context-value", context);
-const last = add("div", "th-last"); last.hidden = true; add("span", "th-last-value", last);
+const last = add("div", "th-last"); last.hidden = true; add("span", "th-last-value", last); const tip = add("div", "th-last-tip", last);
 globalThis.getComputedStyle = () => ({ paddingLeft: "0", paddingRight: "0", paddingTop: "0", paddingBottom: "0" });
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 
@@ -42,15 +42,21 @@ const session = store.sessions.get("S");
 ok("session snapshot stores normalized optional telemetry", session.contextUsage?.percent === 31 && session.contextUsage.estimated === true && session.lastAgentAt === initialAt);
 ok("valid context renders one compact meter percentage", context.hidden === false && document.getElementById("th-context-value").textContent === "31%" && document.getElementById("th-context-fill").style.width === "31%");
 ok("context tooltip and accessibility distinguish estimated usage", context.classList.contains("estimated") && context.title.includes(tokenFormat.format(61200) + " / " + tokenFormat.format(200000) + " tokens · Estimated") && /31 percent, estimated/.test(context.getAttribute("aria-label")));
-ok("persisted last reply renders as the user's local wall-clock time", last.hidden === false && document.getElementById("th-last-value").textContent === localTime(initialAt) && /Last finalized reply/.test(last.title));
+ok("persisted last reply renders as the user's local wall-clock time", last.hidden === false && document.getElementById("th-last-value").textContent === localTime(initialAt));
 ok("PID remains in the header", document.getElementById("th-meta").textContent === "pid 4321");
+const steps = () => ["ctx-yellow", "ctx-orange", "ctx-red"].filter((c) => context.classList.contains(c)).join(",");
+ok("31% context is the yellow step", steps() === "ctx-yellow");
+for (const [percent, want] of [[24, ""], [25, "ctx-yellow"], [49, "ctx-yellow"], [50, "ctx-orange"], [69, "ctx-orange"], [70, "ctx-red"]]) {
+  store.applyEvent({ type: "status", sessionId: "S", state: "idle", contextUsage: usage(percent) });
+  ok(`context ${percent}% → ${want || "calm (unchanged colour)"}`, steps() === want);
+}
 
 store.applyEvent({ type: "status", sessionId: "S", state: "idle", contextUsage: usage(55) });
 const avatarMark = document.getElementById("th-avatar").firstElementChild;
 const statusMark = document.getElementById("th-chip").firstElementChild;
 const contextNode = document.getElementById("th-context"), fillNode = document.getElementById("th-context-fill");
 store.applyEvent({ type: "status", sessionId: "S", state: "idle", contextUsage: usage(78, false) });
-ok("same-state context frames update even when status is unchanged", store.sessions.get("S").contextUsage.percent === 78 && document.getElementById("th-context-value").textContent === "78%" && context.classList.contains("warm") && !context.classList.contains("estimated"));
+ok("same-state context frames update even when status is unchanged", store.sessions.get("S").contextUsage.percent === 78 && document.getElementById("th-context-value").textContent === "78%" && context.classList.contains("ctx-red") && !context.classList.contains("estimated"));
 ok("frequent telemetry mutates stable nodes without rebuilding identity or status", avatarMark === document.getElementById("th-avatar").firstElementChild && statusMark === document.getElementById("th-chip").firstElementChild && contextNode === document.getElementById("th-context") && fillNode === document.getElementById("th-context-fill"));
 ok("exact context is identified in its tooltip", /Exact/.test(context.title) && /78 percent, exact/.test(context.getAttribute("aria-label")));
 
@@ -109,6 +115,31 @@ store.applyEvent({ type: "agent.update", sessionId: "S", text: "draft", at: fina
 ok("transient agent updates never alter the finalized-reply clock", store.sessions.get("S").lastAgentAt === initialAt && document.getElementById("th-last-value").textContent === localTime(initialAt));
 store.applyEvent({ type: "agent.final", sessionId: "S", text: "done", at: finalAt });
 ok("agent.final advances the stored and rendered local wall-clock time", store.sessions.get("S").lastAgentAt === finalAt && document.getElementById("th-last-value").textContent === localTime(finalAt));
+
+// Prompt-cache warning: idle + a context to lose + older than the provider's cache window → red pill + card.
+const MIN = 60000;
+const reply = (sid, ago) => store.applyEvent({ type: "agent.final", sessionId: sid, text: "done", at: Date.now() - ago * MIN });
+ok("a months-old Codex reply with context is cold", last.classList.contains("cold") && last.getAttribute("tabindex") === "0" && !last.title && last.getAttribute("aria-describedby") === "th-last-tip");
+ok("the card names the provider window, the tokens at stake and /clear", /Codex/.test(tip.innerHTML) && /30 minutes/.test(tip.innerHTML) && /~61K/.test(tip.innerHTML) && /\/clear/.test(tip.innerHTML));
+reply("S", 29);
+ok("Codex 29 min → warm, native title back", !last.classList.contains("cold") && /Last finalized reply/.test(last.title) && tip.innerHTML === "");
+reply("S", 31);
+ok("Codex 31 min → cold", last.classList.contains("cold"));
+store.applyEvent({ type: "status", sessionId: "S", state: "working" });
+ok("working → not cold (the request is re-warming the cache)", !last.classList.contains("cold"));
+store.applyEvent({ type: "status", sessionId: "S", state: "idle", contextUsage: null });
+ok("/clear (engine drops contextUsage) → warning gone", !last.classList.contains("cold") && last.hidden === false);
+store.applyEvent({ type: "session.created", sessionId: "C", provider: "claude-code", name: "Claude", cwd: "/tmp", live: true, pid: 99, contextUsage: usage(40), lastAgentAt: Date.now() - 45 * MIN });
+store.applyEvent({ type: "status", sessionId: "C", state: "idle" });
+store.select("C");
+ok("Claude Code 45 min → warm (1 hour window)", store.activeId === "C" && !last.classList.contains("cold"));
+reply("C", 61);
+ok("Claude Code 61 min → cold, card says 1 hour", last.classList.contains("cold") && /Claude Code/.test(tip.innerHTML) && /1 hour/.test(tip.innerHTML));
+store.applyEvent({ type: "status", sessionId: "C", state: "idle", contextUsage: null });   // leaves no pending re-check timer
+store.applyEvent({ type: "session.created", sessionId: "G", provider: "gemini", name: "Gemini", cwd: "/tmp", live: true, pid: 98, contextUsage: usage(40), lastAgentAt: Date.now() - 5 * 60 * MIN });
+store.applyEvent({ type: "status", sessionId: "G", state: "idle" });
+store.select("G");
+ok("Gemini 5 h → never warns (no documented cache window)", store.activeId === "G" && !last.classList.contains("cold") && /Last finalized reply/.test(last.title));
 
 if (checks.some(([, pass]) => !pass)) process.exitCode = 1;
 else console.log(`\n${checks.length}/${checks.length} terminal telemetry checks passed`);

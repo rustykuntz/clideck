@@ -4,6 +4,8 @@
 const PLACEMENTS = new Set([
   "terminal.context", "viewer.context", "terminal.header", "viewer.header",
   "session.menu", "project.menu", "toolbar", "terminal.voice",
+  "plugin.settings",                 // buttons on the plugin's own card in Settings → Plugins (e.g. Configure)
+  "terminal.primary",                // visible, labelled actions beside the terminal's voice controls
 ]);
 const actions = new Map();                 // pluginId/actionId -> normalized action
 const listeners = new Set();
@@ -30,6 +32,8 @@ export function registerAction(pluginId, definition, invoke) {
   actions.set(key, {
     pluginId, id, label, placements,
     icon: String(definition.icon || "").slice(0, 24),
+    iconOnly: definition.iconOnly === true,
+    ...(typeof definition.pressed === "boolean" && { pressed: definition.pressed }),
     description: String(definition.description || "").slice(0, 240),
     hasWhen: definition.hasWhen === true,
     invoke,

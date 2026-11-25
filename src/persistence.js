@@ -45,6 +45,7 @@ function normalizeAssets(value) {
     } else if (raw.payload === true) {
       assets[id] = { id, kind, name, payload: true, ...(mime && { mime }) };
     }
+    if (assets[id] && raw.agentInitiated === true) assets[id].agentInitiated = true;
   }
   return assets;
 }

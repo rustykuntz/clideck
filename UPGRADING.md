@@ -7,6 +7,43 @@ Updating npm does not replace a process that is already running.
 Requires Node.js 22.12 or newer. The default address is **http://127.0.0.1:4000**.
 `--port` takes precedence over `CLIDECK_PORT`, then `PORT`, then the default.
 
+## Plugins and phone messaging in 2.7.0
+
+**Google Workspace sign-in warning.** Google is still reviewing the permissions requested by CliDeck’s built-in Google Workspace connection. You may see “Google hasn’t verified this app” during sign-in.
+
+Restart the updated engine and refresh browsers to use the new plugin APIs.
+Every shipped plugin now appears in Settings and `clideck plugins`, including
+disabled ones. Google Workspace and Telegram start disabled. `plugin info`,
+`enable`, `disable` and `settings` let agents
+inspect and configure plugins through the same engine controls as the UI.
+
+Enable Telegram in Settings or with `clideck plugin enable telegram`;
+it does not contact Telegram until connected.
+`clideck telegram/setup status` explains the remaining setup steps. It requires
+a BotFather bot with private topics, pairing in Telegram, and an awake computer.
+It initially supports Claude and Codex native request receipts. Disabling it
+removes its controls and stops Telegram work. Local `clideck notify` notifications
+continue without any chat plugin. Uncertain plugin requests can be inspected and
+acknowledged through `clideck errors` even after plugin removal.
+
+## Monitors in 2.7.0
+
+Monitors require the updated engine and a browser refresh. They are off until a
+session creates one with `clideck monitor add`; no existing session or command is
+automatically enrolled. Open the Monitors button beside Task Manager to manage
+them. Checks survive agent stops and engine restarts, but do not run while the
+engine is stopped or the computer sleeps. Resuming stopped agents is opt-in per
+monitor. AI conditions are not included; phone messaging is a separate optional
+plugin. Check failures now alert after two consecutive failures (the first retries
+after 30 seconds), once per breakage until recovery. Repair notices include the
+original add command; correct it before recreating the monitor.
+
+Agent-initiated command failures now return to their caller, including plugin
+activation and interrupted prompt submission. Background monitor and preview
+errors notify their initiating session through the existing typing/busy guards.
+Refresh every browser tab to load preview feedback and the speech receipt protocol;
+agent speech commands now wait for actual playback completion or a reported error.
+
 ## Version 2.6
 
 After updating, restart CliDeck when you are ready and refresh the browser.
@@ -31,6 +68,14 @@ Voice selection stays shared. Tables, fenced code/diagrams and display formulas
 are skipped with a short spoken cue, while ordinary prose and lists are read.
 
 ## Update notices
+
+Once this browser-refresh notice is installed and loaded, an older open interface
+shows **Updated CliDeck is ready** with a **Refresh** button when newer UI files
+are available. It stays until dismissed; it never reloads automatically. Refresh
+reloads only the browser tab and leaves agent processes running. Save any unsaved
+dialog edits first. The check runs only in a connected, visible tab, at low frequency
+and when returning to the app. An engine that still needs restarting does not offer
+Refresh as a substitute for that restart.
 
 CliDeck checks for updates in the background when the engine starts and periodically
 while it runs. When a newer version is available, the app shows a small notification

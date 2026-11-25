@@ -100,23 +100,27 @@ function parsePageBuffer(buffer, offset, beginsAtLine) {
   return records;
 }
 
-function readBackward(path, end, enough) {
+function readBackward(path, end, enough, maxBytes = Infinity) {
   const fd = openSync(path, 'r');
   let position = end;
   let buffer = Buffer.alloc(0);
   let records = [];
+  let readBytes = 0;
   try {
-    while (position > 0 && !enough(records)) {
-      const length = Math.min(PAGE_READ_SIZE, position);
+    while (position > 0 && readBytes < maxBytes && !enough(records)) {
+      const length = Math.min(PAGE_READ_SIZE, position, maxBytes - readBytes);
       position -= length;
       const chunk = Buffer.allocUnsafe(length);
       const read = readSync(fd, chunk, 0, length, position);
+      readBytes += read;
+      if (read !== length) throw new Error('Saved conversation changed while reading. Try again.');
       buffer = Buffer.concat([chunk.subarray(0, read), buffer]);
       let beginsAtLine = position === 0;
-      if (!beginsAtLine) {
+      if (!beginsAtLine && readBytes < maxBytes) {
         const previous = Buffer.allocUnsafe(1);
-        beginsAtLine = readSync(fd, previous, 0, 1, position - 1) === 1
-          && previous[0] === 10;
+        const previousRead = readSync(fd, previous, 0, 1, position - 1);
+        readBytes += previousRead;
+        beginsAtLine = previousRead === 1 && previous[0] === 10;
       }
       records = parsePageBuffer(buffer, position, beginsAtLine);
     }
@@ -190,17 +194,50 @@ class TranscriptStore {
     return Object.fromEntries(this.cache);
   }
 
-  getTurns(sessionId, count = 20) {
+  getTurns(sessionId, count = 20, maxChars) {
     const path = this.path(sessionId);
     if (!path) return [];
     const limit = Math.max(1, Math.floor(Number(count) || 20));
+    if (maxChars !== undefined && (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 64_000)) {
+      throw new Error('maxChars must be an integer from 1 to 64000.');
+    }
+    let entries;
+    if (maxChars === undefined) entries = parseEntries(path);
+    else {
+      if (!existsSync(path)) return [];
+      const size = statSync(path).size;
+      const { records } = readBackward(path, size, values => {
+        let chars = 0, groups = 0, role;
+        for (let i = values.length - 1; i >= 0; i--) {
+          const entry = values[i].entry;
+          chars += entry.text.length + (role === entry.role ? 1 : 0);
+          if (role !== entry.role) groups++;
+          role = entry.role;
+          if (chars >= maxChars || groups > limit) return true;
+        }
+        return false;
+      }, 1024 * 1024);
+      if (size && !records.length) throw new Error('The latest conversation entry exceeds the bounded context read or is incomplete.');
+      entries = records.map(record => record.entry);
+    }
     const turns = [];
-    for (const entry of parseEntries(path)) {
+    for (const entry of entries) {
       const previous = turns.at(-1);
       if (previous?.role === entry.role) previous.text += `\n${entry.text}`;
       else turns.push({ role: entry.role, text: entry.text });
     }
-    return turns.slice(-limit);
+    const result = turns.slice(-limit);
+    if (maxChars === undefined) return result;
+    // Keep the newest text, never split a UTF-16 surrogate pair at the boundary.
+    let remaining = maxChars;
+    for (let i = result.length - 1; i >= 0; i--) {
+      if (result[i].text.length > remaining) {
+        result[i].text = remaining ? result[i].text.slice(-remaining) : '';
+        if (/^[\uDC00-\uDFFF]/.test(result[i].text)) result[i].text = result[i].text.slice(1);
+      }
+      remaining -= result[i].text.length;
+    }
+    return result.filter(turn => turn.text);
   }
 
   getPage(sessionId, before, count = 30) {

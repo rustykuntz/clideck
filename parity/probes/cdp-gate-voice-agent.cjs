@@ -1,0 +1,121 @@
+// Isolated UI gate: actual plugin Worker/server/settings/opaque workspace; no account or microphone access.
+const fs=require('node:fs'),{join,resolve}=require('node:path'),{tmpdir}=require('node:os'),{spawn}=require('node:child_process');
+const {HeadlessServer}=require('../../src/server');const WebSocket=require('ws');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const root=fs.mkdtempSync(join(tmpdir(),'clideck-voice-ui-'));
+let engine,chrome,cdp;const pending=new Map(),contexts=new Map();let seq=0;
+const command=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{pending.delete(id);reject(Error('CDP timeout '+method));},8000);pending.set(id,m=>{clearTimeout(timer);if(m.error)reject(Error(m.error.message));else resolve(m.result);});cdp.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
+const js=async(expression,context)=>{const r=await command('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true,...(context?{contextId:context.id}:{})},context?.sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.text+': '+(r.exceptionDetails.exception?.description||''));return r.result?.value;};
+async function wait(fn){for(let i=0;i<100;i++){const value=await fn();if(value)return value;await sleep(80);}throw Error('Condition timed out');}
+const check=(name,pass)=>{if(!pass)throw Error(name);console.log('PASS '+name);};
+(async()=>{
+ const bundled=join(root,'plugins');fs.mkdirSync(bundled);fs.cpSync(resolve('plugin-packages/voice-agent'),join(bundled,'voice-agent'),{recursive:true});
+ engine=new HeadlessServer({port:0,dataDir:join(root,'data'),bundledPluginsDir:bundled,pluginCatalogDir:join(root,'empty'),autoSaveMs:0});
+ engine.configStore.update({onboarding:{completed:true,seenTips:['guided-tour','about-me']}});
+ engine.persistence.register({id:'voice-fixture',provider:{id:'codex'},cwd:root,name:'Plan my week',cols:100,rows:30});
+ const address=await engine.listen(),base='http://127.0.0.1:'+address.port;
+ // Seed only this private fixture engine with recorded usage, never a cloud call.
+ const {VoiceUsage}=require('../../plugin-packages/voice-agent/usage'); let usageNow=Date.now()-28*86400000;
+ const usage=new VoiceUsage({dataDir:join(root,'data','plugin-data','voice-agent'),reportError:async()=>{}},{now:()=>usageNow});
+ for(let i=0;i<24;i++) { usageNow=Date.now()-(23-i)*86400000-3600000; const id='usage-'+i;
+   usage.start(id,'usage-session-'+i%3,['Plan my week','Build the garden app','Travel & reservations'][i%3],i%5===0?'phone':'browser');usage.created(id);
+   const seconds=60*(3+(i*7)%24);usageNow+=seconds*1000;usage.event(id,{type:'session.closed',usage:{seconds}});
+ }
+ const expectedUsage=usage.report({days:30});
+ await engine.pluginManager.setEnabled('voice-agent',true);
+ const profile=join(root,'chrome');fs.mkdirSync(profile);
+ chrome=spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new','--disable-gpu','--remote-debugging-port=0','--user-data-dir='+profile,'--no-first-run','about:blank'],{stdio:'ignore'});
+ const portFile=join(profile,'DevToolsActivePort');await wait(()=>fs.existsSync(portFile));const port=fs.readFileSync(portFile,'utf8').split('\n')[0];
+ const target=await(await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'})).json();cdp=new WebSocket(target.webSocketDebuggerUrl);
+ await new Promise((r,j)=>{cdp.once('open',r);cdp.once('error',j);});
+ cdp.on('message',raw=>{const m=JSON.parse(raw);if(m.id&&pending.has(m.id)){const done=pending.get(m.id);pending.delete(m.id);done(m);}if(m.method==='Runtime.executionContextCreated')contexts.set((m.sessionId||'')+':'+m.params.context.id,{...m.params.context,sessionId:m.sessionId});if(m.method==='Runtime.executionContextDestroyed')contexts.delete((m.sessionId||'')+':'+m.params.executionContextId);});
+ await command('Runtime.enable');await command('Page.enable');await command('Emulation.setDeviceMetricsOverride',{width:1280,height:950,deviceScaleFactor:1,mobile:false});
+ await command('Page.navigate',{url:base});
+ await wait(()=>js("document.getElementById('voice-mic')"));
+ await wait(()=>js("import('/js/store.js').then(({store})=>store.connected&&store.sessions.has('voice-fixture'))"));
+ await js("import('/js/ui/tour.js').then(m=>m.closeTour())");
+ await command('Emulation.setFocusEmulationEnabled',{enabled:true});
+ await js("import('/js/store.js').then(({store})=>store.select('voice-fixture'))");
+ await wait(()=>js("document.querySelector('#terminal-primary-actions button')?.getAttribute('aria-label') === 'Voice Agent'"));
+ check('visible accessible waveform toggle',await js("document.querySelector('#terminal-primary-actions button svg') && document.querySelector('#terminal-primary-actions button').getAttribute('aria-pressed')==='false'"));
+ await engine.pluginManager.updateSettings('voice-agent',{'talk-to-sessions':false});
+ await wait(()=>js("document.querySelectorAll('#terminal-primary-actions button').length===0"));check('feature switch removes header icon',true);
+ await engine.pluginManager.updateSettings('voice-agent',{'talk-to-sessions':true});
+ await wait(()=>js("document.querySelector('#terminal-primary-actions button')?.getAttribute('aria-pressed')==='false'"));check('enabling restores an inactive icon without opening a microphone',true);
+ await js("import('/js/ui/action-registry.js').then(async r=>{const a=(await r.resolveActions('plugin.settings',{session:{id:'voice-fixture'}})).find(a=>a.id==='talk');return r.runAction(a,a.context);})");
+ // Sandboxed workspace is an out-of-process iframe. Inspect its own target without weakening the sandbox.
+ const frame=await wait(async()=>(await command('Target.getTargets')).targetInfos.find(t=>t.type==='iframe'&&t.url.includes('/public/voice.html')));
+ const {sessionId:frameSession}=await command('Target.attachToTarget',{targetId:frame.targetId,flatten:true});
+ await command('Runtime.enable',{},frameSession);
+ const context=await wait(()=>[...contexts.values()].find(c=>c.sessionId===frameSession&&c.auxData?.isDefault));
+ await wait(()=>js("document.getElementById('primary').textContent==='Set up voice'",context));
+ check('missing key gives guided setup without phone fields',await js("!document.getElementById('setup').hidden && document.getElementById('connection').textContent==='Microphone off'",context));
+ await js("document.getElementById('add-key').click()",context);
+ await wait(()=>js("document.querySelector('.plg-detail-name')?.textContent==='Voice Agent'"));
+ check('settings button opens own configuration',true);
+ await js("document.querySelector('[aria-label=\"Talk to sessions\"]').click()");
+ await wait(()=>js("document.querySelectorAll('#terminal-primary-actions button').length===0"));
+ check('actual Settings switch hides the icon and saves the choice',engine.pluginManager.records.get('voice-agent').settings['talk-to-sessions']===false);
+ await js("document.querySelector('[aria-label=\"Talk to sessions\"]').click()");
+ await wait(()=>js("document.querySelector('#terminal-primary-actions button')?.getAttribute('aria-pressed')==='false'"));
+ check('actual Settings switch restores the inactive icon',engine.pluginManager.records.get('voice-agent').settings['talk-to-sessions']===true);
+ check('telephone details collapsed',await js("[...document.querySelectorAll('.plg-setting-group')].some(d=>!d.open&&d.querySelector('summary').textContent==='Phone calls (optional)')"));
+ await js("window.previewAudios=[];window.NativeAudio=Audio;window.Audio=function(url){const a=new NativeAudio(url);previewAudios.push(a);return a;}");
+ await js("document.querySelector('[aria-label=\"Play Marin preview\"]').click()");
+ await wait(()=>js("previewAudios.at(-1)?.currentTime>.1 && !previewAudios.at(-1).paused"));
+ check('real bundled voice sample plays without an API key',await js("document.querySelector('[aria-label=\"Pause Marin preview\"]')!==null"));
+ await js("document.querySelector('[aria-label=\"Pause Marin preview\"]').click();window.pausedAt=previewAudios[0].currentTime");await sleep(150);
+ check('Pause preserves the real audio position',await js("previewAudios[0].paused && Math.abs(previewAudios[0].currentTime-pausedAt)<.05"));
+ await js("document.querySelector('[aria-label=\"Play Marin preview\"]').click()");
+ await wait(()=>js("previewAudios[0].currentTime>pausedAt+.1"));
+ check('Play resumes the same sample',await js("previewAudios.length===1"));
+ await js("const s=document.getElementById('plugin-setting-voice-agent-voice');s.value='cedar';s.dispatchEvent(new Event('change',{bubbles:true}));");
+ check('changing voice stops the old sample immediately without autoplay',await js("previewAudios[0].paused && !previewAudios[0].getAttribute('src') && previewAudios.length===1"));
+ await wait(()=>js("document.querySelector('[aria-label=\"Play Cedar preview\"]')!==null"));
+ await js("document.querySelector('[aria-label=\"Play Cedar preview\"]').click()");
+ await wait(()=>js("previewAudios.at(-1)?.currentTime>.1 && !previewAudios.at(-1).paused"));
+ check('the newly selected voice plays its own clip',await js("previewAudios.at(-1).src.endsWith('/cedar.mp3')"));
+ fs.mkdirSync(resolve('.captures'),{recursive:true});
+ const settingsShot=await command('Page.captureScreenshot',{format:'png'});fs.writeFileSync(resolve('.captures/voice-agent-settings-preview.png'),Buffer.from(settingsShot.data,'base64'));
+ await wait(()=>js("previewAudios.at(-1).paused && document.querySelector('[aria-label=\"Play Cedar preview\"]')!==null"));
+ check('sample completion restores Play',true);
+ await engine.pluginManager.updateSettings('voice-agent',{'openai-key':'sk-isolated-not-real'});
+ await js("document.querySelector('.set-x').click()");
+ await wait(()=>js("document.getElementById('primary').textContent==='Start voice'",context));
+ check('saved key enables browser voice without carrier setup',true);
+ check('workspace stays sandboxed',await js("document.querySelector('iframe.plugin-workspace').getAttribute('sandbox')==='allow-scripts allow-forms allow-downloads'"));
+ check('settings key never appears in voice page',!(await js('document.body.textContent',context)).includes('sk-isolated-not-real'));
+ fs.mkdirSync(resolve('.captures'),{recursive:true});
+ await js("import('/js/ui/tour.js').then(m=>m.closeTour())");await sleep(350);
+ // The existing desktop sidebar uses 340px; 800px leaves a 460px workspace.
+ for(const [name,width,theme]of[['wide-dark',1280,'dark'],['wide-light',1280,'light'],['narrow-light',800,'light']]){
+   await command('Emulation.setDeviceMetricsOverride',{width,height:950,deviceScaleFactor:1,mobile:false});
+   await js("import('/js/theme.js').then(m=>m.setThemePref('"+theme+"'))");await sleep(180);
+   const shot=await command('Page.captureScreenshot',{format:'png'});fs.writeFileSync(resolve('.captures/voice-agent-'+name+'.png'),Buffer.from(shot.data,'base64'));
+   const dimensions=await js('({scroll:document.documentElement.scrollWidth,width:innerWidth,body:getComputedStyle(document.body).minWidth,overflow:[...document.querySelectorAll("*")].filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(e=>e.tagName+"."+e.className)})',context);
+   if(dimensions.scroll>dimensions.width+1)console.log(dimensions);
+   check(name+' workspace fits',dimensions.scroll<=dimensions.width+1);
+ }
+ await js("import('/js/ui/action-registry.js').then(async r=>{const a=(await r.resolveActions('plugin.settings',{})).find(a=>a.id==='usage');return r.runAction(a,a.context);})");
+ const usageFrame=await wait(async()=>(await command('Target.getTargets')).targetInfos.find(t=>t.type==='iframe'&&t.url.includes('/public/usage.html')));
+ const {sessionId:usageFrameSession}=await command('Target.attachToTarget',{targetId:usageFrame.targetId,flatten:true});await command('Runtime.enable',{},usageFrameSession);
+ const usageContext=await wait(()=>[...contexts.values()].find(c=>c.sessionId===usageFrameSession&&c.auxData?.isDefault));
+ await wait(()=>js("document.getElementById('count').textContent==='24'",usageContext));
+ check('Usage action opens the actual plugin workspace with persisted totals',await js("document.getElementById('cost').textContent",usageContext)==='$'+expectedUsage.totals.usd.toFixed(2));
+ check('daily chart and per-session breakdown render',await js("document.querySelectorAll('#chart button').length===30&&document.querySelectorAll('#sessions tr').length===3",usageContext));
+ await js("document.querySelector('#chart button:last-child').click()",usageContext);
+ check('daily chart is interactive and exposes cost as well as minutes',await js("document.getElementById('day-detail').textContent.includes('estimated')&&document.querySelector('#chart button:last-child').getAttribute('aria-pressed')==='true'",usageContext));
+ await js("document.querySelector('[data-days=\"7\"]').click()",usageContext);
+ await wait(()=>js("document.querySelectorAll('#chart button').length===7&&document.getElementById('count').textContent==='7'",usageContext));check('period filter recalculates actual backend usage',true);
+ await js("const s=document.getElementById('session');s.value='usage-session-1';s.dispatchEvent(new Event('change'));",usageContext);
+ await wait(()=>js("document.querySelectorAll('#sessions tr').length===1&&document.querySelector('#sessions td').textContent.includes('Build the garden app')",usageContext));check('session filter isolates one session',true);
+ await js("{document.querySelector('[data-days=\"30\"]').click();const s=document.getElementById('session');s.value='';s.dispatchEvent(new Event('change'));}",usageContext);
+ await wait(()=>js("document.getElementById('count').textContent==='24'",usageContext));
+ check('usage states estimates and excluded charges clearly',await js("document.body.textContent.includes('not an invoice')&&document.body.textContent.includes('phone-carrier charges')",usageContext));
+ for(const [name,width,theme]of[['wide-dark',1280,'dark'],['wide-light',1280,'light'],['narrow-light',800,'light']]){
+   await command('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:false});await js("import('/js/theme.js').then(m=>m.setThemePref('"+theme+"'))");await sleep(180);
+   const shot=await command('Page.captureScreenshot',{format:'png'});fs.writeFileSync(resolve('.captures/voice-usage-'+name+'.png'),Buffer.from(shot.data,'base64'));
+   check('usage '+name+' fits without horizontal overflow',await js('document.documentElement.scrollWidth<=innerWidth+1',usageContext));
+ }
+ console.log('Voice Agent UI gate passed. Screenshots in .captures/voice-agent-*.png and voice-usage-*.png');
+})().catch(e=>{console.error(e.stack);process.exitCode=1;}).finally(async()=>{cdp?.close();if(chrome)chrome.kill('SIGTERM');await engine?.close();});

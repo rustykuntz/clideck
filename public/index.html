@@ -8,6 +8,9 @@
 (function(){try{var p=localStorage.getItem('clideck.theme');
 if(p!=='light'&&p!=='dark')p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',p);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+/* desktop app (Electron preload bridge in this top frame): stamp before first paint so the title-bar insets never jump */
+(function(){try{var d=window.top===window&&window.clideckDesktop;if(d){var r=document.documentElement;r.classList.add('desktop');r.setAttribute('data-platform',String(d.platform||''));
+if(localStorage.getItem('clideck.desktop.sidebarHidden')==='1')r.classList.add('dk-sidebar-hidden','dk-no-anim');}}catch(e){}})();
 /* no-flash sidebar-width pre-stamp (E1): apply the saved --sidebar-w before first paint */
 (function(){try{var w=parseInt(localStorage.getItem('clideck.sidebarW'),10);
 if(w>=240&&w<=560)document.documentElement.style.setProperty('--sidebar-w',w+'px');}catch(e){}})();
@@ -52,24 +55,26 @@ if(w>=240&&w<=560)document.documentElement.style.setProperty('--sidebar-w',w+'px
       <div class="list-empty" id="list-empty">Connecting to the engine…</div>
     </div>
     <div class="side-foot">
-      <!-- Neutral until the About me profile names someone: sidebar.js repaints both on every config. -->
-      <div class="av">y</div><span class="who">You · local</span>
+      <!-- One labelled menu for app-wide tools (Prompts, Task Manager, Monitors, plugin tools, Theme), so the bar
+           never becomes a row of guessable icons. Only the two everyday controls stay one click away. -->
+      <button class="foot-me" id="app-menu" type="button" aria-haspopup="menu" aria-expanded="false" title="Prompts, Task Manager, Monitors, plugins and theme">
+        <span class="av" aria-hidden="true">y</span><span class="who">You<span class="who-where"> · local</span></span>
+        <svg class="foot-me-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5-5 5 5"/></svg>
+      </button>
       <span class="conn down" id="conn"><i></i><span id="conn-text">offline</span></span>
       <span class="save-ind" id="save-ind" title="Sessions saved" aria-hidden="true">
         <svg class="si-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
         <svg class="si-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         <svg class="si-off" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
       </span>
-      <button class="foot-btn" id="prompts-btn" title="Prompt library — type // in any terminal" aria-label="Prompt library">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h8"/><path d="M7 13h5"/></svg>
-      </button>
-      <button class="foot-btn" id="notify-btn" title="Notifications on — click to turn off" aria-label="Turn notifications off" aria-pressed="true">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="notify-bell"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.5 21a1.7 1.7 0 0 1-3 0"/></g><path class="notify-slash" d="M4 4l16 16"/></svg>
-      </button>
-      <button class="foot-btn" id="settings-btn" title="Settings" aria-label="Settings">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
-      <button class="theme-btn" id="theme-btn" title="Theme" aria-label="Theme">◐</button>
+      <div class="foot-tools">
+        <button class="foot-btn" id="notify-btn" title="Notifications on — click to turn off" aria-label="Turn notifications off" aria-pressed="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="notify-bell"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.5 21a1.7 1.7 0 0 1-3 0"/></g><path class="notify-slash" d="M4 4l16 16"/></svg>
+        </button>
+        <button class="foot-btn" id="settings-btn" title="Settings" aria-label="Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -108,6 +113,8 @@ if(w>=240&&w<=560)document.documentElement.style.setProperty('--sidebar-w',w+'px
           <div class="th-last th-pill" id="th-last" hidden>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
             <span id="th-last-value"></span>
+            <svg class="th-last-info" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/></svg>
+            <div class="th-tip" id="th-last-tip" role="tooltip"></div>
           </div>
           <div class="th-meta" id="th-meta"></div>
         </div>
@@ -122,11 +129,8 @@ if(w>=240&&w<=560)document.documentElement.style.setProperty('--sidebar-w',w+'px
           <button class="th-voice" id="voice-say" title="Read this session’s replies aloud" aria-label="Read this session’s replies aloud" aria-pressed="false">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
           </button>
-          <button class="th-plugin" id="plugin-actions" title="Plugin actions" aria-label="Plugin actions" aria-haspopup="menu" aria-expanded="false" hidden>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg>
-          </button>
-          <button id="task-manager" title="Task Manager" aria-label="Task Manager" aria-haspopup="dialog">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 16v-4m5 4V7m5 9v-6"/></svg>
+          <button class="th-plugin" id="plugin-actions" title="More for this session" aria-label="More for this session" aria-haspopup="menu" aria-expanded="false" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>
           </button>
         </div>
       </header>

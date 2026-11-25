@@ -99,6 +99,25 @@ const check = (name, yes, detail) => { yes ? passes++ : fails++; console.log(`${
     check('URL normal left-click still opens browser',await js('opened.length')===beforeUrl+1&&await js('opened.at(-1)[0]')==='https://example.com/notes.md');
     await mouse(urlPoint,'middle');
     check('middle button does not trigger left-click action',await js('opened.length')===beforeUrl+1);
+    // Reported bug: localhost URLs (no dotted host) were plain text. The final sentence dot is not part of the link.
+    const report='The Screeners tab is ready: http://localhost:7345/#screeners.';
+    await place(report);
+    const at=col=>js(`(()=>{const r=term.element.querySelector('.xterm-screen').getBoundingClientRect();const c=term._core._renderService.dimensions.css.cell;return {x:r.left+c.width*(${col}+0.5),y:r.top+c.height/2}})()`);
+    const inside=await at(report.indexOf('localhost')), dot=await at(report.length-1);
+    const beforeLocal=await js('opened.length');
+    for(const [button,modifiers] of [['right',0],['left',2],['middle',0]]) {
+      await mouse(inside,button,modifiers);
+      check('localhost URL '+button+(modifiers?'+Ctrl':'')+' click does not open',await js('opened.length')===beforeLocal);
+      await js(`(async()=>{(await import('/js/ui/menu.js')).closeMenu()})()`);
+    }
+    await mouse(dot,'left');
+    check('clicking the sentence dot after it opens nothing',await js('opened.length')===beforeLocal);
+    await mouse(inside,'left');
+    check('localhost URL left-click opens the exact URL without the final dot',await js('opened.length')===beforeLocal+1&&JSON.stringify(await js('opened.at(-1)'))===JSON.stringify(['http://localhost:7345/#screeners','_blank','noopener,noreferrer']),await js('opened.at(-1)'));
+    const v6='ipv6 http://[::1]:8080/path.';
+    await place(v6);
+    await mouse(await at(v6.indexOf('[::1]')),'left');
+    check('IPv6 URL with port opens exactly',await js('opened.at(-1)[0]')==='http://[::1]:8080/path');
     const plain=await place('plain text selected');await js('term.select(0,0,10)');await mouse(plain);
     check('right-click preserves selection and existing text actions',await js('term.getSelection()')==='plain text'&&(await labels()).slice(0,2).join('|')==='Copy|Paste');
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);

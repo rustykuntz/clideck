@@ -12,6 +12,8 @@ for you to review as they go.
 
 *Projects and sessions on the left; the selected agent's terminal on the right.*
 
+**Google Workspace sign-in warning.** Google is still reviewing the permissions requested by CliDeck’s built-in Google Workspace connection. You may see “Google hasn’t verified this app” during sign-in.
+
 ## Quick start
 
 Requires **Node.js 22.12+** and an installed agent CLI.
@@ -49,6 +51,76 @@ counts, and activity times let you follow many sessions while working in one.
   `{{project_name}}` fill in the current context.
 - **Controls.** Light and dark themes and configurable shortcuts.
 
+Agent-initiated failures return to the agent: command errors use the CLI response,
+and later monitor or preview failures send a diagnostic message to the initiating
+session. Background notices wait while it is busy or you are typing, survive an
+engine restart, and do not repeat during the same failure. A recovered or removed
+operation clears its notice. Uncertain submissions are never automatically resent.
+Use `clideck errors` in the initiating session to inspect notices. After checking
+an interrupted paste, `clideck errors acknowledge <id>` clears its uncertainty
+without resending it and allows later background messages through.
+
+## Monitors
+
+Ask an agent to watch something, then open **Monitors** beside Task Manager to see
+its checks, findings, errors and delivery status. Pause, resume, check now or
+delete a monitor there. Commands run independently of agent sessions, while the
+CliDeck engine is running and the computer is awake. After upgrading, restart the engine and refresh your browser to use monitors.
+
+From a CliDeck session:
+
+```sh
+clideck monitor add --name "Report changes" --every 5m --run 'cat report.txt'
+clideck monitor add --name "Export ready" --every 1m --mode until-success --run 'test -f export.done'
+clideck monitor add --name "Morning check" --at 09:00 --run 'date'
+clideck monitor list
+clideck monitor pause <id>
+```
+
+- Each finding arrives as one line with the monitor name, a summary and a
+  `clideck monitor read <event-id>` command for the receiving session.
+- The default target is the creating session. `--wake "@project/session"` selects
+  another; `--resume-session` explicitly allows reopening its saved conversation.
+  Missing resume metadata or a changed native conversation is reported, never
+  silently treated as a fresh conversation.
+- Default **change** mode saves the first successful output as a baseline, then
+  reports changes. **items** mode expects a JSON array with stable `id` fields;
+  it remembers up to 4,000 IDs without evicting them. It reports only IDs absent
+  from the initial baseline and not already observed. Same-ID edits are ignored.
+- **until-success** waits for exit code 0, delivers once, then completes. Exit 1
+  means not ready; other exit codes are errors. `--once` stops a change/items
+  monitor after its first delivery. `--at` is one-shot: the next `HH:mm` in the
+  engine's local timezone, or an ISO date with an explicit timezone offset.
+- Checks use `/bin/sh`, the saved working directory and the engine environment;
+  shell profiles are not loaded. Use `--cwd` and absolute executable paths when
+  needed. Use short, read-only checks; commands run with your user permissions.
+- One command runs at a time: 30 seconds and 64 KiB combined output per check,
+  intervals from 30 seconds to 30 days, and at most 100 monitors. Failed checks
+  back off; waking the computer does not replay every missed interval.
+- Two consecutive check failures notify the creating agent once until recovery,
+  including when `--wake` targets someone else. The first failure retries after
+  30 seconds; target and delivery errors report immediately. Notices include the
+  error and pause/remove/original-add commands so the agent can correct and replace
+  the monitor (choose a future `--at` for a failed one-shot). Errors never
+  complete one-shot monitors; a waiting error notice does not stop checks.
+  A stopped creator waits for manual resume unless it is also the target with
+  `--resume-session` enabled. A deleted creator is never replaced by another agent.
+- Findings wait while an agent is busy, showing a menu, or receiving your typing.
+  A pending finding holds further checks for that monitor. Once delivery starts,
+  Pause or Delete does not undo the message or stop the agent's work. Deleting a
+  target session pauses its monitors before their next command.
+- An interrupted or uncertain delivery is never automatically resent. Inspect
+  the session, then use **Clear pending** (CLI: `monitor acknowledge <id>`) to
+  discard that pending finding and continue future checks without repeating it.
+- Definitions, baselines and pending findings persist in the engine data folder's
+  `monitors.json`, with private file permissions. Its command output may contain
+  personal data; this file is not included in the settings/session backup.
+  Background error notices use a separate private `agent-errors.json`, also
+  excluded from that backup. Notices are deduplicated per operation until recovery.
+
+Use `clideck monitor --help` for all options. Plain-language AI conditions and
+phone delivery are not included in this first version.
+
 ## See what agents produce
 
 Agents can create reports, pages, images, and other artifacts and automatically
@@ -74,6 +146,9 @@ files onto the tab strip yourself.
 
 ## Plugins
 
+Every plugin shipped with CliDeck appears in **Settings → Plugins**. Dictation,
+Google Workspace and Telegram start disabled; turn on the ones you want.
+
 - **Git Changes** — inspect edits, branches, and worktree comparisons.
 - **Supertonic Voice** — listen to replies or selected text with twelve local voices
   and quick previews. Automatic reading is enabled per session and waits until you
@@ -81,6 +156,30 @@ files onto the tab strip yourself.
   The speech model downloads on first use.
 - **Emoji** — emoji support in the terminal.
 - **Smart Dictation** — optional voice input for prompts.
+- **Telegram** — talk to Claude and Codex sessions from your phone.
+  Enable it in Settings or with `clideck plugin enable telegram`, then
+  follow `clideck telegram/setup status`. See its [setup guide](plugin-packages/telegram/README.md).
+- **Google Workspace** — reuses your gog CLI
+  and saved Google accounts, or installs gog automatically on Mac and Ubuntu.
+  Enable it in Settings or with `clideck plugin enable google`,
+  then run `clideck google/status`. Agents use `google/help` and `google/run` for
+  Gmail, Calendar, Drive and other services. See its [guide](plugin-packages/google/README.md).
+
+For a plugin downloaded from GitHub or elsewhere, unpack it and choose its
+folder using **Settings → Plugins → Add from folder**.
+
+Agents can discover capabilities with `clideck plugins` (including disabled
+plugins) and `clideck plugin info <id>` (instructions and commands).
+Discovery never starts a disabled plugin.
+`clideck plugin enable|disable <id>` controls activation. `clideck plugin settings
+<id>` shows settings with secrets hidden; `--stdin` applies a JSON object.
+Plugins can expose their own setup commands, so an agent can configure one after
+you request or approve it, and report any step that still needs your action.
+
+`clideck notify "<short message>"` saves a notification in CliDeck. An enabled,
+paired Telegram plugin also delivers it when away and Phone is on for that
+session. Uncertain plugin submissions remain visible through `clideck errors`
+and can be acknowledged there even after the originating plugin is removed.
 
 You can also build plugins with the [plugin SDK](PLUGIN-SDK.md).
 

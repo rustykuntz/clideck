@@ -15,11 +15,36 @@ import { playPluginAudio, playPluginAudioAndWait, stopPluginAudio, togglePluginA
 import { startPluginMicrophone, stopPluginMicrophone } from "./plugin-microphone.js";
 import { openPluginComposition, updatePluginComposition, closePluginComposition } from "./plugin-composition.js";
 import { openPluginPicker, closePluginPicker } from "./plugin-picker.js";
+import { pluginSessionSnapshot as sessionSnapshot, activeSessionFocus, initPluginRealtime, openRealtimeAudio,
+  setRealtimeAudioAnswer, sendRealtimeAudioData, closeRealtimeAudio, stopPluginRealtimeAudio, cancelRealtimeAudioOpen } from "./plugin-realtime.js";
+import { isDesktop, desktopNotify, openPluginLink } from "./desktop.js";
+import { getPrefs } from "../notify.js";
+
+// Plugin notifications follow the person's own notification settings and are throttled per plugin. A click
+// focuses CliDeck and, when the session still exists, selects it.
+const lastPluginNotify = new Map();
+function pluginNotify(plugin, options) {
+  const prefs = getPrefs();
+  if (!prefs.enabled || !prefs.browser) return false;
+  const now = Date.now(); if (now - (lastPluginNotify.get(plugin.id) || 0) < 1000) return false;
+  const sessionId = options.sessionId && store.sessions.has(options.sessionId) ? options.sessionId : undefined;
+  const title = String(options.title || plugin.title || plugin.name || plugin.id).slice(0, 120);
+  const body = String(options.body || "").slice(0, 400);
+  if (!title && !body) return false;
+  lastPluginNotify.set(plugin.id, now);
+  if (desktopNotify({ title, body, sessionId })) return true;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return false;
+  try {
+    const n = new Notification(title, { body });
+    n.onclick = () => { try { window.focus(); } catch {} if (sessionId && store.sessions.has(sessionId)) store.select(sessionId); n.close(); };
+    return true;
+  } catch { return false; }
+}
 
 const runtimes = new Map();           // pluginId -> Runtime
 const errors = new Map();             // local client failures; engine worker status remains authoritative separately
 const listeners = new Set();
-let headerBtn = null, headerPaintSeq = 0;
+let headerBtn = null, headerPaintSeq = 0, runtimeSequence = 0;
 
 function notify() { for (const fn of listeners) fn(); paintHeader(); }
 function clientSettings(plugin) {
@@ -35,10 +60,6 @@ function declaredViewer(plugin, definition) {
   return !!id && !!rawKind && (plugin.viewers || []).some((viewer) => viewer.id === id && viewer.kind === kind);
 }
 function projectFor(session) { return session && session.projectId ? store.projects.find((p) => p.id === session.projectId) || null : null; }
-function sessionSnapshot(session) {
-  if (!session) return null;
-  return { id: session.id, name: session.name || "", provider: session.provider || "", cwd: session.cwd || "", projectId: session.projectId || null, live: session.live !== false, status: session.status || "", readAloud: session.readAloud === true };
-}
 // `selection.anchor` is an opaque token saying WHERE on the terminal those cells are — a plugin carries it
 // back untouched (read-along, speech caching) and never parses it. Empty on every other surface, and empty
 // when the terminal cannot place the selection; `selection.text` is unchanged either way.
@@ -56,6 +77,7 @@ export function pluginActionContext(surface, selection, extra = {}) {
 
 class Runtime {
   constructor(plugin) {
+    this.instanceId = ++runtimeSequence;
     this.plugin = plugin; this.cleanups = new Map(); this.pending = new Map(); this.seq = 0; this.ready = false;
     const workerUrl = "/js/plugin-client-worker.js?id=" + encodeURIComponent(plugin.id);
     this.worker = new Worker(workerUrl, { type: "module", name: "clideck-plugin-" + plugin.id });
@@ -63,7 +85,7 @@ class Runtime {
     this.worker.onerror = (event) => this.fail(event.message || "Plugin client worker crashed.");
     const settings = clientSettings(plugin);
     this.settingsSignature = JSON.stringify(settings);
-    this.worker.postMessage({ type: "init", clientUrl: plugin.clientUrl + "?v=" + encodeURIComponent(plugin.version || "0"), settings });
+    this.worker.postMessage({ type: "init", clientUrl: plugin.clientUrl + "?v=" + encodeURIComponent(plugin.version || "0"), settings, capabilities: { realtimeAudio: true, ...(isDesktop() ? { desktop: true } : {}) } });
   }
   signature() { return this.plugin.clientUrl + "|" + this.plugin.version; }
   update(plugin) {
@@ -87,8 +109,21 @@ class Runtime {
   async request(message) {
     const id = this.plugin.id;
     try {
+      if (this.stopped) throw new Error("Plugin client stopped.");
       let value;
       if (message.method === "get-active-session") value = sessionSnapshot(store.active());
+      else if (message.method === "open-settings") {
+        const { openPluginSettings } = await import("./settings.js");
+        if (this.stopped) throw new Error("Plugin client stopped.");
+        openPluginSettings(id); value = true;
+      }
+      else if (message.method === "notify") value = pluginNotify(this.plugin, message.options || {});
+      else if (message.method === "open-external") value = openPluginLink(message.url);
+      else if (message.method === "open-realtime-audio") value = await openRealtimeAudio(id, message.options,
+        event => this.worker.postMessage({ type: "realtime-audio", event }), `${this.instanceId}:${message.requestId}`);
+      else if (message.method === "set-realtime-audio-answer") value = await setRealtimeAudioAnswer(id, message.id, message.sdp);
+      else if (message.method === "send-realtime-audio-data") value = sendRealtimeAudioData(id, message.id, message.data);
+      else if (message.method === "close-realtime-audio") value = closeRealtimeAudio(id, message.id);
       else if (message.method === "get-terminal-selection") value = terminalSelection();
       else if (message.method === "get-terminal-selection-snapshot") value = getTerminalSelectionSnapshot();
       else if (message.method === "get-active-viewer-text") value = await getActiveViewerTextSnapshot();
@@ -114,6 +149,7 @@ class Runtime {
   dropCleanup(key) { const cleanup = this.cleanups.get(key); if (cleanup) cleanup(); this.cleanups.delete(key); }
   message(message) {
     const id = this.plugin.id;
+    if (this.stopped) return;
     if (message.type === "ready") { this.ready = true; errors.delete(id); notify(); return; }
     if (message.type === "failed") { this.fail(message.error || "Plugin client failed to load."); return; }
     if (message.type === "runtime-error") { clientError(id, message.error || "Plugin client action failed."); return; }
@@ -147,10 +183,17 @@ class Runtime {
       const kind = ["success", "warn", "error"].includes(message.kind) ? message.kind : "info";
       toast[kind]({ ...(message.options || {}), title: (message.options && message.options.title) || this.plugin.name });
     } else if (message.type === "request") this.request(message);
+    else if (message.type === "cancel-realtime-open") cancelRealtimeAudioOpen(id, `${this.instanceId}:${message.requestId}`);
+    else if (message.type === "watch-active-session") {
+      this.watchingFocus = message.enabled === true;
+      if (this.watchingFocus) this.worker.postMessage({ type: "active-session", focus: activeSessionFocus() });
+    }
   }
   deliver(event, data, requestId) { try { this.worker.postMessage({ type: "plugin-message", event, data, requestId }); } catch {} }
   fail(reason) { clientError(this.plugin.id, reason); this.stop(); }
   stop() {
+    this.stopped = true;
+    stopPluginRealtimeAudio(this.plugin.id);
     for (const cleanup of this.cleanups.values()) { try { cleanup(); } catch {} }
     this.cleanups.clear(); stopPluginAudio(this.plugin.id); stopPluginMicrophone(this.plugin.id); closePluginComposition(this.plugin.id); closePluginPicker(this.plugin.id); closePluginTabs(this.plugin.id); unregisterActionsForPlugin(this.plugin.id); unregisterViewersForPlugin(this.plugin.id); unregisterAllForPlugin(this.plugin.id);
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Plugin client stopped.")); }
@@ -182,21 +225,23 @@ function reconcile(plugins) {
   notify();
 }
 
+// The session header lists only what acts on THIS session ("terminal.header"). App-wide plugin actions
+// ("toolbar") live in the sidebar footer's Plugins menu, which works with no session open.
+let headerRepaintTimer = null;
 async function paintHeader() {
   if (!headerBtn) return;
   const seq = ++headerPaintSeq;
-  const [terminal, toolbar] = await Promise.all([
-    resolveActions("terminal.header", pluginActionContext("terminal", "")),
-    resolveActions("toolbar", pluginActionContext("toolbar", "")),
-  ]);
-  const actions = [...terminal, ...toolbar];
+  const actions = await resolveActions("terminal.header", pluginActionContext("terminal", ""));
   if (seq !== headerPaintSeq) return;
   headerBtn.hidden = !actions.length;
   headerBtn._actions = actions;
 }
 
 
-function openHeaderMenu(event) {
+// Re-resolved on open: a plugin's `when` may depend on state that changed since the last paint (a Telegram
+// session switched on in another window), and a menu must never offer what no longer applies.
+async function openHeaderMenu(event) {
+  await paintHeader();
   const actions = headerBtn && headerBtn._actions || []; if (!actions.length) return;
   headerBtn.setAttribute("aria-expanded", "true");
   openMenu(headerBtn, actions.map((action) => ({ label: action.label, icon: actionIcon(action.icon), onSelect: (ctl) => { ctl.close(); runAction(action, action.context); } })), {
@@ -205,13 +250,27 @@ function openHeaderMenu(event) {
   });
 }
 
+// App-wide plugin tools ("toolbar") as menu items, for the sidebar footer's app menu.
+export async function appPluginMenuItems() {
+  const actions = await resolveActions("toolbar", pluginActionContext("toolbar", ""));
+  return actions.map((action) => ({ label: action.label, icon: actionIcon(action.icon), onSelect: (ctl) => { ctl.close(); runAction(action, action.context); } }));
+}
+
 export function initPluginHost() {
+  initPluginRealtime(focus => {
+    for (const runtime of runtimes.values()) if (runtime.watchingFocus && !runtime.stopped) runtime.worker.postMessage({ type: "active-session", focus });
+  });
   headerBtn = document.getElementById("plugin-actions");
   if (headerBtn) headerBtn.addEventListener("click", (event) => { if (headerBtn.getAttribute("aria-expanded") === "true") closeMenu(); else openHeaderMenu(event); });
   setActionErrorHandler((id, error) => clientError(id, error && error.message || error));
   onActionsChange(paintHeader);
   store.on("plugins", reconcile);
-  store.on("plugin:message", (message) => runtimes.get(message.pluginId)?.deliver(message.event, message.data, message.requestId));
+  store.on("plugin:message", (message) => {
+    runtimes.get(message.pluginId)?.deliver(message.event, message.data, message.requestId);
+    // A plugin's `when` usually follows its own state, which arrives as messages (Telegram paired, a session
+    // switched on). Repaint the header once the burst settles so the button appears/disappears with it.
+    clearTimeout(headerRepaintTimer); headerRepaintTimer = setTimeout(paintHeader, 120);
+  });
   store.on("active", paintHeader); store.on("session:update", (id) => { if (id === store.activeId) paintHeader(); });
   reconcile(store.plugins);
 }

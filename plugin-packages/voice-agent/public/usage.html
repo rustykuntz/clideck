@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Voice usage & cost</title>
+<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="usage.css"></head>
+<body><main>
+  <header><div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg></span><span>VOICE AGENT <span class="provider">OpenAI · GPT-Live</span></span></div><span id="updated" class="muted">Connecting…</span></header>
+  <div class="heading"><div><h1>Voice usage & cost</h1><p class="muted">Your conversations, with the numbers in view.</p></div><button id="refresh" class="quiet" type="button">↻ Refresh</button></div>
+  <div class="filters"><div class="periods" role="group" aria-label="Time range"><button data-days="7" type="button">7 days</button><button data-days="30" type="button" aria-pressed="true">30 days</button><button data-days="90" type="button">90 days</button><button data-days="0" type="button">All time</button></div><label class="session-filter"><span class="sr-only">Session</span><select id="session"><option value="">All sessions</option></select></label></div>
+  <p id="error" class="notice" role="alert" hidden></p><p id="uncertain" class="notice" hidden></p>
+  <section class="cards" aria-label="Usage totals">
+    <article class="card"><p>Voice time</p><div><strong id="minutes">—</strong><span> min</span></div><small>Includes listening and quiet time</small></article>
+    <article class="card cost"><p>Estimated voice cost <span class="currency">USD</span></p><div><strong id="cost">—</strong></div><small id="cost-note">Based on OpenAI’s published rate</small></article>
+    <article class="card"><p>Conversations</p><div><strong id="count">—</strong></div><small id="active">Each connection counts once</small></article>
+  </section>
+  <section id="empty" class="empty" hidden><h2>No voice usage yet</h2><p>Start a voice conversation from a session’s waveform icon. Your minutes and estimated costs will appear here.</p></section>
+  <div class="dashboard" id="dashboard">
+    <section class="panel activity"><div class="panel-heading"><h2>Daily voice time</h2><span id="chart-range" class="muted">Minutes per day</span></div><div id="chart" class="chart" aria-label="Daily voice minutes"></div><div class="chart-axis"><span id="first-day"></span><span id="last-day"></span></div><p id="day-detail" class="chart-detail">Select a day to see its time and estimated cost.</p></section>
+    <section class="panel breakdown"><h2>Cost breakdown</h2><p class="muted">OpenAI voice · <span id="rate">$0.05 / min</span></p><div id="breakdown"></div><div class="breakdown-total"><span>Estimated total</span><strong id="breakdown-total">—</strong></div><p class="exclusion">Session-agent models, tools, phone-carrier charges and taxes are separate and aren’t included here.</p></section>
+    <section class="panel sessions"><div class="panel-heading"><h2>By session</h2><span class="muted">Largest usage first</span></div><div class="table-wrap"><table><thead><tr><th>Session</th><th>Minutes</th><th>Estimated USD</th></tr></thead><tbody id="sessions"></tbody></table></div></section>
+  </div>
+  <details id="daily-details" class="panel"><summary>Daily totals <span class="muted">Time and estimated cost</span></summary><div class="table-wrap"><table><thead><tr><th>Day</th><th>Minutes</th><th>Estimated USD</th></tr></thead><tbody id="daily"></tbody></table></div></details>
+  <footer><p id="basis">Loading usage records…</p><p>Costs are estimates, not an invoice. <a id="pricing" href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI pricing ↗</a> <span id="verified"></span></p><p id="since"></p><p id="timezone"></p></footer>
+</main><script src="usage.js"></script></body></html>

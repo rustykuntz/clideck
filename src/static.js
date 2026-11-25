@@ -44,7 +44,7 @@ function publicFile(pathname) {
   return filePath;
 }
 
-async function serveStatic(req, res) {
+async function serveStatic(req, res, { uiVersion } = {}) {
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -61,9 +61,19 @@ async function serveStatic(req, res) {
   }
 
   try {
-    const body = await readFile(filePath);
+    let body = await readFile(filePath);
+    if (filePath === resolve(PUBLIC_DIR, 'index.html') && uiVersion) {
+      try {
+        // Capture the page's own identity; reconnect config is not its baseline.
+        const { version } = await uiVersion({ fresh: true });
+        if (typeof version === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(version)) {
+          body = body.toString('utf8').replace('<head>', `<head>\n<meta name="clideck-ui-version" content="${version}">`);
+        }
+      } catch { /* Version discovery must never prevent the interface loading. */ }
+    }
     res.writeHead(200, {
       'Content-Type': contentType,
+      'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
     }).end(body);
   } catch {

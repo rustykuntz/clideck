@@ -139,6 +139,25 @@ try {
   input.value='k';input._fire('input');await sleep(230);const unicode=ws.last('transcript.page');
   store.applyEvent({...unicode,type:'transcript.page.result',success:true,turns:[{role:'agent',text:'Kelvin K'}],hasMore:false,cursor:null});
   ok('Unicode casefold highlights Kelvin sign consistently',document.querySelectorAll('.hist-text mark').length===2);
+  // ── whole-conversation copy / download ──
+  const copied=[];Object.defineProperty(globalThis.navigator,'clipboard',{configurable:true,value:{writeText:async(t)=>{copied.push(t);}}});
+  const acts=[...document.querySelectorAll('.hist-act')];
+  ok('header offers Copy conversation and Download conversation',acts.map((b)=>b.getAttribute('aria-label')).join('|')==='Copy conversation|Download conversation');
+  acts[0]._fire('click');await sleep(5);
+  const p1=ws.last('transcript.page');
+  ok('copy reads every saved turn: newest page of 100, unfiltered, own request id',p1.limit===100&&p1.query===undefined&&p1.before===undefined&&/^history-all-/.test(p1.requestId));
+  ok('copy button is busy while reading',acts[0].disabled===true);
+  store.applyEvent({type:'transcript.page.result',sessionId:'A',before:null,requestId:p1.requestId,success:true,turns:[{role:'user',text:'q2'},{role:'agent',text:'a2'}],cursor:7,hasMore:true});
+  await sleep(5);const p2=ws.last('transcript.page');
+  ok('then the older page before the cursor',p2.before===7&&p2.limit===100&&p2.requestId!==p1.requestId);
+  store.applyEvent({type:'transcript.page.result',sessionId:'A',before:7,requestId:p2.requestId,success:true,turns:[{role:'user',text:'q1'},{role:'agent',text:'a1'}],cursor:null,hasMore:false});
+  await sleep(10);
+  ok('copies the whole conversation oldest first, labelled',copied.at(-1)==='Codex\n\nYou\nq1\n\nAgent\na1\n\nYou\nq2\n\nAgent\na2\n'&&acts[0].disabled===false);
+  ok('export results do not land in the visible list',[...document.querySelectorAll('.hist-text')].every((n)=>!/^q[12]$/.test(n.textContent)));
+  const turnCopy=document.querySelector('.hist-turn-copy');
+  ok('each message has its own copy button',!!turnCopy&&turnCopy.getAttribute('aria-label')==='Copy message');
+  turnCopy._fire('click');await sleep(5);
+  ok('copy message copies just that message',copied.at(-1)===document.querySelector('.hist-text').textContent);
   document.querySelector('.hist-close')._fire('click');await sleep(200);
   console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed`);
 } catch (error) {

@@ -8,10 +8,12 @@ import { pluginActionContext } from "./plugin-host.js";
 import { pluginCompositionState, onPluginCompositionChange } from "./plugin-composition.js";
 import { terminalFocusTarget } from "./terminal.js";
 import { openMenu } from "./menu.js";
+import { initPrimaryPluginActions } from "./plugin-primary-actions.js";
 
 let micBtn = null, sayBtn = null, micActions = [], micPaintSeq = 0, micSessionSig = "";
 
 export function initVoice() {
+  initPrimaryPluginActions();
   micBtn = document.getElementById("voice-mic");
   sayBtn = document.getElementById("voice-say");
   if (micBtn) {

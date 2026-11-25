@@ -39,6 +39,8 @@ try {
   ok("a path inside a URL is left to the URL provider", P.candidatesIn("see https://ex.dev/docs/readme.md now").length === 0);
   ok("an absolute path keeps its leading slash", P.candidatesIn("wrote /tmp/out/report.pdf.").map((c) => c.text).join() === "/tmp/out/report.pdf");
   ok("a bare filename counts", P.candidatesIn("wrote notes.md").map((c) => c.text).join() === "notes.md");
+  // Or's report: the home-relative path must reach the resolver whole, "~/" included (the engine expands it).
+  ok("a home path keeps its ~/ prefix", P.candidatesIn("See ~/Projects/Borrow-demo/engine/PROMPTS.md.").map((c) => c.text + "@" + c.start).join() === "~/Projects/Borrow-demo/engine/PROMPTS.md@5");
   ok("an extension the viewer cannot render is not a candidate",
      P.candidatesIn("report.xlsx archive.zip main.rs").length === 0);
   ok("a version-looking token is not mistaken for a path", P.candidatesIn("bumped to 1.md5 and v2.mdx").length === 0);

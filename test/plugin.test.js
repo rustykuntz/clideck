@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } = require('fs');
+const { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } = require('fs');
 const { spawn } = require('child_process');
 const { tmpdir } = require('os');
 const { join, resolve } = require('path');
@@ -164,11 +164,17 @@ test('release plugins expose the requested fresh defaults without overriding sav
   t.after(() => manager.close());
   await manager.start();
   const plugins = new Map(manager.snapshot().map(plugin => [plugin.id, plugin]));
-  assert.deepEqual([...plugins.keys()].sort(), ['emoji', 'git-diff', 'smart-dictation', 'supertonic']);
+  assert.deepEqual([...plugins.keys()].sort(), ['chat-apps', 'emoji', 'git-diff', 'google', 'smart-dictation', 'supertonic', 'telegram', 'voice-agent']);
   assert.equal(plugins.get('emoji').status, 'ready');
   assert.equal(plugins.get('git-diff').status, 'ready');
   assert.equal(plugins.get('supertonic').status, 'ready');
   assert.equal(plugins.get('smart-dictation').status, 'disabled');
+  for (const id of ['chat-apps', 'google', 'telegram', 'voice-agent']) {
+    assert.equal(plugins.get(id).source, 'bundled');
+    assert.equal(plugins.get(id).status, 'disabled');
+    assert.equal(manager.records.get(id).worker, null);
+    assert.equal(existsSync(join(manager.pluginDataDir, id)), false);
+  }
   assert.deepEqual(plugins.get('supertonic').values, {
     voice: 'female-2', shortcut: 'F5', language: 'en', quality: 12,
     normalization: 'english', 'playback-rate': '1',
@@ -352,6 +358,7 @@ test('plugin discovery rejects duplicate names and installation never overwrites
   const manager = new PluginManager({
     dataDir,
     bundledDir,
+    catalogDir: join(dataDir, 'catalog'),
     configStore: new ConfigStore({ dataDir }),
     log: () => {},
   });
@@ -386,6 +393,7 @@ test('a duplicate user ID never suppresses the bundled plugin', async (t) => {
   const manager = new PluginManager({
     dataDir,
     bundledDir,
+    catalogDir: join(dataDir, 'catalog'),
     configStore: new ConfigStore({ dataDir }),
     log: (...values) => logs.push(values.join(' ')),
   });

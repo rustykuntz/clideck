@@ -1,6 +1,7 @@
 // One host-owned microphone channel for sandboxed plugin clients. The browser keeps permission, MediaStream,
 // AudioContext and AudioWorklet in CliDeck's trusted window; the plugin Worker receives only transferred mono
 // PCM16 chunks. A second plugin can never listen over the first one.
+import { realtimeMediaOwner } from "./plugin-media.js";
 const WORKLET_URL = "/js/plugin-microphone-worklet.js";
 const INFO = Object.freeze({ sampleRate: 16000, channels: 1, format: "pcm-s16le" });
 let current = null, pending = null;
@@ -73,6 +74,7 @@ async function begin(pluginId, onData, onState) {
 
 export function startPluginMicrophone(pluginId, onData, onState = () => {}) {
   pluginId = String(pluginId || "");
+  if (realtimeMediaOwner()) return Promise.reject(new Error("Stop live voice before starting another microphone recording."));
   if (current) return current.pluginId === pluginId ? Promise.resolve(INFO) : Promise.reject(new Error("The microphone is already in use by another plugin."));
   if (pending) return pending.pluginId === pluginId ? pending.promise : Promise.reject(new Error("The microphone is already being opened by another plugin."));
   const opening = { pluginId, cancelled: false, promise: null };
@@ -92,4 +94,4 @@ export async function stopPluginMicrophone(pluginId) {
   const record = current; await dispose(record, "stopped"); return true;
 }
 
-export function pluginMicrophoneOwner() { return current && current.pluginId || ""; }
+export function pluginMicrophoneOwner() { return current?.pluginId || pending?.pluginId || ""; }

@@ -5,6 +5,7 @@ const {
   lstatSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -100,10 +101,13 @@ class PluginManager {
     this.pluginsDir = join(this.dataDir, 'plugins');
     this.pluginDataDir = join(this.dataDir, 'plugin-data');
     this.bundledDir = options.bundledDir || resolve(__dirname, '../plugins');
+    this.catalogDir = options.catalogDir || resolve(__dirname, '../plugin-packages');
     this.configStore = options.configStore;
+    this.capabilities = { ...options.capabilities };
     this.engineVersion = options.engineVersion || '';
     this.onChange = options.onChange || (() => {});
     this.onClientEvent = options.onClientEvent || (() => {});
+    this.onUnavailable = options.onUnavailable || (() => {});
     this.onCoreCall = options.onCoreCall || (async () => {
       throw new Error('Core plugin operations are unavailable.');
     });
@@ -163,9 +167,15 @@ class PluginManager {
   }
 
   discover() {
+    const userPlugins = folderEntries(this.pluginsDir).map((dir) => this.candidate(dir, 'user')).filter(Boolean);
+    const userIds = new Set(userPlugins.map((candidate) => candidate.manifest.id));
     const candidates = [
       ...folderEntries(this.bundledDir).map((dir) => this.candidate(dir, 'bundled')),
-      ...folderEntries(this.pluginsDir).map((dir) => this.candidate(dir, 'user')),
+      // These packages ship with CliDeck too. Keep earlier folder installations
+      // until the user removes them; their code, settings and enable choice survive.
+      ...folderEntries(this.catalogDir).map((dir) => this.candidate(dir, 'bundled'))
+        .filter((candidate) => candidate && !userIds.has(candidate.manifest.id)),
+      ...userPlugins,
     ].filter(Boolean);
     const ids = new Set();
     const names = new Set();
@@ -238,6 +248,7 @@ class PluginManager {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     const worker = new Worker(join(__dirname, 'plugin-worker.js'), {
       workerData: {
+        capabilities: this.capabilities,
         apiVersion: PLUGIN_API_VERSION,
         engineVersion: this.engineVersion,
         id: record.manifest.id,
@@ -265,6 +276,7 @@ class PluginManager {
       worker.once('error', (error) => done({ ok: false, error: error.message }));
       worker.once('exit', (code) => {
         if (!record.intentionalStop && record.status !== 'failed') {
+          this.onUnavailable(record.manifest.id);
           record.status = 'failed';
           record.error = `Plugin worker exited (${code}).`;
           this.rejectPending(record, record.error);
@@ -402,6 +414,47 @@ class PluginManager {
       })));
   }
 
+  // Include any packages added since the last refresh. Listing never loads code.
+  catalog() {
+    const rows = this.snapshot().map(row => ({ ...row, installed: true }));
+    const installed = new Set(rows.map(row => row.id));
+    for (const directory of folderEntries(this.catalogDir)) {
+      try {
+        const manifest = readPluginManifest(directory);
+        if (installed.has(manifest.id)) continue;
+        rows.push({ id: manifest.id, name: manifest.name, version: manifest.version, apiVersion: manifest.apiVersion,
+          description: manifest.description, icon: manifest.icon, commands: manifest.commands,
+          settings: manifest.settings.map(setting => setting.type === 'secret' ? { ...setting, default: undefined } : setting),
+          installed: false, enabled: false, status: 'available', source: 'catalog',
+          install: `clideck plugin install ${manifest.id}` });
+      } catch {} // A broken package is not advertised as installable.
+    }
+    return rows;
+  }
+
+  info(id) {
+    if (!PLUGIN_ID_RE.test(id)) throw Error('Invalid plugin ID.');
+    const row = this.catalog().find(row => row.id === id);
+    if (!row) throw Error('Plugin not found. Use clideck plugins --all to see installed and available plugins.');
+    const directory = this.records.get(id)?.directory || join(this.catalogDir, id);
+    let help = '';
+    try {
+      const path = join(directory, 'README.md');
+      if (statSync(path).size <= 64 * 1024) help = readFileSync(path, 'utf8');
+    } catch {}
+    return { ...row, help };
+  }
+
+  installAvailable(id) {
+    if (this.records.has(id)) {
+      throw Error(`Plugin "${id}" is already installed. Enable it in Settings > Plugins or run clideck plugin enable ${id}.`);
+    }
+    if (!PLUGIN_ID_RE.test(id) || !this.catalog().some(row => row.id === id && !row.installed)) {
+      throw Error('No uninstalled package with that ID. Use clideck plugins --all, or provide a plugin folder.');
+    }
+    return this.install(join(this.catalogDir, id));
+  }
+
   viewerType(pluginId, kind, mime) {
     const record = this.records.get(String(pluginId || ''));
     if (!record || !record.enabled || record.error) return null;
@@ -515,9 +568,16 @@ class PluginManager {
     const seen = new Set();
     for (const candidate of this.discover()) {
       const id = candidate.manifest.id;
+      if (seen.has(id)) continue;
       seen.add(id);
-      if (this.records.has(id)) continue;
+      const previous = this.records.get(id);
+      if (previous?.directory === candidate.directory) continue;
+      // Removing an older folder copy exposes the shipped plugin, switched off.
+      const fallback = previous?.source === 'user' && candidate.source === 'bundled';
+      if (previous) await this.stopRecord(previous);
+      if (fallback) this.persistState(id, { enabled: false });
       const record = this.makeRecord(candidate);
+      if (fallback) record.enabled = false;
       this.records.set(id, record);
       await this.load(record);
     }
@@ -586,7 +646,13 @@ class PluginManager {
       throw error;
     }
     await this.refresh();
-    return this.records.get(manifest.id);
+    const installed = this.records.get(manifest.id);
+    if (!installed || ['failed', 'incompatible'].includes(installed.status)) {
+      const error = new Error(`Plugin "${manifest.name}" was copied but could not activate: ${installed?.error || 'plugin unavailable'}. Repair the installed plugin and refresh; installing again will not replace it.`);
+      error.code = 'plugin_activation_failed';
+      throw error;
+    }
+    return installed;
   }
 
   async remove(id) {
@@ -594,8 +660,7 @@ class PluginManager {
     if (!record || record.source !== 'user') return false;
     await this.stopRecord(record);
     rmSync(record.directory, { recursive: true, force: true });
-    this.records.delete(id);
-    this.emitChange();
+    await this.refresh();
     return true;
   }
 
@@ -618,6 +683,7 @@ class PluginManager {
   }
 
   async stopRecord(record) {
+    this.onUnavailable(record.manifest.id);
     if (!record.worker) return;
     const worker = record.worker;
     record.intentionalStop = true;

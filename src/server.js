@@ -42,11 +42,20 @@ const { ServerLock } = require('./server-lock');
 const { alreadyRunningLine, startupBanner, notifyUpdate } = require('./startup');
 const { TranscriptStore } = require('./transcript-store');
 const { TaskManager } = require('./task-manager');
+const { Monitors } = require('./monitors');
+const { createMonitorDelivery } = require('./monitor-delivery');
+const { createSessionDelivery } = require('./session-delivery');
+const { AgentErrors } = require('./agent-errors');
+const { handleAgentErrorHttp } = require('./agent-error-http');
+const { handleMonitorHttp } = require('./monitor-http');
+const { PluginRequests } = require('./plugin-requests');
+const { UserNotifications, handleNotificationHttp } = require('./user-notifications');
 const { SessionArchive } = require('./session-archive');
 const { MAX_UPLOAD_BYTES, UploadError, saveUpload } = require('./upload');
 const { checkCommandAvailability } = require('./availability');
 const { ENGINE_BUILD_VERSION } = require('./build-version');
-const { createCustomCommandProvider, parseCommand } = require('./custom-command');
+const { createUiVersion } = require('./ui-version');
+const { createCustomCommandProvider, parseCommand, augmentedPath } = require('./custom-command');
 const { PluginManager } = require('./plugin-manager');
 const { createAgentSessionGuide } = require('./agent-session-guide');
 const { PluginHttp } = require('./plugin-http');
@@ -160,11 +169,15 @@ class HeadlessServer {
       now: this.now, onStatus: event => this.broadcast(event) });
     this.archive.configure(this.configStore.get().archive);
     this.updates = options.updates || null;
+    this.uiVersion = options.uiVersion || createUiVersion();
     this.pluginManager = options.pluginManager || new PluginManager({
       dataDir: this.persistence.dataDir,
       configStore: this.configStore,
       engineVersion: ENGINE_BUILD_VERSION,
       bundledDir: options.bundledPluginsDir,
+      catalogDir: options.pluginCatalogDir,
+      capabilities: { sessionSteer: true, boundedTurns: true },
+      onUnavailable: id => this.pluginRequests?.stopPlugin(id),
       onChange: (plugins) => this.broadcast({ type: 'plugins', plugins }),
       onClientEvent: (event) => this.broadcast(event),
       onCoreCall: (pluginId, method, args) => this.pluginCoreCall(pluginId, method, args),
@@ -177,11 +190,41 @@ class HeadlessServer {
     });
     this.askCoordinator = options.askCoordinator
       || new AskCoordinator((event) => this.broadcast(event));
+    this.agentErrors = new AgentErrors({ dataDir: this.persistence.dataDir,
+      deliver: createSessionDelivery(this), onChange: event => this.broadcast(event),
+      isRelevant: row => Boolean(this.persistence.get(row.sessionId)) && (row.key.startsWith('monitor:')
+        ? this.monitors.rows.some(m => row.key.startsWith(`monitor:${m.id}:`))
+        : row.key.startsWith('content:') ? Boolean(this.contentStore.get(row.key.slice(8))) : true),
+      ...options.agentErrorOptions });
+    this.monitors = options.monitors || new Monitors({
+      dataDir: this.persistence.dataDir,
+      deliver: createMonitorDelivery(this),
+      targetExists: id => Boolean(this.persistence.get(id)),
+      describe: id => {
+        const entry = this.persistence.get(id);
+        if (!entry) return { sessionName: '', projectName: 'Missing session' };
+        const projects = this.configStore.get().projects || [];
+        return { sessionName: entry.name || entry.id, projectName: projects.find(p => p.id === entry.projectId)?.name
+          || String(entry.cwd).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No project' };
+      },
+      environment: m => ({ ...process.env, PATH: augmentedPath(),
+        CLIDECK_SESSION_ID: m.creatorSessionId || m.sessionId, CLIDECK_MONITOR_ID: m.id, CLIDECK_URL: this.address().httpUrl,
+        CLIDECK_PORT: String(this.port) }),
+      onChange: event => this.broadcast(event),
+      reportError: value => this.agentErrors.report(value),
+      clearError: key => this.agentErrors.clear(key),
+      ...options.monitorOptions,
+    });
+    this.pluginRequests = new PluginRequests(this);
+    this.notifications = new UserNotifications({ dataDir: this.persistence.dataDir, onChange: event => this.broadcast(event) });
     this.promptCoordinator = options.promptCoordinator
       || new PromptCoordinator((event) => this.broadcast(event));
     this.closing = false;
     this.closePromise = null;
-    this.httpServer = http.createServer((req, res) => this.handleHttp(req, res));
+    this.httpServer = http.createServer((req, res) => this.handleHttp(req, res).catch(error => {
+      if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'operation_failed', message: error.message });
+      else res.destroy();
+    }));
     this.webSocketServer = new WebSocketServer({
       server: this.httpServer,
       maxPayload: MAX_CONTROL_BYTES,
@@ -200,6 +243,8 @@ class HeadlessServer {
         this.httpServer.off('error', reject);
         this.port = this.httpServer.address().port;
         this.startAutoSave();
+        this.monitors.start?.();
+        this.agentErrors.start();
         resolve(this.address());
       });
     });
@@ -261,12 +306,15 @@ class HeadlessServer {
     }
   }
 
-  publishContent(sessionId, content) {
+  publishContent(sessionId, content, agentInitiated = false) {
     try {
+      const asset = this.contentStore.get(content.contentId);
+      if (asset && agentInitiated) asset.agentInitiated = true;
+      if (asset?.agentInitiated) content.reportErrors = true;
       this.persistAssets(sessionId);
       this.broadcast({ type: 'content.show', ...content });
-      const asset = this.contentStore.get(content.contentId);
       if (asset) this.archive.asset(this.sessions.get(sessionId), { ...asset, origin: 'content.show' });
+      if (content.replaces) this.agentErrors.clear(`content:${content.replaces}`);
       return content;
     } catch (error) {
       this.contentStore.remove(sessionId, content.contentId);
@@ -315,6 +363,8 @@ class HeadlessServer {
   }
 
   removeSessionState(sessionId) {
+    this.pluginRequests?.removeSession(sessionId);
+    this.agentErrors.clearSession(sessionId);
     this.contentStore.removeSession(sessionId);
     return this.persistence.remove(sessionId);
   }
@@ -428,6 +478,24 @@ class HeadlessServer {
   }
 
   pluginCoreCall(pluginId, method, args) {
+    if (method === 'submitRequest') return this.pluginRequests.submit(pluginId, ...args);
+    if (method === 'getRequests') return this.pluginRequests.list(pluginId);
+    if (method === 'releaseRequest') return this.pluginRequests.release(pluginId, args[0]);
+    if (method === 'acknowledgeRequest') return this.pluginRequests.release(pluginId, args[0], true);
+    if (method === 'cancelRequest') return this.pluginRequests.cancel(pluginId, args[0]);
+    if (method === 'getNotifications') return this.notifications.snapshot().notices;
+    if (method === 'readNotification') { this.notifications.read(args[0]); return true; }
+    if (method === 'notifyUser') {
+      if (!this.persistence.get(args[0])) throw Error('Session no longer exists.');
+      return this.notifications.add(args[0], args[1], `plugin:${pluginId}`);
+    }
+    if (method === 'reportError' || method === 'clearError') {
+      const key = method === 'reportError' ? args[1] : args[0];
+      if (typeof key !== 'string' || !/^[a-zA-Z0-9:-]{1,150}$/.test(key)) throw Error('Invalid error key.');
+      if (method === 'clearError') { this.agentErrors.clear(`plugin:${pluginId}:${key}`); return true; }
+      if (!this.persistence.get(args[0]) || typeof args[2] !== 'string' || args[2].length > 16000) throw Error('Invalid plugin failure report.');
+      return this.agentErrors.report({ key: `plugin:${pluginId}:${key}`, sessionId: args[0], operation: `plugin ${pluginId}`, text: args[2] });
+    }
     if (method === 'getSession') return this.sessionSnapshot(String(args[0] || ''));
     if (method === 'getSessions') {
       return this.persistence.list().map((entry) => this.sessionSnapshot(entry.id)).filter(Boolean);
@@ -435,7 +503,7 @@ class HeadlessServer {
     if (method === 'getProjects') return this.configStore.get().projects;
     if (method === 'getTurns') {
       const count = Math.min(100, Math.max(1, Number(args[1] || 20)));
-      return this.transcriptStore.getTurns(String(args[0] || ''), count);
+      return this.transcriptStore.getTurns(String(args[0] || ''), count, args[2]);
     }
     if (method === 'sendPrompt') {
       const id = String(args[0] || '');
@@ -446,13 +514,18 @@ class HeadlessServer {
         ? availableAskSession(entry, this.sessions, this.askCoordinator)
         : { error: 'unknown_session' };
       if (available.error) throw new Error(`Session is unavailable (${available.error}).`);
-      available.session.sendPrompt(text);
-      return true;
+      if (!available.session.sendPrompt(text)) throw new Error('Prompt was not accepted; nothing was submitted.');
+      const receipt = available.session.pendingSubmission?.completion;
+      if (!receipt) throw new Error('Prompt submission could not be confirmed. Check the session before retrying.');
+      return receipt.then(result => {
+        if (!result.ok) throw new Error(result.message || `Prompt submission failed (${result.error || 'unknown'}). Check the session before retrying.`);
+        return true;
+      });
     }
     if (method === 'writeInput') {
       const session = this.targetSession({ sessionId: String(args[0] || '') });
       const data = String(args[1] || '');
-      if (!session || data.length > MAX_CONTROL_TEXT) throw new Error('Session input is invalid.');
+      if (!session || !session.terminal || session.closed || data.length > MAX_CONTROL_TEXT) throw new Error('Session input is unavailable or invalid.');
       session.writeInput(data);
       return true;
     }
@@ -493,7 +566,7 @@ class HeadlessServer {
         request.name,
         viewer.mime,
       );
-      return this.publishContent(sessionId, content);
+      return this.publishContent(sessionId, content, true);
     }
     throw new Error(`Unknown core plugin operation: ${method}`);
   }
@@ -569,6 +642,10 @@ class HeadlessServer {
     this.sessions.set(session.id, session);
     if (register) this.persistence.register(session);
     const onEvent = (event) => {
+      if (event.type === 'session.created' || (event.type === 'status' && event.state === 'idle')) {
+        this.monitors.sessionReady?.(session.id);
+        this.agentErrors.sessionReady(session.id);
+      }
       if (event.type === 'session.created') this.archive.start(session, this.archiveInfo(session));
       this.archive.event(session, event);
       if (event.type === 'session.closed' && event.restarting) return;
@@ -592,6 +669,12 @@ class HeadlessServer {
       this.broadcast(outbound);
     };
     session.on('event', onEvent);
+    session.on('reply', event => {
+      try {
+        this.pluginRequests.reply(event);
+        this.pluginManager.emitCoreEvent({ ...event, type: 'session.reply', phase: event.type });
+      } catch (error) { this.broadcastSessionError(session.id, { operation: 'plugin.reply', message: error.message }); }
+    });
     session.on('resume-metadata', (metadata) => {
       this.persistence.recordResumeMetadata(session.id, metadata);
       this.archive.hook(session, 'resume-metadata', {}, metadata);
@@ -1034,6 +1117,8 @@ class HeadlessServer {
     }
     socket.send(JSON.stringify({ type: 'plugins', plugins: this.pluginManager.snapshot() }));
     socket.send(JSON.stringify(this.archive.snapshot()));
+    socket.send(JSON.stringify({ type: 'monitors.updated', ...this.monitors.snapshot() }));
+    socket.send(JSON.stringify({ type: 'user.notices', ...this.notifications.snapshot() }));
     socket.send(JSON.stringify({ type: 'transcript.cache', cache: this.transcriptStore.getCache() }));
     if (this.updates) socket.send(JSON.stringify(this.updates.snapshot()));
 
@@ -1089,6 +1174,15 @@ class HeadlessServer {
       return;
     }
     if (message.type === 'session.create') {
+      const cwd = message.cwd || this.cwd;
+      if (!existsSync(cwd)) {
+        this.sendControlResult(socket, {
+          type: 'session.create.result', success: false, code: 'folder_not_found',
+          cwd: message.cwd || '',
+          error: `${message.projectId ? 'Project' : 'Working'} folder not found: ${cwd}. It may have been moved or deleted. Restore it or choose an existing folder.`,
+        });
+        return;
+      }
       if (this.createSession(message) === null) socket.close(1003, 'unknown provider');
       return;
     }
@@ -1254,6 +1348,17 @@ class HeadlessServer {
       this.openContent(message).catch(() => {});
       return;
     }
+    if (message.type === 'content.renderFailed') {
+      const content = this.contentStore.get(message.contentId);
+      if (content?.agentInitiated && content.sessionId === message.sessionId) {
+        try {
+          this.agentErrors.report({ key: `content:${message.contentId}`, sessionId: content.sessionId,
+            operation: 'show preview', text: `Preview: ${JSON.stringify(content.name)}\nKind: ${content.kind}\n`
+              + `Content ID: ${message.contentId}\nError: ${message.message}\nFix the source, then use clideck show again.` });
+        } catch (error) { this.sendControlResult(socket, { type: 'error', message: error.message }); }
+      }
+      return;
+    }
     if (message.type === 'content.resolve') {
       this.resolveContent(message, socket).catch(() => {
         this.sendControlResult(socket, {
@@ -1268,6 +1373,7 @@ class HeadlessServer {
       const removed = this.contentStore.remove(message.sessionId, message.contentId);
       if (removed) {
         this.persistAssets(message.sessionId);
+        this.agentErrors.clear(`content:${message.contentId}`);
       }
       this.broadcast({
         type: 'content.closed',
@@ -1293,7 +1399,7 @@ class HeadlessServer {
     if (message.type === 'prompt') session.sendPrompt(message.text, { fromUser: true });
     else if (message.type === 'input') {
       if (message.userActivity === true) session.markUserActivity();
-      if (message.data) session.writeInput(message.data);
+      if (message.data) session.writeInput(message.data, { fromUser: true });
     }
     else if (message.type === 'resize') {
       session.resize(message.cols, message.rows);
@@ -1359,6 +1465,15 @@ class HeadlessServer {
 
   async handleHttp(req, res) {
     const pathname = String(req.url || '').split('?')[0];
+    if (await handleMonitorHttp(this, req, res, readJson, sendJson)) return;
+    if (await handleAgentErrorHttp(this, req, res, readJson, sendJson)) return;
+    if (await handleNotificationHttp(this, req, res, readJson, sendJson)) return;
+    if (req.method === 'GET' && pathname === '/api/ui-version') {
+      res.setHeader('Cache-Control', 'no-store');
+      try { sendJson(res, 200, await this.uiVersion()); }
+      catch { sendJson(res, 503, { error: 'ui_version_unavailable' }); }
+      return;
+    }
     if (pathname === '/api/tasks' || pathname === '/api/tasks/stop') {
       res.setHeader('Cache-Control', 'no-store');
       if (!isAllowedWebSocketOrigin(req.headers.origin, req.headers.host, this.host)
@@ -1474,7 +1589,7 @@ class HeadlessServer {
     }
     if (req.method === 'GET') {
       if (await servePluginStatic(req, res, this.pluginManager)) return;
-      await serveStatic(req, res);
+      await serveStatic(req, res, { uiVersion: this.uiVersion });
       return;
     }
 
@@ -1834,7 +1949,7 @@ class HeadlessServer {
           request.path,
           request.kind,
         );
-      this.publishContent(caller.entry.id, content);
+      this.publishContent(caller.entry.id, content, true);
       sendJson(res, 200, { ok: true, ...content });
     } catch (error) {
       const known = error instanceof ContentError;
@@ -1912,11 +2027,16 @@ class HeadlessServer {
     this.autoSaveTimer = null;
     this.closePromise = (async () => {
       try {
+        const monitorsClosed = this.monitors.close?.();
+        const errorsClosed = this.agentErrors.close();
+        const requestsClosed = this.pluginRequests.close();
         await this.updates?.close();
+        if (monitorsClosed) await monitorsClosed;
+        if (errorsClosed) await errorsClosed;
         const sessions = [...this.sessions.values()];
         const closed = sessions.map((session) => session.waitForClose?.() || Promise.resolve());
         for (const session of sessions) session.close();
-        await Promise.all(closed);
+        await Promise.all([...closed, requestsClosed]);
         await this.archive.close();
         await this.pluginManager.close();
         this.saveState('shutdown');

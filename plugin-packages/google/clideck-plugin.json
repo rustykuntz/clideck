@@ -1,0 +1,19 @@
+{
+  "id": "google",
+  "name": "Google Workspace",
+  "version": "1.0.4",
+  "apiVersion": 1,
+  "enabledByDefault": false,
+  "description": "Connect Gmail, Calendar, Drive and more to CliDeck. Choose which projects and agents can use each Google account.",
+  "icon": "G",
+  "commands": [
+    { "name": "status", "description": "List accounts permitted for this agent in its current project. Downloads gog if missing; --check verifies credentials with Google. Otherwise account metadata stays local.", "usage": "google/status [--check]" },
+    { "name": "setup", "description": "To connect an account before access is granted, use connect-request with email, services and readonly on stdin. The user approves the exact agent/project in CliDeck and signs in with Google; connect-status polls your request by id. Other setup actions require existing account access. JSON fields go on stdin; never put credentials or OAuth callback addresses in argv. Inspect google/status for services, clients and sign-in progress. Later sign-in failures return to the initiating agent.", "usage": "google/setup <connect-request|connect-status|connect-complete|auth-start|auth-complete|auth-cancel|account-remove> < fields.json" },
+    { "name": "help", "description": "Read the installed gog command help. Discover actual commands and flags before using them.", "usage": "google/help [command path]" },
+    { "name": "run", "description": "Run a Google service command using an allowed account. One allowed account is automatic; otherwise use the project default or explicit --account (and --client if needed). If denied, ask the user to assign access in Configure; never bypass with direct gog. JSON and non-interactive by default; stdin and caller directory are preserved.", "usage": "google/run <gog arguments>" }
+  ],
+  "settings": [
+    { "key": "executable", "label": "gog location", "type": "text", "default": "", "group": "Advanced", "description": "Usually leave empty. CliDeck finds or prepares the Google connection automatically. Set a full executable path only for a custom installation." },
+    { "key": "client", "label": "OAuth client", "type": "text", "default": "", "group": "Advanced", "description": "Leave empty to use CliDeck’s built-in Google connection. Set a named custom OAuth client only if you manage your own Google app." }
+  ]
+}

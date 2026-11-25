@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Voice Agent</title>
+<!--
+  Voice Agent — the calls tab. Sandboxed, opaque origin (no allow-same-origin): it links the host's app.css and
+  reuses the Settings / plugin classes (set-card, set-sec-h, plg-status, plg-notice) and the Task Manager's red
+  stop button for Hang up, so it reads as part of CliDeck. Everything else crosses postMessage: clideck.ready up;
+  clideck.init / visible / theme / message down; clideck.send to the plugin server. No media, no dialing here.
+-->
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:auto; }
+  .page { max-width:760px; margin:0 auto; padding:26px 24px 40px; box-sizing:border-box; }
+  .va-head { display:flex; align-items:flex-start; gap:12px; margin-bottom:22px; }
+  .va-ic { width:38px; height:38px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; color:var(--accent); background:var(--accent-soft); }
+  .va-titles { flex:1; min-width:0; }
+  .va-name { font-size:16px; font-weight:650; color:var(--text); }
+  .va-sub { margin-top:3px; font-size:12.5px; line-height:1.5; color:var(--faint); }
+  /* Settings hides plugin status chips on narrow screens; here they are the answer, so they stay. */
+  .va-head .plg-status, .va-call .plg-status, .va-detail-head .plg-status { display:inline-flex; flex:0 0 auto; }
+  .va-head .plg-status { margin-top:3px; }
+  .va-section { margin-bottom:22px; }
+  .page .plg-notice { margin:0 0 14px; }
+
+  /* Setup still needed */
+  .va-setup-t { font-size:13px; font-weight:600; color:var(--text); }
+  .va-setup-s { margin-top:3px; font-size:12.5px; line-height:1.5; color:var(--dim); }
+  .va-missing { margin:10px 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:6px; }
+  .va-missing li { padding:3px 9px; border-radius:99px; background:var(--surface-3); color:var(--text); font-size:12px; }
+
+  /* Calls list */
+  .va-list { padding:4px; }
+  .va-call { width:100%; display:flex; align-items:center; gap:12px; padding:9px 10px; border:0; border-radius:9px; background:transparent; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
+  .va-call + .va-call { margin-top:2px; }
+  .va-call:hover { background:var(--surface-3); }
+  .va-call[aria-pressed="true"] { background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-strong); }
+  .va-call:focus-visible, .va-hangup:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .va-call-main { flex:1; min-width:0; }
+  .va-dest { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:550; font-variant-numeric:tabular-nums; }
+  .va-meta { margin-top:1px; font-size:11.5px; color:var(--faint); }
+  .va-here { color:var(--dim); }
+  .va-empty { padding:14px 12px; font-size:12.5px; line-height:1.5; color:var(--faint); }
+
+  /* Selected call */
+  .va-detail-head { display:flex; align-items:flex-start; gap:12px; }
+  .va-detail-main { flex:1; min-width:0; }
+  .va-detail-dest { display:flex; align-items:center; gap:8px; min-width:0; font-size:15px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .va-detail-dest > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .va-detail-meta { margin-top:3px; font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  .va-hangup { flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; height:32px; }
+  .va-hangup:disabled { opacity:.55; cursor:default; filter:none; }
+  .va-hangup svg { width:15px; height:15px; }
+  .va-err { margin-top:8px; font-size:12px; line-height:1.45; color:var(--danger); overflow-wrap:anywhere; }
+  .va-sub-h { margin:16px 0 8px; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:var(--faint); font-weight:600; }
+  .va-transcript { max-height:min(52vh,420px); overflow:auto; display:grid; gap:10px; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface-1); overscroll-behavior:contain; }
+  .va-line { display:grid; grid-template-columns:92px minmax(0,1fr); gap:10px; }
+  .va-who { font-size:11.5px; font-weight:600; color:var(--dim); line-height:1.6; }
+  .va-line.assistant .va-who { color:var(--accent); }
+  .va-at { display:block; font-weight:400; color:var(--faint); font-variant-numeric:tabular-nums; }
+  .va-said { font-size:13px; line-height:1.6; color:var(--text); overflow-wrap:anywhere; white-space:pre-wrap; }
+  .va-quiet { font-size:12.5px; line-height:1.5; color:var(--faint); }
+  .va-trimmed { margin-bottom:8px; font-size:12px; }
+  .va-handoffs { margin:0; padding:0; list-style:none; display:grid; gap:4px; }
+  .va-handoff { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; font-size:12.5px; color:var(--text); }
+  .va-handoff + .va-handoff { border-top:1px solid var(--border); }
+  .va-handoff .va-state { color:var(--dim); font-size:12px; white-space:nowrap; }
+  .va-handoff .va-state.bad { color:var(--danger); }
+  .va-foot { margin-top:4px; font-size:12px; line-height:1.5; color:var(--faint); }
+  .va-loading { padding:30px 0; text-align:center; font-size:12.5px; color:var(--faint); }
+  .va-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (max-width:560px) {
+    .page { padding:18px 14px 32px; }
+    .va-detail-head { flex-wrap:wrap; }
+    .va-hangup { margin-left:auto; }
+    .va-line { grid-template-columns:minmax(0,1fr); gap:2px; }
+    .va-at { display:inline; margin-left:6px; }
+  }
+</style>
+</head>
+<body>
+<main class="page" id="root"><div class="va-loading">Loading…</div></main>
+<div class="va-sr" id="live" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

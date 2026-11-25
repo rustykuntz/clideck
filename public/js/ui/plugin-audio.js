@@ -1,7 +1,8 @@
 // One host-owned audio channel for sandboxed plugin clients. A Worker transfers synthesized bytes here; it
 // never gains DOM access. Starting new audio replaces the old clip, and unloading its plugin always stops it.
 import { toast } from "./toast.js";
-import { startReadAlong, updateReadAlong, stopReadAlong } from "./read-along.js";
+import { realtimeMediaOwner } from "./plugin-media.js";
+import { startReadAlong, updateReadAlong, stopReadAlong, readAlongEnabled, setReadAlongEnabled } from "./read-along.js";
 
 const MAX_AUDIO_BYTES = 64 * 1024 * 1024;
 const PLAYBACK_RATES = [1, 1.1, 1.25, 1.5];
@@ -52,7 +53,7 @@ function cancelRead(pluginId, id) {
 // additive, so a plugin that has not opted in cannot be changed by it.
 const RETAINED_BYTES = 64 * 1024 * 1024;
 let timeline = null;
-let player = null, titleEl = null, timeEl = null, playBtn = null, rateBtn = null, seekEl = null, rateIndex = 0;
+let player = null, titleEl = null, timeEl = null, playBtn = null, rateBtn = null, markBtn = null, seekEl = null, rateIndex = 0;
 
 const segmentsOf = () => (timeline ? timeline.segments : []);
 function playingSegment() { return timeline && timeline.playing >= 0 ? timeline.segments[timeline.playing] || null : null; }
@@ -112,7 +113,8 @@ function dropTimeline() {
 
 const PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 9 6-9 6z"/></svg>';
 const PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6v12M16 6v12"/></svg>';
-const STOP = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>';
+// Ending a reading also closes the bar, so the control says what you SEE happen: a close mark, not a media stop.
+const CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>';
 function clock(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const whole = Math.floor(seconds); return Math.floor(whole / 60) + ":" + String(whole % 60).padStart(2, "0");
@@ -124,6 +126,16 @@ function paintRate() {
   rateBtn.setAttribute("aria-label", "Playback speed " + label + "; activate to change");
   rateBtn.title = "Playback speed: " + label;
 }
+// A highlighter, struck through when off: the switch shows the state you are in, like the mark it controls.
+const HIGHLIGHTER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/><path class="plugin-audio-slash" d="M4 4l16 16"/></svg>';
+function paintMark() {
+  if (!markBtn) return;
+  const on = readAlongEnabled();
+  markBtn.setAttribute("aria-pressed", String(on));
+  markBtn.title = on ? "Text marking on" : "Text marking off";
+}
+// Only a clip that brought a timeline can be marked; without one the switch would do nothing, so it is not shown.
+function showMarkFor(options) { if (markBtn) markBtn.hidden = !(options && options.readAlong); }
 function ensurePlayer() {
   if (player) return;
   player = document.createElement("aside"); player.className = "plugin-audio"; player.hidden = true; player.setAttribute("aria-label", "Plugin audio player");
@@ -150,8 +162,15 @@ function ensurePlayer() {
     paintRate();
   });
   paintRate();
-  const stop = document.createElement("button"); stop.type = "button"; stop.className = "plugin-audio-stop"; stop.innerHTML = STOP; stop.setAttribute("aria-label", "Stop"); stop.addEventListener("click", () => stopPluginAudio());
-  player.append(mark, copy, seekEl, rateBtn, playBtn, stop); document.body.appendChild(player);
+  markBtn = document.createElement("button"); markBtn.type = "button"; markBtn.className = "plugin-audio-follow"; markBtn.innerHTML = HIGHLIGHTER; markBtn.hidden = true;
+  markBtn.setAttribute("aria-label", "Mark the text being read");
+  markBtn.addEventListener("click", () => {
+    setReadAlongEnabled(!readAlongEnabled()); paintMark();
+    if (current) updateReadAlong(current.audio.currentTime, !current.audio.paused);
+  });
+  paintMark();
+  const stop = document.createElement("button"); stop.type = "button"; stop.className = "plugin-audio-stop"; stop.innerHTML = CLOSE; stop.setAttribute("aria-label", "Stop and close"); stop.title = "Stop and close"; stop.addEventListener("click", () => stopPluginAudio());
+  player.append(mark, copy, seekEl, markBtn, rateBtn, playBtn, stop); document.body.appendChild(player);
 }
 function paintPlayback() {
   if (!current || !player) return;
@@ -268,6 +287,7 @@ function playSegment(index, at = 0, start = true) {
   }, { once: true });
   for (const event of ["play", "pause", "loadedmetadata", "durationchange", "timeupdate", "seeked"]) audio.addEventListener(event, paintPlayback);
   if (segment.options && segment.options.readAlong) startReadAlong(segment.options.readAlong); else stopReadAlong();
+  showMarkFor(segment.options);
   player.hidden = false; paintPlayback();
   // A seek across parts must not RESUME a reading the user paused — dragging the thumb is a request to move,
   // not to play. An advance to the next part is the opposite: the reading is running and must keep running.
@@ -343,7 +363,7 @@ function hidePlayer() { if (player) { player.hidden = true; seekEl.value = "0"; 
 let autoHooks = null;
 export function setAutoAudioHooks(hooks) { autoHooks = hooks || null; }
 // Who owns the channel: "" when silent, an auto token, or "manual".
-export function audioOwner() { const a = current || live || timeline; return !a ? "" : a.auto || "manual"; }
+export function audioOwner() { if (realtimeMediaOwner()) return "realtime"; const a = current || live || timeline; return !a ? "" : a.auto || "manual"; }
 
 // Stop pressed while nothing is playing: the transport is still up because the read is not over, so this is
 // the user cancelling the READ, and the part being prepared must never start.
@@ -356,6 +376,7 @@ function endSequence(pluginId) {
 }
 
 export async function playPluginAudio(pluginId, buffer, options = {}, done = null) {
+  if (realtimeMediaOwner()) throw new Error("Stop live voice before playing another audio clip.");
   if (!(buffer instanceof ArrayBuffer) || !buffer.byteLength || buffer.byteLength > MAX_AUDIO_BYTES) throw new Error("Plugin audio payload is invalid or too large.");
   const auto = options.autoToken == null ? "" : String(options.autoToken);
   if (auto && !(autoHooks && autoHooks.allow(auto))) { if (typeof done === "function") done(false); return; }
@@ -419,6 +440,7 @@ export async function playPluginAudio(pluginId, buffer, options = {}, done = nul
   // can still stop between parts and the player does not flicker away at every batch boundary.
   live = id ? { pluginId, id, auto } : null;
   if (options.readAlong) startReadAlong(options.readAlong);
+  showMarkFor(options);
   for (const event of ["play", "pause", "loadedmetadata", "durationchange", "timeupdate", "seeked"]) audio.addEventListener(event, paintPlayback);
   titleEl.textContent = String(options.title || "Plugin audio").slice(0, 100); player.hidden = false; paintPlayback();
   try { await audio.play(); if (auto && autoHooks) autoHooks.started(auto); if (current && current.audio === audio) paintPlayback(); }

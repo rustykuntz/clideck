@@ -51,6 +51,17 @@ and extensionless paths stay literal. Turning normalization off disables these r
 Signed amounts keep their meaning: `-$1.30M` is read as “minus one point three million
 dollars,” and `+$0.11M` as “plus zero point one one million dollars.” A leading sign
 must touch the currency symbol, so spaced ranges such as `$5 - $10` stay ranges.
+Without a currency symbol, attached uppercase `K`/`M` expands only immediately
+after `made`, `make`, `makes` or `making`, and in its comma/and/or list of amounts.
+For example, `made +1.82M, +0.41M and −0.42M` keeps each sign and reads each `M`
+as “million”; `make 0.41K` reads “make zero point four one thousand”. No currency
+is added. Spaced/lowercase units and amounts outside that immediate list keep
+their existing normalization.
+Named English dates accept full or abbreviated months, either day/month order,
+ordinal suffixes, and optional years. `11 Oct` and `October 11` both read as
+“October eleventh”; `Sep 22–Nov 6` reads as “September twenty second to November
+sixth”. Shared-month ranges such as `11–13 Oct` and `Oct 11–13` also work.
+Calendar validation uses the year when supplied; without one, February 29 is allowed.
 
 Read-along uses an estimated three-word window that advances one source word at a time. Estimates
 are weighted by normalized speech (so `365` gets the time of "three hundred sixty five") and reset at each
@@ -76,6 +87,11 @@ Agents can request speech with:
 ```bash
 clideck supertonic/speak "Read this aloud"
 ```
+
+The command waits until one CliDeck window showing the agent's session has read the whole text:
+"Read aloud in CliDeck." on success, or an error (exit code 1) when no window shows the session,
+synthesis or playback fails, the browser blocks audio, the reading is stopped or replaced, the window
+goes away, or it takes longer than 55 minutes.
 
 Supertonic sample code is MIT licensed. The model is OpenRAIL-M licensed. Upstream announced that its repository will be archived after July 2026, so this integration pins the last published Supertonic 3 model revision rather than tracking a moving endpoint. See `THIRD-PARTY-NOTICES.md`.
 

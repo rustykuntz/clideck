@@ -27,6 +27,8 @@ function detail(s) {
   if (s.state === "installed") return "Update installed. Restart CliDeck when ready to use it.";
   return (s.error || "Could not check for updates. Try again.") + (s.instruction ? " " + s.instruction : "");
 }
+// The desktop app's "Check for Updates…" menu item: the same explicit check as the Settings button.
+export function checkForUpdates() { request(false); }
 export function updateControls() {
   const s = store.engineUpdate, root = h("div", "set-update");
   const status = h("div", "set-update-status"); status.setAttribute("role", "status"); status.textContent = detail(s); root.append(status);

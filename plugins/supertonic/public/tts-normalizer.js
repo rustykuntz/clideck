@@ -10,6 +10,17 @@ const MONTHS = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+const MONTH_NAME = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember|t)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?';
+const DATE_SPACE = '[^\\S\\r\\n]';
+const DATE_DAY = '\\d{1,2}(?:st|nd|rd|th)?';
+const DATE_YEAR = `(?:(?:${DATE_SPACE}*,${DATE_SPACE}*|${DATE_SPACE}+)\\d{4})?`;
+const NAMED_DATE = `(?:${MONTH_NAME}${DATE_SPACE}+${DATE_DAY}|${DATE_DAY}${DATE_SPACE}+(?:of${DATE_SPACE}+)?${MONTH_NAME})${DATE_YEAR}`;
+const DATE_RANGE = `${DATE_SPACE}*(?:[-–—]|to\\b|through\\b)${DATE_SPACE}*`;
+// Match whole ranges before single dates, including a month shared at either end.
+// Horizontal space avoids joining unrelated lines, and boundaries exclude identifiers/paths.
+const NAMED_DATES = new RegExp(
+  `(?<![\\p{L}\\p{N}_./\\\\-])(?:(${NAMED_DATE})(?:${DATE_RANGE}(${NAMED_DATE}|${DATE_DAY}${DATE_YEAR}))?|(${DATE_DAY})${DATE_RANGE}(${NAMED_DATE}))(?![\\p{L}\\p{N}_/\\\\]|\\.[\\p{L}\\p{N}_]|-[\\p{L}\\p{N}_])`, 'giu');
+const MONTH_TOKEN = new RegExp(MONTH_NAME, 'i');
 const ORDINALS = new Map([
   ['one', 'first'], ['two', 'second'], ['three', 'third'], ['four', 'fourth'],
   ['five', 'fifth'], ['six', 'sixth'], ['seven', 'seventh'], ['eight', 'eighth'],
@@ -173,6 +184,31 @@ function dateWords(year, month, day, original) {
   return `${MONTHS[month]} ${ordinal(day)}, ${yearWords(year)}`;
 }
 
+function namedDateParts(text) {
+  const month = text.match(MONTH_TOKEN)?.[0].slice(0, 3).toLowerCase();
+  const year = text.match(/\b\d{4}$/);
+  return {
+    month: month ? MONTHS.findIndex(name => name.toLowerCase().startsWith(month)) : 0,
+    day: Number(text.match(/\d+/)[0]),
+    year: year ? Number(year[0]) : null,
+  };
+}
+
+function namedDateWords(original, first, last, firstDay, lastDate) {
+  const start = namedDateParts(first || firstDay);
+  const end = last || lastDate ? namedDateParts(last || lastDate) : null;
+  if (!start.month) start.month = end.month;
+  if (end && !end.month) end.month = start.month;
+  // With no year, allow February 29. A supplied range year applies to both ends;
+  // December–January can cross into the adjacent year without saying an invented year.
+  const startYear = start.year ?? (end?.year != null ? end.year - Number(start.month > end.month) : 2000);
+  const endYear = end?.year ?? (start.year != null && end ? start.year + Number(end.month < start.month) : 2000);
+  if (!validDate(startYear, start.month, start.day)
+    || (end && !validDate(endYear, end.month, end.day))) return original;
+  const speak = date => `${MONTHS[date.month]} ${ordinal(date.day)}${date.year != null ? `, ${yearWords(date.year)}` : ''}`;
+  return speak(start) + (end ? ` to ${speak(end)}` : '') + (original.endsWith('.') ? '.' : '');
+}
+
 function monthYearWords(month, year, original) {
   const fullYear = String(year).length === 2
     ? (Number(year) < 70 ? 2000 : 1900) + Number(year)
@@ -181,10 +217,14 @@ function monthYearWords(month, year, original) {
   return `${MONTHS[month]} ${yearWords(fullYear)}`;
 }
 
+function scaledWords(value, scale) {
+  return `${decimalWords(value.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1'))} ${MONEY_SCALES[scale.toLowerCase()]}`;
+}
+
 function moneyWords(symbol, value, scale = '') {
   const currency = CURRENCIES.get(symbol);
   if (!currency) return `${symbol}${value}${scale}`;
-  if (scale) return `${decimalWords(value.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1'))} ${MONEY_SCALES[scale.toLowerCase()]} ${currency.major[1]}`;
+  if (scale) return `${scaledWords(value, scale)} ${currency.major[1]}`;
   const [wholeRaw, fraction = ''] = value.replaceAll(',', '').split('.');
   const whole = wholeRaw.replace(/^0+/, '') || '0';
   if (!currency.minor) return `${decimalWords(value)} ${currency.major[Number(value) === 1 ? 0 : 1]}`;
@@ -246,6 +286,7 @@ function signedMoney(original, before, symbol, after, value, scale = '') {
 
 export function normalizeEnglishPatterns(source, replace = replaceText) {
   let text = String(source || '');
+  text = replace(text, NAMED_DATES, namedDateWords);
   // Bare three-part versions and explicit v-prefixed versions use whole-number
   // components. Keep unlabelled four-part addresses and ordinary decimals intact.
   text = replace(text, /(?<![\p{L}\p{N}_.,:/\\$€£¥₽₹₩₪฿-])(?:(v)(\d+(?:\.\d+)+)|(\d+\.\d+\.\d+))(?![\p{L}\p{N}_]|[.,:/\\]\d|\.[\p{L}_])/giu,
@@ -262,6 +303,20 @@ export function normalizeEnglishPatterns(source, replace = replaceText) {
     (original, cue, month, year) => `${cue} ${monthYearWords(Number(month), year, original.slice(cue.length + 1))}`);
   text = replace(text, /\b(since|from)\s+(\d{4})[-/](0?[1-9]|1[0-2])\b(?![-/]\d)/gi,
     (original, cue, year, month) => `${cue} ${monthYearWords(Number(month), year, original.slice(cue.length + 1))}`);
+  // Bare K/M need an earnings cue, not just a nearby number. Carry that cue only
+  // through the adjoining amount list; spaced/lowercase units remain unchanged.
+  let earningsEnd = -1;
+  text = replace(text, new RegExp(`(?<![\\p{L}\\p{N}_./\\\\+−${CURRENCY_SYMBOLS}-])([+−-]?)([${CURRENCY_SYMBOLS}]?)([+−-]?)(${NUMBER}(?:\\.\\d+)?)([KM])(?![\\p{L}\\p{N}_]|[./\\\\][\\p{L}\\p{N}_])`, 'gu'),
+    (original, before, symbol, after, value, scale, offset, input) => {
+      if (before && after) return original;
+      const cue = /(?<![\p{L}\p{N}_-])(?:made|makes?|making)[^\S\r\n]+$/iu.test(input.slice(0, offset));
+      const list = earningsEnd >= 0 && /^[^\S\r\n]*(?:,[^\S\r\n]*(?:(?:and|or)[^\S\r\n]*)?|(?:and|or|&)[^\S\r\n]*)$/iu.test(input.slice(earningsEnd, offset));
+      if (!cue && !list) return original;
+      earningsEnd = offset + original.length;
+      // Explicit currencies use the existing money rules below; they can still
+      // introduce the next bare amount in the same earnings list.
+      return symbol ? original : signWords(before || after) + scaledWords(value, scale);
+    });
   // A leading sign must touch the currency: "$5 - $10" is a range, not a loss.
   const currencyPrefix = `(?:(?<![\\p{L}\\p{N}_])([+−-]))?([${CURRENCY_SYMBOLS}])\\s*([+−-]?)\\s*`;
   text = replace(text, new RegExp(`${currencyPrefix}(${NUMBER}(?:\\.\\d+)?)([kmbt])(?![\\p{L}\\p{N}_]|[.,]\\d)`, 'giu'), signedMoney);
@@ -277,7 +332,7 @@ export function normalizeEnglishPatterns(source, replace = replaceText) {
       const seconds = secondText === undefined ? '' : ` and ${cardinal(Number(secondText))} seconds`;
       return `${cardinal(hour)} ${minuteWords}${seconds}${meridiem ? ` ${meridiem.toUpperCase()} M` : ''}`;
     });
-  text = replace(text, new RegExp(`\\b(${NUMBER}(?:\\.\\d+)?)(ms|s|m|h|d|w)\\b`, 'g'),
+  text = replace(text, new RegExp(`\\b(${NUMBER}(?:\\.\\d+)?)[^\\S\\r\\n]*(ms|s|m|h|d|w)\\b`, 'g'),
     (_original, value, unit) => durationWords(value, unit));
   text = replace(text, new RegExp(`\\b(${NUMBER}(?:\\.\\d+)?)\\s*(milliseconds?|msecs?|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?)\\b`, 'giu'),
     (_original, value, unit) => durationWords(value, unit));

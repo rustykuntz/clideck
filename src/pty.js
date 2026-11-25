@@ -14,7 +14,7 @@ function sanitizeProviderEnv(env) {
 }
 
 function ensureHelperExecutable() {
-  if (helperChecked || process.platform === 'win32') return;
+  if (helperChecked || process.platform !== 'darwin') return;
   helperChecked = true;
   const packageDirectory = dirname(require.resolve('node-pty/package.json'));
   const helper = join(

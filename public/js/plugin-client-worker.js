@@ -6,14 +6,22 @@ const pluginId = params.get("id") || "";
 const MAX_AUDIO_BYTES = 64 * 1024 * 1024;
 const actions = new Map(), hotkeys = new Map(), messageHandlers = new Map(), settingsHandlers = new Set();
 const microphoneDataHandlers = new Set(), microphoneStateHandlers = new Set(), compositionActionHandlers = new Set();
+const realtimeHandlers = new Set(), focusHandlers = new Set();
+let capabilities = Object.freeze({}), focusState = null;
 let cleanup = null, seq = 0, activated = false, settingsState = { values: {}, configured: {} };
 const pending = new Map();
 
 function post(type, fields = {}) { self.postMessage({ type, ...fields }); }
-function request(method, fields = {}) {
+function request(method, fields = {}, signal) {
+  if (signal?.aborted) return Promise.reject(new Error("Live audio opening was cancelled."));
   const requestId = "w" + (++seq);
-  post("request", { requestId, method, ...fields });
-  return new Promise((resolve, reject) => pending.set(requestId, { resolve, reject }));
+  return new Promise((resolve, reject) => {
+    const abort = () => post("cancel-realtime-open", { requestId });
+    const finish = fn => value => { signal?.removeEventListener("abort", abort); fn(value); };
+    signal?.addEventListener("abort", abort, { once: true });
+    pending.set(requestId, { resolve: finish(resolve), reject: finish(reject) });
+    post("request", { requestId, method, ...fields });
+  });
 }
 const safeData = (value) => { try { structuredClone(value); return value; } catch { return null; } };
 function settingsSnapshot() { return structuredClone(settingsState); }
@@ -30,6 +38,28 @@ async function applySettings(value, notify = true) {
 
 const api = Object.freeze({
   id: pluginId,
+  get capabilities() { return capabilities; },
+  openSettings() { return request("open-settings"); },
+  // Resolves true when a notification was shown (the person's notification settings decide), false otherwise.
+  notify(options = {}) { return request("notify", { options: { title: String(options.title || ""), body: String(options.body || ""), sessionId: options.sessionId ? String(options.sessionId) : undefined } }); },
+  openExternal(url) { return request("open-external", { url: String(url || "") }); },
+  openRealtimeAudio(options = {}) {
+    return request("open-realtime-audio", { options: { sessionId: options.sessionId, channelLabel: options.channelLabel } }, options.signal);
+  },
+  setRealtimeAudioAnswer(id, sdp) { return request("set-realtime-audio-answer", { id, sdp }); },
+  sendRealtimeAudioData(id, data) { return request("send-realtime-audio-data", { id, data }); },
+  closeRealtimeAudio(id) { return request("close-realtime-audio", { id }); },
+  onRealtimeAudioEvent(fn) {
+    if (typeof fn !== "function") return () => {};
+    realtimeHandlers.add(fn); return () => realtimeHandlers.delete(fn);
+  },
+  onActiveSessionChange(fn) {
+    if (typeof fn !== "function") return () => {};
+    const first = !focusHandlers.size; focusHandlers.add(fn);
+    if (first) { focusState = null; post("watch-active-session", { enabled: true }); }
+    else if (focusState) Promise.resolve().then(() => { if (focusHandlers.has(fn)) return fn(structuredClone(focusState)); }).catch(error => post("runtime-error", { error: error.message }));
+    return () => { focusHandlers.delete(fn); if (!focusHandlers.size) { focusState = null; post("watch-active-session", { enabled: false }); } };
+  },
   send(event, data) { post("send", { event: String(event || ""), data: safeData(data) }); },
   onMessage(event, fn) {
     event = String(event || ""); if (!event || typeof fn !== "function") return () => {};
@@ -39,7 +69,7 @@ const api = Object.freeze({
   registerAction(def) {
     if (!def || typeof def !== "object" || typeof def.run !== "function") return () => {};
     const id = String(def.id || ""); actions.set(id, def);
-    post("register-action", { definition: { id, label: def.label, placements: def.placements, icon: def.icon, description: def.description, hasWhen: typeof def.when === "function" } });
+    post("register-action", { definition: { id, label: def.label, placements: def.placements, icon: def.icon, iconOnly: def.iconOnly === true, pressed: typeof def.pressed === "boolean" ? def.pressed : undefined, description: def.description, hasWhen: typeof def.when === "function" } });
     return () => { actions.delete(id); post("unregister-action", { id }); };
   },
   registerViewer(definition) {
@@ -109,7 +139,7 @@ async function invoke(message) {
 self.onmessage = async (event) => {
   const message = event.data || {};
   if (message.type === "init") {
-    if (activated) return; activated = true; await applySettings(message.settings, false);
+    if (activated) return; activated = true; capabilities = Object.freeze({ ...message.capabilities }); await applySettings(message.settings, false);
     try {
       const module = await import(String(message.clientUrl || ""));
       if (typeof module.activate !== "function") throw new Error("client.js must export activate(api).");
@@ -125,6 +155,12 @@ self.onmessage = async (event) => {
     for (const fn of messageHandlers.get(String(message.event || "")) || []) { try { await fn(message.data, meta); } catch (error) { post("runtime-error", { error: error && error.message || String(error) }); } }
   } else if (message.type === "microphone-data") {
     for (const fn of microphoneDataHandlers) { try { await fn(message.buffer, message.info || {}); } catch (error) { post("runtime-error", { error: error && error.message || String(error) }); } }
+  } else if (message.type === "realtime-audio" || message.type === "active-session") {
+    if (message.type === "active-session") focusState = message.focus;
+    const handlers = message.type === "active-session" ? focusHandlers : realtimeHandlers;
+    // Async plugin work must not hold back later focus or cancellation notifications.
+    for (const fn of handlers) Promise.resolve().then(() => fn(structuredClone(message.type === "active-session" ? message.focus : message.event)))
+      .catch(error => post("runtime-error", { error: error?.message || String(error) }));
   } else if (message.type === "microphone-state") {
     for (const fn of microphoneStateHandlers) { try { await fn(message.state || {}); } catch (error) { post("runtime-error", { error: error && error.message || String(error) }); } }
   } else if (message.type === "terminal-composition-action") {

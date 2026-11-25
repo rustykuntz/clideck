@@ -40,12 +40,27 @@ class PluginHttp {
       sendJson(res, 403, { ok: false, error: 'origin_forbidden' });
       return false;
     }
+    if (req.headers['sec-fetch-site'] === 'cross-site') {
+      sendJson(res, 403, { ok: false, error: 'origin_forbidden' }); return false;
+    }
     return true;
   }
 
   async handle(req, res, pathname) {
     if (req.method === 'GET' && pathname === '/api/plugins') {
-      if (this.allowed(req, res)) sendJson(res, 200, { ok: true, plugins: this.manager.snapshot() });
+      if (this.allowed(req, res)) sendJson(res, 200, { ok: true,
+        plugins: new URL(req.url, 'http://localhost').searchParams.get('all') === 'true' ? this.manager.catalog() : this.manager.snapshot() });
+      return true;
+    }
+    if (req.method === 'GET' && pathname === '/api/plugins/info') {
+      if (this.allowed(req, res)) {
+        try { sendJson(res, 200, { ok: true, plugin: this.manager.info(new URL(req.url, 'http://localhost').searchParams.get('id') || '') }); }
+        catch (error) { sendJson(res, 404, { ok: false, error: 'unknown_plugin', message: error.message }); }
+      }
+      return true;
+    }
+    if (req.method === 'POST' && pathname === '/api/plugins/manage') {
+      if (this.allowed(req, res)) await this.manage(req, res);
       return true;
     }
     if (req.method === 'POST' && pathname === '/api/plugins/install') {
@@ -64,13 +79,14 @@ class PluginHttp {
     if (!this.allowed(req, res)) return;
     let request;
     try { request = await readJson(req); } catch { request = null; }
-    if (!request || typeof request.path !== 'string' || !request.path.trim()
-      || request.path.length > 4096 || request.path.includes('\0')) {
+    if (!request || Object.keys(request).some(key => !['path', 'id'].includes(key))
+      || (request.id !== undefined ? typeof request.id !== 'string' || request.path !== undefined
+        : typeof request.path !== 'string' || !request.path.trim() || request.path.length > 4096 || request.path.includes('\0'))) {
       sendJson(res, 400, { ok: false, error: 'invalid_request', message: 'Provide a plugin folder.' });
       return;
     }
     try {
-      const record = await this.manager.install(request.path);
+      const record = request.id !== undefined ? await this.manager.installAvailable(request.id) : await this.manager.install(request.path);
       sendJson(res, 200, { ok: true, pluginId: record.manifest.id });
     } catch (error) {
       sendJson(res, error.code === 'plugin_exists' ? 409 : 400, {
@@ -79,6 +95,24 @@ class PluginHttp {
         message: error.message,
       });
     }
+  }
+
+  async manage(req, res) {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) {
+      sendJson(res, 415, { ok: false, error: 'Expected JSON.' }); return;
+    }
+    try {
+      const request = await readJson(req);
+      if (!request || typeof request.id !== 'string' || !['enable', 'disable', 'settings'].includes(request.action)
+        || Object.keys(request).some(key => !['action', 'id', ...(request.action === 'settings' ? ['values'] : [])].includes(key))) throw Error('Invalid plugin control.');
+      const changed = request.action === 'settings'
+        ? await this.manager.updateSettings(request.id, request.values)
+        : await this.manager.setEnabled(request.id, request.action === 'enable');
+      if (!changed) throw Error('Plugin not found or settings are invalid.');
+      const plugin = this.manager.snapshot().find(row => row.id === request.id);
+      if (request.action === 'enable' && plugin.status !== 'ready') throw Error(plugin.error || 'Plugin did not become ready.');
+      sendJson(res, 200, { ok: true, plugin });
+    } catch (error) { sendJson(res, 400, { ok: false, error: 'plugin_control_failed', message: error.message }); }
   }
 
   async runCommand(req, res, pluginId, command) {

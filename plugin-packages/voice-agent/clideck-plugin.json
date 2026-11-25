@@ -1,0 +1,301 @@
+{
+  "id": "voice-agent",
+  "name": "Voice Agent",
+  "version": "0.3.0",
+  "apiVersion": 1,
+  "enabledByDefault": false,
+  "description": "Talk naturally with your CliDeck session. Ask for a recap, choose the next step, or ask your agent to do something. Voice pauses when you switch away. Phone calls are optional.",
+  "icon": "waveform",
+  "commands": [
+    {
+      "name": "setup",
+      "description": "Check browser voice setup and optional phone setup. Check verifies OpenAI access without starting audio.",
+      "usage": "voice-agent/setup [check]"
+    },
+    {
+      "name": "start",
+      "description": "Start an authorized phone call from a JSON brief on stdin; reuse requestId on retry.",
+      "usage": "voice-agent/start --stdin"
+    },
+    {
+      "name": "status",
+      "description": "Read your calls, live transcript and pending agent questions.",
+      "usage": "voice-agent/status [call-id]"
+    },
+    {
+      "name": "steer",
+      "description": "Send directions or an explicit delegation answer to your call using JSON on stdin.",
+      "usage": "voice-agent/steer <call-id> --stdin"
+    },
+    {
+      "name": "reply",
+      "description": "Send a concise answer or progress update for a spoken user request.",
+      "usage": "voice-agent/reply <request-id> --stdin"
+    },
+    {
+      "name": "key",
+      "description": "Send one telephone keypad key (0-9, A-D, * or #) to your call.",
+      "usage": "voice-agent/key <call-id> <key>"
+    },
+    {
+      "name": "stop",
+      "description": "Hang up your call; repeated stops never redial.",
+      "usage": "voice-agent/stop <call-id>"
+    }
+  ],
+  "settings": [
+    {
+      "key": "talk-to-sessions",
+      "label": "Talk to sessions",
+      "type": "toggle",
+      "default": true,
+      "description": "Show the Voice Agent icon in session headers. Click it to talk. Microphone and sound pause when you leave the session. Turning this off stops session voice."
+    },
+    {
+      "key": "openai-key",
+      "label": "OpenAI API key",
+      "type": "secret",
+      "default": "",
+      "description": "Your OpenAI API key for voice. Stored on the CliDeck server; never sent to the browser."
+    },
+    {
+      "key": "voice",
+      "label": "Voice",
+      "type": "select",
+      "default": "marin",
+      "description": "Play a sample to choose your voice. Changes apply to new conversations.",
+      "options": [
+        {
+          "value": "marin",
+          "label": "Marin",
+          "preview": "public/voices/marin.mp3"
+        },
+        {
+          "value": "cedar",
+          "label": "Cedar",
+          "preview": "public/voices/cedar.mp3"
+        },
+        {
+          "value": "alloy",
+          "label": "Alloy",
+          "preview": "public/voices/alloy.mp3"
+        },
+        {
+          "value": "ash",
+          "label": "Ash",
+          "preview": "public/voices/ash.mp3"
+        },
+        {
+          "value": "ballad",
+          "label": "Ballad",
+          "preview": "public/voices/ballad.mp3"
+        },
+        {
+          "value": "beacon",
+          "label": "Beacon",
+          "preview": "public/voices/beacon.mp3"
+        },
+        {
+          "value": "bossa",
+          "label": "Bossa",
+          "preview": "public/voices/bossa.mp3"
+        },
+        {
+          "value": "brise",
+          "label": "Brise",
+          "preview": "public/voices/brise.mp3"
+        },
+        {
+          "value": "calandria",
+          "label": "Calandria",
+          "preview": "public/voices/calandria.mp3"
+        },
+        {
+          "value": "cinder",
+          "label": "Cinder",
+          "preview": "public/voices/cinder.mp3"
+        },
+        {
+          "value": "compas",
+          "label": "Compas",
+          "preview": "public/voices/compas.mp3"
+        },
+        {
+          "value": "coral",
+          "label": "Coral",
+          "preview": "public/voices/coral.mp3"
+        },
+        {
+          "value": "delta",
+          "label": "Delta",
+          "preview": "public/voices/delta.mp3"
+        },
+        {
+          "value": "destello",
+          "label": "Destello",
+          "preview": "public/voices/destello.mp3"
+        },
+        {
+          "value": "echo",
+          "label": "Echo",
+          "preview": "public/voices/echo.mp3"
+        },
+        {
+          "value": "flitz",
+          "label": "Flitz",
+          "preview": "public/voices/flitz.mp3"
+        },
+        {
+          "value": "gleam",
+          "label": "Gleam",
+          "preview": "public/voices/gleam.mp3"
+        },
+        {
+          "value": "halo",
+          "label": "Halo",
+          "preview": "public/voices/halo.mp3"
+        },
+        {
+          "value": "harema",
+          "label": "Harema",
+          "preview": "public/voices/harema.mp3"
+        },
+        {
+          "value": "hornero",
+          "label": "Hornero",
+          "preview": "public/voices/hornero.mp3"
+        },
+        {
+          "value": "juni",
+          "label": "Juni",
+          "preview": "public/voices/juni.mp3"
+        },
+        {
+          "value": "luciernaga",
+          "label": "Luciernaga",
+          "preview": "public/voices/luciernaga.mp3"
+        },
+        {
+          "value": "meridian",
+          "label": "Meridian",
+          "preview": "public/voices/meridian.mp3"
+        },
+        {
+          "value": "nira",
+          "label": "Nira",
+          "preview": "public/voices/nira.mp3"
+        },
+        {
+          "value": "noeul",
+          "label": "Noeul",
+          "preview": "public/voices/noeul.mp3"
+        },
+        {
+          "value": "nuri",
+          "label": "Nuri",
+          "preview": "public/voices/nuri.mp3"
+        },
+        {
+          "value": "pearl",
+          "label": "Pearl",
+          "preview": "public/voices/pearl.mp3"
+        },
+        {
+          "value": "quartz",
+          "label": "Quartz",
+          "preview": "public/voices/quartz.mp3"
+        },
+        {
+          "value": "ripple",
+          "label": "Ripple",
+          "preview": "public/voices/ripple.mp3"
+        },
+        {
+          "value": "sage",
+          "label": "Sage",
+          "preview": "public/voices/sage.mp3"
+        },
+        {
+          "value": "shida",
+          "label": "Shida",
+          "preview": "public/voices/shida.mp3"
+        },
+        {
+          "value": "shimmer",
+          "label": "Shimmer",
+          "preview": "public/voices/shimmer.mp3"
+        },
+        {
+          "value": "sillage",
+          "label": "Sillage",
+          "preview": "public/voices/sillage.mp3"
+        },
+        {
+          "value": "stone",
+          "label": "Stone",
+          "preview": "public/voices/stone.mp3"
+        },
+        {
+          "value": "tempo",
+          "label": "Tempo",
+          "preview": "public/voices/tempo.mp3"
+        },
+        {
+          "value": "verse",
+          "label": "Verse",
+          "preview": "public/voices/verse.mp3"
+        },
+        {
+          "value": "vesper",
+          "label": "Vesper",
+          "preview": "public/voices/vesper.mp3"
+        },
+        {
+          "value": "willow",
+          "label": "Willow",
+          "preview": "public/voices/willow.mp3"
+        }
+      ]
+    },
+    {
+      "key": "instructions",
+      "label": "Initial instructions",
+      "type": "textarea",
+      "default": "Speak naturally and concisely, usually one or two short sentences. Use the participant's language. Let them finish their thought, and yield when interrupted. Report only confirmed facts and results.",
+      "description": "The voice agent's system prompt for language, pace and personality. CliDeck adds session and delegation rules. Changes apply when you start voice again; up to 8,000 characters.",
+      "group": "Conversation style (advanced)"
+    },
+    {
+      "key": "sip-url",
+      "label": "Phone provider address",
+      "type": "text",
+      "default": "",
+      "description": "For telephone calls only. SIP is the link to your phone carrier. Use its secure outbound address, such as sips:your-trunk.pstn.twilio.com:5061.",
+      "group": "Phone calls (optional)"
+    },
+    {
+      "key": "sip-username",
+      "label": "Phone connection username",
+      "type": "secret",
+      "default": "",
+      "description": "For telephone calls only. The SIP connection username from your carrier, not your dashboard login.",
+      "group": "Phone calls (optional)"
+    },
+    {
+      "key": "sip-password",
+      "label": "Phone connection password",
+      "type": "secret",
+      "default": "",
+      "description": "For telephone calls only. The SIP connection password from your carrier, not your dashboard password.",
+      "group": "Phone calls (optional)"
+    },
+    {
+      "key": "caller-number",
+      "label": "Caller number",
+      "type": "text",
+      "default": "",
+      "description": "For telephone calls only. The number people see when you call, owned or verified with your carrier, including country code.",
+      "group": "Phone calls (optional)"
+    }
+  ]
+}

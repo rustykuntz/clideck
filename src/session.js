@@ -14,6 +14,9 @@ const TRANSCRIPT_READY_TIMEOUT_MS = 5000;
 const CLOSE_GRACE_MS = 1500;
 const OUTPUT_BATCH_MS = 100;
 const USER_ACTIVITY_GRACE_MS = 4000;
+// xterm sends focus/device/cursor/colour reports through the same onData path as
+// keystrokes. They still belong on the PTY, but cannot take ownership of a turn.
+const TERMINAL_REPORT = /^(?:\x1b\[(?:[IO]|\??\d+;\d+R|[?>][\d;]*c|0n|\?[\d;]+u)|\x1b\](?:4;\d+|10|11|12);rgb:[\da-f/]+(?:\x07|\x1b\\))+$/i;
 const COLORFGBG_BY_THEME = {
   light: '0;15',
   dark: '15;0',
@@ -62,6 +65,8 @@ class AgentSession extends EventEmitter {
     this.screen = new Screen(this.cols, this.rows);
     this.userPrompts = [];
     this.pendingPromptEchoes = [];
+    this.replyOwner = null;
+    this.rawInputOrigin = '';
     this.recordedPromptIds = new Set();
     this.status = null;
     this.menu = [];
@@ -169,7 +174,16 @@ class AgentSession extends EventEmitter {
 
   emitProtocol(type, fields = {}) {
     if (type !== 'output') this.flushPending();
+    if (this.replyOwner && ['agent.update', 'agent.final', 'menu'].includes(type)) {
+      this.emit('reply', { type, sessionId: this.id, ...this.replyOwner, ...fields });
+    }
     this.emit('event', { type, sessionId: this.id, ...fields });
+  }
+
+  endReply(reason) {
+    const owner = this.replyOwner;
+    this.replyOwner = null;
+    if (owner) this.emit('reply', { type: 'turn.ended', sessionId: this.id, ...owner, reason });
   }
 
   queueOutput(data, includeScreen) {
@@ -397,6 +411,7 @@ class AgentSession extends EventEmitter {
       this.lastAgentAt = at;
       this.emitProtocol('agent.final', { text: candidate, at });
     }
+    this.endReply('The turn ended without a text reply.');
     this.turnOpen = false;
     this.baselineCandidate = candidate;
     this.lastUpdate = '';
@@ -411,6 +426,7 @@ class AgentSession extends EventEmitter {
   }
 
   cancelTurn() {
+    this.endReply('The agent was interrupted.');
     this.pendingPromptEchoes = [];
     this.pendingFinal = false;
     this.pendingFinalText = '';
@@ -444,6 +460,7 @@ class AgentSession extends EventEmitter {
       return;
     }
     if (route === 'start') {
+      if (this.replyOwner?.nativeTurnId && turnId && this.replyOwner.nativeTurnId !== turnId) this.endReply('A different native turn started.');
       if (turnId) this.activeHookTurn = turnId;
       this.beginTurn();
       this.setStatus('working');
@@ -505,13 +522,29 @@ class AgentSession extends EventEmitter {
       this.recordedPromptIds.add(id);
       if (this.recordedPromptIds.size > 64) this.recordedPromptIds.delete(this.recordedPromptIds.values().next().value);
     }
-    // Only consume the next expected echo, once. Never deduplicate user text
+    // Consume each expected echo once. Never deduplicate user text
     // against conversation history: repeated identical messages are valid.
-    const expected = this.pendingPromptEchoes[0];
-    if (expected !== undefined && (expected === text || this.provider.promptEchoMatches?.(expected, text))) {
-      this.pendingPromptEchoes.shift();
+    const match = this.pendingPromptEchoes.findIndex(expected => expected.text === text
+      || this.provider.promptEchoMatches?.(expected.text, text));
+    if (match !== -1) {
+      const [expected] = this.pendingPromptEchoes.splice(match, 1);
+      // A native prompt echo after Enter, not a paste or the next completion,
+      // identifies the request whose answer may leave this machine.
+      this.endReply('Another request took over this turn.');
+      if (expected.submitted && this.now() - expected.at < 90_000 && expected.origin !== 'agent') {
+        this.replyOwner = { requestId: expected.requestId, origin: expected.origin,
+          nativeTurnId: typeof payload.turn_id === 'string' ? payload.turn_id : '' };
+        this.emit('reply', { type: 'turn.started', sessionId: this.id, ...this.replyOwner });
+      }
       return;
     }
+    this.endReply('Another request took over this turn.');
+    if (this.rawInputOrigin === 'desktop') {
+      this.replyOwner = { requestId: randomUUID(), origin: 'desktop',
+        nativeTurnId: typeof payload.turn_id === 'string' ? payload.turn_id : '' };
+      this.emit('reply', { type: 'turn.started', sessionId: this.id, ...this.replyOwner });
+    }
+    this.rawInputOrigin = '';
     this.emitProtocol('turn.user', { text });
   }
 
@@ -536,25 +569,26 @@ class AgentSession extends EventEmitter {
     if (pending && !pending.submitted) {
       // This paste may now be edited or discarded, so it is no longer an
       // expected native submission. Do not let it block later echo matching.
-      if (this.pendingPromptEchoes.at(-1) === pending.prompt) this.pendingPromptEchoes.pop();
+      if (this.pendingPromptEchoes.at(-1) === pending.echo) this.pendingPromptEchoes.pop();
       if (pending.newTurn && this.status === 'idle') this.turnOpen = false;
       pending.resolve({ ok: false, error: 'delivery_interrupted', message:
         'The user started typing during delivery. Text was already inserted, but automatic submission was cancelled. Check the terminal before retrying.' });
     }
   }
 
-  sendPrompt(text, { fromUser = false } = {}) {
+  sendPrompt(text, { fromUser = false, origin = 'agent', requestId = randomUUID() } = {}) {
     const prompt = String(text || '').trim();
     if (!prompt || !this.terminal || this.closed) return false;
     if (fromUser) this.markUserActivity();
     else if (this.isUserTyping() || this.isSubmitting()) return false;
+    this.endReply('Another request took over this turn.');
     this.flushScreen();
     this.baselineCandidate = this.currentCandidate();
     this.pendingFinal = false;
     this.pendingFinalText = '';
     this.turnOpen = true;
     this.lastUpdate = '';
-    this.submitPrompt(prompt, true);
+    this.submitPrompt(prompt, true, { origin: fromUser ? 'desktop' : origin, requestId });
     return true;
   }
 
@@ -563,18 +597,21 @@ class AgentSession extends EventEmitter {
     if (!prompt || !this.terminal || this.closed || this.isUserTyping() || this.isSubmitting()) return false;
     this.flushScreen();
     if (this.menu.length) return false;
+    this.endReply('Another request was steered into this turn. Check the conversation in CliDeck.');
     this.submitPrompt(prompt, false);
     return true;
   }
 
-  submitPrompt(prompt, retryWhenIdle) {
+  submitPrompt(prompt, retryWhenIdle, { origin = 'agent', requestId = randomUUID() } = {}) {
+    this.rawInputOrigin = '';
     let resolve;
     const completion = new Promise(done => { resolve = done; });
-    const pending = { completion, resolve, prompt, submitted: false, newTurn: retryWhenIdle };
+    const echo = { text: prompt, origin, requestId, at: this.now(), submitted: false };
+    const pending = { completion, resolve, prompt, echo, submitted: false, newTurn: retryWhenIdle };
     this.pendingSubmission = pending;
     this.userPrompts.push(prompt);
     if (this.provider.userText) {
-      this.pendingPromptEchoes.push(prompt);
+      this.pendingPromptEchoes.push(echo);
       if (this.pendingPromptEchoes.length > 32) this.pendingPromptEchoes.shift();
     }
     this.emitProtocol('turn.user', { text: prompt });
@@ -588,6 +625,7 @@ class AgentSession extends EventEmitter {
       this.submitTimer = null;
       if (!this.closed && this.pendingSubmission === pending) {
         pending.submitted = true;
+        echo.submitted = true;
         this.terminal.write('\r');
         pending.resolve({ ok: true });
         if (!this.submitRetryTimer) this.pendingSubmission = null;
@@ -603,10 +641,14 @@ class AgentSession extends EventEmitter {
     }
   }
 
-  writeInput(data) {
+  writeInput(data, { fromUser = false } = {}) {
     if (!this.terminal || this.closed) return;
     this.flushScreen();
     const input = String(data || '');
+    if (input && !this.menu.length && !TERMINAL_REPORT.test(input)) {
+      this.rawInputOrigin = fromUser ? 'desktop' : 'agent';
+      if (input !== this.provider.interruptInput) this.endReply('Input changed in CliDeck. Check the conversation there.');
+    }
     // Codex delays its native clear hook until the next prompt. Invalidate the
     // old reading on submission; only a native hook may bind the new rollout.
     if (this.provider.id === 'codex' && !this.menu.length
@@ -752,6 +794,7 @@ class AgentSession extends EventEmitter {
 
   handleExit(exitCode, signal) {
     if (this.closed) return;
+    this.endReply('The session stopped before its reply was captured.');
     this.flushScreen();
     this.closed = true;
     this.pendingSubmission?.resolve({ ok: false, error: 'target_closed' });

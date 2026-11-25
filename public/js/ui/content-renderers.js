@@ -53,7 +53,8 @@ function jsonCode(pretty) {
   return code;
 }
 
-export function renderJson(value) {
+// `onError(message)` (optional) hears a genuine failure to draw; what the person sees is unchanged.
+export function renderJson(value, { onError } = {}) {
   const source = typeof value === "string" ? value : JSON.stringify(value);
   let parsed;
   try { parsed = typeof value === "string" ? JSON.parse(value) : value; }
@@ -62,6 +63,7 @@ export function renderJson(value) {
     const notice = h("div", "ct-json-error"); notice.setAttribute("role", "alert");
     const title = h("strong"); title.textContent = "This file isn’t valid JSON";
     const detail = h("span"); detail.textContent = error && error.message ? error.message : "The document could not be parsed.";
+    if (onError) onError("This file isn’t valid JSON: " + detail.textContent);
     notice.append(title, detail);
     const raw = h("pre", "ct-json-raw"); raw.textContent = source;
     page.append(notice, raw); return shell;
@@ -187,7 +189,21 @@ function inlineMd(t) {
     const clean = href.replace(/"/g, "%22");
     return SAFE_HREF.test(href) ? `<a href="${clean}" target="_blank" rel="noopener noreferrer">${txt}</a>` : txt;
   });
-  return s;
+  // Link plain web addresses, leaving generated tags, explicit links and code untouched.
+  return s.replace(/<a\b[^>]*>[\s\S]*?<\/a>|<code>[\s\S]*?<\/code>|<[^>]*>|https?:\/\/(?:(?!&(?:lt|gt|quot|#39);)[^\s<>"'])+/gi, (match) => {
+    if (!/^https?:\/\//i.test(match)) return match;
+    let url = match;
+    // Sentence punctuation and enclosing parentheses are prose; balanced URL parentheses stay.
+    while (url) {
+      const last = url.slice(-1);
+      if (/[.,;:!?]/.test(last)) { url = url.slice(0, -1); continue; }
+      const open = { ")": "(", "]": "[", "}": "{" }[last];
+      if (open && url.split(last).length > url.split(open).length) { url = url.slice(0, -1); continue; }
+      break;
+    }
+    if (!/^https?:\/\/.+/i.test(url)) return match;
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` + match.slice(url.length);
+  });
 }
 export function renderMarkdown(src) {
   const root = h("div", "md");
@@ -344,12 +360,14 @@ export function renderDiff(src) {
 }
 
 // ── chart (hand-rolled SVG): bar (grouped) or line ──
-export function renderChart(spec) {
+export function renderChart(spec, { onError } = {}) {
+  if (onError && (!spec || typeof spec !== "object" || Array.isArray(spec))) onError("The chart spec must be a JSON object.");
   spec = spec || {};
   const wrap = h("div", "chart");
   if (spec.title) { const t = h("div", "chart-title"); t.textContent = spec.title; wrap.appendChild(t); }
   const series = Array.isArray(spec.series) ? spec.series.filter((s) => s && Array.isArray(s.values)) : [];
   const n = series.reduce((m, s) => Math.max(m, s.values.length), 0);
+  if (onError && !n && spec && typeof spec === "object" && !Array.isArray(spec)) onError("The chart has no series with values to draw.");
   const xs = Array.isArray(spec.x) && spec.x.length ? spec.x : Array.from({ length: n }, (_, k) => String(k + 1));
   const PAL = ["#5b8def", "#e0894f", "#3fa06a", "#b366d9", "#d9556f", "#4bb3c4"];
   const W = 640, H = 300, P = { t: 16, r: 16, b: 34, l: 44 };
@@ -435,16 +453,17 @@ export function videoEl(url) { const v = h("video", "ct-video"); v.src = url; v.
 // serves the UMD build at /vendor/mermaid.js (static map, like xterm.js) → window.mermaid; we lazy-inject that
 // <script> once, on first mermaid content, and init in securityLevel:'strict' (no click handlers / raw HTML from
 // diagram text). Only the produced <svg> is inserted.
-export function mermaidEl(text) {
+export function mermaidEl(text, { onError } = {}) {
+  const failed = (message) => { if (onError) onError(message); };
   const box = h("div", "ct-mermaid");
   const pre = h("pre", "ct-mermaid-src"); pre.textContent = String(text == null ? "" : text); box.appendChild(pre);
   ensureMermaid().then((m) => {
-    if (!m || typeof m.render !== "function") return;
+    if (!m || typeof m.render !== "function") { failed("The Mermaid renderer couldn’t load, so only the diagram source is shown."); return; }
     const id = "mmd-" + Math.abs(hashCode(text)).toString(36);
     Promise.resolve(m.render(id, String(text))).then((out) => {
       const code = out && (out.svg || out); if (typeof code === "string") box.innerHTML = code;   // strict-mode SVG only
-    }).catch(() => {});
-  }).catch(() => {});
+    }).catch((error) => failed("Mermaid couldn’t draw this diagram: " + (error && error.message || String(error))));
+  }).catch(() => failed("The Mermaid renderer couldn’t load, so only the diagram source is shown."));
   return box;
 }
 let _mermaidP = null;

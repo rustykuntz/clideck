@@ -11,6 +11,10 @@ const icon = path => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none
 
 // Search owns only the retained xterm buffer. It never sends terminal input or
 // changes saved history. Keep its field outside #term's clipboard/input handlers.
+// The desktop app's Find menu item lands here: its native accelerator can take Cmd+F before the page sees it.
+let openSearch = null;
+export function openTerminalSearch() { if (openSearch) openSearch(); }
+
 export function initTerminalSearch(term) {
   const panel = document.getElementById("term-panel");
   if (!panel) return;
@@ -53,6 +57,7 @@ export function initTerminalSearch(term) {
     addon.dispose(); addon = null; term.clearSelection();
     if (restoreFocus && ownedFocus && !panel.hidden) term.focus();
   }
+  openSearch = () => { if (!panel.hidden && store.active()) open(); };
   function open() {
     if (!addon) {
       addon = new SearchAddon({ highlightLimit: LIMIT }); term.loadAddon(addon);

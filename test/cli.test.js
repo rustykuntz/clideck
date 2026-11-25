@@ -431,6 +431,7 @@ test('CLI show broadcasts scoped content and serves ranged media', async () => {
       name: 'preview.png',
       url: `/content/${imageEvent.contentId}`,
       sourcePath: realpathSync(join(cwd, 'preview.png')),
+      reportErrors: true,
     });
     const image = await fetch(`${httpUrl}${imageEvent.url}`);
     assert.equal(image.status, 200);

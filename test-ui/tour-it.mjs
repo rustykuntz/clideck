@@ -14,7 +14,7 @@ import { installFakeDom, installFakeWs } from "./fakedom.mjs";
 const dom = installFakeDom();
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel", userAgent: "", clipboard: {} } });
 const ws = installFakeWs();
-for (const id of ["settings-btn", "theme-btn", "proj-btn", "new-btn", "th-name", "prompts-btn", "team-help-btn"]) { const el = document.createElement("button"); el.id = id; document.body.appendChild(el); }
+for (const id of ["settings-btn", "theme-btn", "proj-btn", "new-btn", "th-name", "app-menu", "team-help-btn"]) { const el = document.createElement("button"); el.id = id; document.body.appendChild(el); }
 // The tab strip the preview stop points at. It lives inside the hidden right pane in the real app, which is why
 // its DEFAULT here (no box) is the case that matters: a first-run user has no session and must still be taught.
 { const el = document.createElement("div"); el.id = "pane-tabs"; document.body.appendChild(el); }
@@ -159,8 +159,8 @@ try {
   // The Prompts stop teaches reuse and yields Escape to the actual library.
   startTour({ from: 2 });
   ok("saved prompts have their own stop after starting a session", __tourForTest().id === "prompts" && /project introductions/.test(q("tour-body").textContent) && /\/\//.test(q("tour-body").textContent));
-  box(document.getElementById("prompts-btn")); startTour({ from: 2 });
-  ok("saved prompts anchor to the existing library button", __tourForTest().anchored && q("tour-spot").style.left === "94px");
+  box(document.getElementById("app-menu")); startTour({ from: 2 });
+  ok("saved prompts anchor to the footer app menu that holds the library", __tourForTest().anchored && q("tour-spot").style.left === "94px");
   const { openPromptLibrary } = await import("../public/js/ui/prompts.js");
   openPromptLibrary(); await sleep();
   dom.docFire("keydown", { key: "Escape", preventDefault() {}, stopPropagation() {} });

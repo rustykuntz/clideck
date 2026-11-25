@@ -96,6 +96,7 @@ function validateSettings(settings) {
       || !string(setting.label, 200)
       || !SETTING_TYPES.has(setting.type)
       || (setting.description !== undefined && !string(setting.description, 500, true))
+      || (setting.group !== undefined && !string(setting.group, 80))
       || !validSettingDefault(setting)) {
       fail('invalid_setting', 'Every setting needs a safe key, label, type, and default.');
     }
@@ -106,6 +107,7 @@ function validateSettings(settings) {
       label: setting.label.trim(),
       type: setting.type,
       ...(setting.description !== undefined && { description: setting.description.trim() }),
+      ...(setting.group !== undefined && { group: setting.group.trim() }),
       ...(setting.default !== undefined && { default: setting.default }),
     };
     if (setting.type === 'number') {

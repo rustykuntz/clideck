@@ -141,6 +141,26 @@ try {
     closeMenu();
   }
 
+  // A deleted project folder must explain the failure and retain the attempted session.
+  {
+    setConfig({ projects: [PROJ] });
+    store.applyEvent({ type: "session.created", sessionId: "existing", provider: "shell", name: "Existing", live: true, pid: 1 });
+    store.select("existing");
+    const f = openSessionPicker();
+    f.sel.value = PROJ.id; f.sel._fire("change");
+    document.querySelector(".pv-name-input").value = "Researcher";
+    document.querySelector(".pv-opt")._fire("click");
+    const message = `Project folder not found: ${PROJ.path}. It may have been moved or deleted. Restore it or choose an existing folder.`;
+    store.applyEvent({ type: "session.create.result", success: false, code: "folder_not_found", cwd: PROJ.path, error: message });
+    ok("missing folder reopens the picker with the project and name intact", document.querySelector(".pv-project-select")?.value === PROJ.id && document.querySelector(".pv-name-input")?.value === "Researcher");
+    ok("missing folder explains the failed start inline", document.querySelector(".pv-error")?.textContent === message);
+    ok("missing folder shows its own visible error, not Name taken", document.getElementById("toast-session-create")?.querySelector(".toast-t")?.textContent === "Folder not found");
+    ok("failed start preserves the current session without adding a phantom row", store.sessions.size === 1 && store.activeId === "existing");
+    store.applyEvent({ type: "session.created", sessionId: "remote", provider: "shell", name: "Remote", live: true, pid: 2 });
+    ok("failed start disarms focus so another client's session is not selected", store.activeId === "existing");
+    closeMenu();
+  }
+
   console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed`);
 } catch (e) { console.log("THREW", e && e.stack || e); fail++; }
 process.exit(fail === 0 ? 0 : 1);

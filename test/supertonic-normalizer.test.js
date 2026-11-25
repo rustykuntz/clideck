@@ -54,6 +54,29 @@ test('Supertonic programmatically speaks numbers, money, dates, and time', async
   );
 });
 
+test('Supertonic speaks attached and spaced time shortcuts with decimal values', async () => {
+  const { normalizeText, normalizeTextWithRanges, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const space of ['', ' ', '\u00a0']) {
+    const source = `measured 4.2${space}s edit it took 0.61${space}s.`;
+    const expected = 'measured four point two seconds edit it took zero point six one seconds.';
+    assert.equal(normalizeText(source, entries), expected);
+    const mapped = normalizeTextWithRanges(source, entries);
+    assert.equal(mapped.text, expected);
+    assert.equal(mapped.ranges.length, expected.length);
+    const at = mapped.text.indexOf('four');
+    const spans = mapped.ranges.slice(at, at + 'four point two seconds'.length);
+    const start = source.indexOf('4.2'), end = start + `4.2${space}s`.length;
+    assert.ok(spans.every(range => range.start >= start && range.end <= end && range.start < range.end));
+    assert.equal(Math.min(...spans.map(range => range.start)), start);
+    assert.equal(Math.max(...spans.map(range => range.end)), end);
+    assert.equal(normalizeText(source, entries, 'off'), source);
+  }
+  assert.equal(normalizeText('1 s; 250 ms; 2 m; 1.5 h; 2 d; 3 w.', entries),
+    'one second; two hundred fifty milliseconds; two minutes; one point five hours; two days; three weeks.');
+  assert.equal(normalizeText('4.2 speed', entries), 'four point two speed');
+});
+
 test('Supertonic keeps terminal wrapping out of technical normalization', async () => {
   const { normalizeText, parseLexicon } = await import(MODULE);
   const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
@@ -61,6 +84,76 @@ test('Supertonic keeps terminal wrapping out of technical normalization', async 
     normalizeText('Record id 42\nThen fetch ids.\n\nDone!', entries),
     'Record I D forty two\nThen fetch I Ds.\n\nDone!',
   );
+});
+
+test('Supertonic speaks named dates in either order with ordinals, abbreviations, and years', async () => {
+  const { normalizeText, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const source of ['11 Oct', '11 october', 'october 11', 'oct 11', 'Oct. 11', '11th of OCTOBER', 'october\u00a011']) {
+    assert.equal(normalizeText(source, entries), 'October eleventh', source);
+  }
+  for (const [source, expected] of [
+    ['We meet on Sept. 22, 2026.', 'We meet on September twenty second, twenty twenty six.'],
+    ['11 October 2026', 'October eleventh, twenty twenty six'],
+    ['January 01,2001', 'January first, two thousand one'],
+    ['29 Feb 2024', 'February twenty ninth, twenty twenty four'],
+    ['Feb 29', 'February twenty ninth'],
+    ['Dec 31, 1999', 'December thirty first, nineteen ninety nine'],
+    ['Meet on 11 Oct. Next, lunch.', 'Meet on October eleventh. Next, lunch.'],
+  ]) assert.equal(normalizeText(source, entries), expected, source);
+  for (const [index, month] of ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].entries()) {
+    for (const name of [month, month.slice(0, 3), month.slice(0, 3).toUpperCase() + '.']) {
+      assert.equal(normalizeText(`${name} 1`, entries), `${month} first`, `${index + 1}: ${name}`);
+    }
+  }
+});
+
+test('Supertonic reads date ranges with both months or one shared month', async () => {
+  const { normalizeText, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const [source, expected] of [
+    ['Sep 22–Nov 6', 'September twenty second to November sixth'],
+    ['22 September - 6 November', 'September twenty second to November sixth'],
+    ['Sep. 22—6 Nov.', 'September twenty second to November sixth.'],
+    ['11–13 Oct', 'October eleventh to October thirteenth'],
+    ['Oct 11-13', 'October eleventh to October thirteenth'],
+    ['October 11th through 13th, 2026', 'October eleventh to October thirteenth, twenty twenty six'],
+    ['11 to 13 October 2026', 'October eleventh to October thirteenth, twenty twenty six'],
+    ['Dec 30, 2026–Jan 2, 2027', 'December thirtieth, twenty twenty six to January second, twenty twenty seven'],
+    ['Feb 29–Jan 1, 2025', 'February twenty ninth to January first, twenty twenty five'],
+    ['Feb 28–29, 2024', 'February twenty eighth to February twenty ninth, twenty twenty four'],
+  ]) assert.equal(normalizeText(source, entries), expected, source);
+});
+
+test('named dates do not invent calendar dates from invalid dates, identifiers, or separate lines', async () => {
+  const { normalizeEnglishPatterns, normalizeText } = await import(MODULE);
+  for (const source of ['Feb 30', '31 April', 'Feb 29, 2025', 'Feb 28–29, 2025', '29 Feb–1 Mar, 2025', 'Oct 00', 'May 2026']) {
+    assert.doesNotMatch(normalizeEnglishPatterns(source), /first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirtieth/, source);
+  }
+  for (const source of ['build_Oct 11x', 'x11 Oct', 'Oct 11.txt', '/11 Oct/path', 'Oct\n11', '11\nOct']) {
+    assert.doesNotMatch(normalizeEnglishPatterns(source), /October|eleventh/, source);
+  }
+  assert.equal(normalizeEnglishPatterns('11\n\nOctober'), 'eleven\n\nOctober');
+  const source = 'Sep 22–Nov 6; 11 October 2026';
+  assert.equal(normalizeText(source, [], 'off'), source);
+  assert.equal(normalizeText(source, [], 'french'), source);
+});
+
+test('spoken dates and ranges keep read-along spans inside their original text', async () => {
+  const { normalizeText, normalizeTextWithRanges, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const date of ['Sep 22–Nov 6', '11 Oct', '11–13 Oct 2026', 'Oct 11-13', 'Dec 30, 2026–Jan 2, 2027']) {
+    const source = `Before ${date}; after.`;
+    const mapped = normalizeTextWithRanges(source, entries);
+    const spoken = normalizeText(date, entries);
+    assert.equal(mapped.text, `Before ${spoken}; after.`);
+    assert.equal(mapped.ranges.length, mapped.text.length);
+    const dateRanges = mapped.ranges.slice(7, 7 + spoken.length);
+    assert.ok(dateRanges.every(range => range.start >= 7 && range.end <= 7 + date.length && range.start < range.end));
+    assert.equal(Math.min(...dateRanges.map(range => range.start)), 7);
+    assert.equal(Math.max(...dateRanges.map(range => range.end)), 7 + date.length);
+    assert.equal(mapped.ranges.at(-1).end, source.length);
+  }
 });
 
 test('signed money and numbers keep their sign without changing ranges or hyphenated text', async () => {
@@ -88,6 +181,59 @@ test('signed money and numbers keep their sign without changing ranges or hyphen
   for (const range of mapped.ranges) assert(range.start >= 0 && range.end > range.start && range.end <= source.length);
   const at = mapped.text.indexOf('minus');
   assert(mapped.ranges.slice(at, at + 5).every(range => source.slice(range.start, range.end).includes('-')));
+});
+
+test('earnings cues expand attached K/M amounts and preserve the signs across a list', async () => {
+  const { normalizeText, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const [source, expected] of [
+    ['made +1.82M, +0.41M and −0.42M ', 'made plus one point eight two million, plus zero point four one million and minus zero point four two million '],
+    ['We make 0.41K and -0.42K.', 'We make zero point four one thousand and minus zero point four two thousand.'],
+    ['MADE 1.00M,0.10K, and +2K', 'MADE one million,zero point one thousand, and plus two thousand'],
+    ['She makes 1M or 2M.', 'She makes one million or two million.'],
+    ['Making 1M & 0.5K', 'Making one million and zero point five thousand'],
+    ['made +$1.82M, +0.41M and -€0.42M', 'made plus one point eight two million dollars, plus zero point four one million and minus zero point four two million euros'],
+  ]) assert.equal(normalizeText(source, entries), expected, source);
+});
+
+test('earnings context does not reinterpret measurements, file names, or later unrelated amounts', async () => {
+  const { normalizeText, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  for (const source of [
+    '+1.82M, 0.41K', 'made 1.82 m of rope', 'make 0.41 K', 'made 1.82m', 'make 0.41k',
+    'made a 1.82M pole', 'remade 1M', 'hand-made 1M', 'made 0.41KB and 1.82MB',
+    'made 1.82M.csv', 'made 1.82M/s', 'made +-1M', 'made\n1M',
+  ]) assert.doesNotMatch(normalizeText(source, entries), /million|thousand/, source);
+  for (const source of [
+    'made 1M. Size is 0.41M', 'made 1M; 0.41K', 'made 1M\nand 0.41M',
+    'made 1M, measured 0.41M and 0.42K', 'made 1M, 2m and 0.41M',
+  ]) {
+    const spoken = normalizeText(source, entries);
+    assert.equal((spoken.match(/million|thousand/g) || []).length, 1, source);
+    assert.match(spoken, /0\.41[KM]/, source);
+  }
+  assert.equal(normalizeText('made one item; then make 0.41K', entries), 'made one item; then make zero point four one thousand');
+  const source = 'made +1.82M, +0.41M and −0.42M; make 0.41K';
+  for (const language of ['off', 'french']) assert.equal(normalizeText(source, entries, language), source);
+});
+
+test('each expanded earnings amount keeps its own read-along source span', async () => {
+  const { normalizeText, normalizeTextWithRanges, parseLexicon } = await import(MODULE);
+  const entries = parseLexicon(readFileSync(LEXICON, 'utf8'));
+  const source = 'We made +1.82M, +0.41M and −0.42M; we make 0.41K.';
+  const mapped = normalizeTextWithRanges(source, entries);
+  assert.equal(mapped.text, normalizeText(source, entries));
+  assert.equal(mapped.ranges.length, mapped.text.length);
+  for (const [amount, words] of [
+    ['+1.82M', 'plus one point eight two million'], ['+0.41M', 'plus zero point four one million'],
+    ['−0.42M', 'minus zero point four two million'], ['0.41K', 'zero point four one thousand'],
+  ]) {
+    const start = source.indexOf(amount), at = mapped.text.indexOf(words);
+    assert(at >= 0);
+    assert.ok(mapped.ranges.slice(at, at + words.length).every(range => range.start === start && range.end === start + amount.length), amount);
+  }
+  const and = mapped.text.indexOf('and');
+  assert.equal(mapped.ranges[and].start, source.indexOf('and'));
 });
 
 test('Supertonic speaks version components as whole numbers separated by point', async () => {

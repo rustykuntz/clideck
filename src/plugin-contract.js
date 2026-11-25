@@ -8,6 +8,8 @@ const CORE_PLUGIN_EVENTS = Object.freeze([
   'content.show',
   'config',
   'output',
+  'session.reply',
+  'user.notice',
 ]);
 
 const CORE_PLUGIN_EVENT_SET = new Set(CORE_PLUGIN_EVENTS);

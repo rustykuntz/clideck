@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Chat apps</title>
+<!--
+  Chat apps — the plugin's workspace tab. Sandboxed, opaque origin: it links the host's app.css and uses the
+  Settings classes (set-section, set-card, set-row, set-select, plg-*) so it reads as part of CliDeck, the same
+  as the Telegram and Google Workspace pages. Everything else crosses postMessage: clideck.ready up;
+  clideck.init / message / theme down; clideck.send to the plugin server.
+-->
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13px; overflow:auto; }
+  .page { max-width:720px; margin:0 auto; padding:26px 24px 40px; box-sizing:border-box; }
+  .cx-head { display:flex; align-items:flex-start; gap:12px; margin-bottom:22px; }
+  .cx-ic { width:38px; height:38px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); }
+  .cx-titles { flex:1; min-width:0; }
+  .cx-name { font-size:16px; font-weight:650; }
+  .cx-sub { margin-top:3px; font-size:12.5px; line-height:1.5; color:var(--faint); }
+  .cx-loading { padding:30px 0; text-align:center; font-size:12.5px; color:var(--faint); }
+  .set-card .set-row { border-bottom:0; padding:8px 0; }
+  .set-card > .plg-notice { margin:0 0 12px; }
+
+  /* App card head: brand mark, name + account, live status. */
+  .cx-app { display:flex; align-items:center; gap:11px; }
+  .cx-app-ic { width:32px; height:32px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#25d366; background:color-mix(in srgb,#25d366 14%,transparent); }
+  [data-theme="light"] .cx-app-ic { color:#128c4b; }
+  .cx-app-t { flex:1; min-width:0; }
+  .cx-app-name { font-size:13.5px; font-weight:600; }
+  .cx-app-acct { margin-top:1px; font:11.5px var(--mono); color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cx-app-off { margin-left:2px; height:28px; padding:0 9px; }
+  .cx-body { margin-top:13px; padding-top:13px; border-top:1px solid var(--border); }
+  .cx-lede { margin:0 0 12px; font-size:12.5px; line-height:1.55; color:var(--dim); }
+  .cx-ask { margin-right:auto; font-size:12.5px; color:var(--dim); }
+  .cx-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
+  .cx-actions > button { height:32px; box-sizing:border-box; padding-top:0; padding-bottom:0; }
+  .cx-wait { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim); }
+  .cx-wait-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+
+  /* QR: always a white tile with a quiet zone, so a phone can read it in either theme. */
+  .cx-pair { display:grid; grid-template-columns:auto minmax(0,1fr); gap:18px; align-items:center; }
+  .cx-qr { width:188px; height:188px; padding:10px; box-sizing:content-box; border-radius:12px; background:#fff; box-shadow:0 0 0 1px var(--border), 0 8px 24px var(--shadow); display:grid; place-items:center; }
+  .cx-qr img { width:100%; height:100%; image-rendering:pixelated; display:block; }
+  .cx-qr .plg-spinner { color:#888; }
+  .cx-steps { margin:0 0 14px; padding-left:19px; font-size:12.5px; line-height:1.8; color:var(--dim); }
+  .cx-steps b { color:var(--text); font-weight:600; }
+
+  /* Connect a group: one row of choices, one primary action. */
+  .cx-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:10px; align-items:end; }
+  .cx-field { display:grid; gap:6px; min-width:0; }
+  .cx-field-l { display:flex; align-items:center; justify-content:space-between; font-size:11.5px; font-weight:600; color:var(--dim); }
+  .cx-field .set-select { width:100%; height:34px; padding:0 9px; background:var(--surface-1); text-overflow:ellipsis; }
+  .cx-form > .plg-primary { height:34px; box-sizing:border-box; padding-top:0; padding-bottom:0; }
+  .cx-refresh { display:inline-flex; align-items:center; gap:4px; padding:0 2px; border:0; border-radius:5px; background:none; color:var(--faint); font:500 11px var(--sans); cursor:pointer; }
+  .cx-refresh:hover:not(:disabled) { color:var(--text); }
+  .cx-refresh:disabled { opacity:.5; cursor:default; }
+  .cx-refresh:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .cx-refresh svg { width:12px; height:12px; }
+  .cx-refresh.spin svg { animation:cx-spin .8s linear infinite; }
+  @keyframes cx-spin { to { transform:rotate(360deg); } }
+  .cx-empty { display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:12.5px; line-height:1.55; color:var(--dim); }
+  .cx-empty > button { flex:0 0 auto; }
+
+  /* Connected groups: a list inside one card, hairline between rows. */
+  .cx-links { padding:4px 14px; }
+  .cx-link { display:flex; align-items:center; gap:12px; padding:11px 0; }
+  .cx-link + .cx-link, .cx-link + .cx-pending + .cx-link { border-top:1px solid var(--border); }
+  .cx-hash { width:28px; height:28px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; color:var(--dim); background:var(--surface-1); border:1px solid var(--border); }
+  .cx-link-t { flex:1; min-width:0; }
+  .cx-link-name { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cx-link-to { display:flex; align-items:center; gap:5px; margin-top:2px; font-size:12px; color:var(--dim); min-width:0; }
+  .cx-link-to svg { flex:0 0 auto; color:var(--faint); }
+  .cx-link-to span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cx-proj { color:var(--faint); }
+  .cx-gone { color:var(--danger); }
+  .cx-link .cx-actions { flex:0 0 auto; }
+  .cx-link .cx-actions > button { height:30px; }
+  .cx-link .cx-ask { margin-right:2px; font-size:12px; }
+  .cx-pending { margin:0 0 11px; }
+  .cx-pending-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; margin-top:9px; }
+  .cx-pending-actions > button { height:30px; box-sizing:border-box; padding-top:0; padding-bottom:0; }
+  .cx-pending-q { margin-right:auto; color:var(--dim); }
+
+  .cx-notes { margin:0; padding-left:17px; display:grid; gap:5px; font-size:12px; line-height:1.55; color:var(--faint); }
+  .cx-notes b { color:var(--dim); font-weight:600; }
+
+  @media (max-width:560px) {
+    .page { padding:18px 14px 32px; }
+    .cx-form { grid-template-columns:1fr; }
+    .cx-pair { grid-template-columns:1fr; justify-items:center; }
+    .cx-pair-copy { justify-self:stretch; }
+    .cx-link { flex-wrap:wrap; }
+    .cx-link .cx-actions { width:100%; justify-content:flex-end; }
+    .cx-empty { flex-direction:column; align-items:stretch; }
+  }
+  @media (prefers-reduced-motion:reduce) { .cx-refresh.spin svg { animation:none; } }
+</style>
+</head>
+<body>
+<main class="page" id="root" aria-live="polite"><div class="cx-loading">Loading…</div></main>
+<script src="app.js"></script>
+</body>
+</html>

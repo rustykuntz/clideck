@@ -11,8 +11,11 @@ const NAMED_ICONS = {
   text: '<path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   terminal: '<path d="M5 7l4 4-4 4"/><path d="M12 17h7"/>',
+  phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.6"/><path d="M10.5 18.5h3"/>',
+  send: '<path d="M21 4 3 11.2l6.6 2.3L18 7.5l-6.3 7.2.2 5.3 3.3-3.9 4.1 3z"/>',
   plugin: '<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/>',
 };
+export const isNamedIcon = (icon) => Object.hasOwn(NAMED_ICONS, String(icon || ""));
 export function actionIcon(icon) {
   const name = String(icon || "");
   const node = document.createElement("span");

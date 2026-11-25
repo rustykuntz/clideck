@@ -2,10 +2,15 @@
 // turns are fetched from the append-only transcript JSONL in small pages as this list is scrolled upward.
 import { store } from "../store.js";
 import { requestTranscriptPage } from "../ws.js";
-import { h, shortId } from "../util.js";
+import { h, shortId, copyText } from "../util.js";
+import { toast } from "./toast.js";
+import { openMenu } from "./menu.js";
 
 const PAGE_SIZE = 30;
 const NEAR_TOP = 64;          // px from the top that pulls the next page in
+const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const DOWNLOAD_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>';
+const EXPORT_PAGE = 100;      // the engine's largest transcript page
 const CLOSE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 let overlay = null;
@@ -66,7 +71,18 @@ function openHistory(focusTarget) {
   search.addEventListener("input", () => { if (!search.isComposing) refresh(200); });
   search.addEventListener("compositionstart", () => { search.isComposing = true; clearTimeout(searchTimer); requestId = null; });
   search.addEventListener("compositionend", () => { search.isComposing = false; refresh(200); });
-  field.append(search, clear); head.append(heading, field, close);
+  field.append(search, clear);
+  // Whole-conversation actions: they always cover every saved turn, not just the loaded or matching ones.
+  const copyAll = h("button", "hist-act", COPY_ICON); copyAll.type = "button";
+  copyAll.title = "Copy conversation"; copyAll.setAttribute("aria-label", "Copy conversation");
+  copyAll.onclick = () => exportConversation("copy", copyAll);
+  const download = h("button", "hist-act", DOWNLOAD_ICON); download.type = "button";
+  download.title = "Download conversation"; download.setAttribute("aria-label", "Download conversation"); download.setAttribute("aria-haspopup", "menu");
+  download.onclick = () => openMenu(download, [
+    { label: "Text file (.txt)", onSelect: (ctl) => { ctl.close(); exportConversation("txt", download); } },
+    { label: "Markdown (.md)", onSelect: (ctl) => { ctl.close(); exportConversation("md", download); } },
+  ], { align: "end" });
+  head.append(heading, field, copyAll, download, close);
   updates = h("button", "hist-updates"); updates.type = "button"; updates.hidden = true;
   updates.onclick = () => refresh();
 
@@ -192,6 +208,10 @@ function turnElement(turn) {
     if (!Number.isNaN(date.getTime())) time.textContent = date.toLocaleString();
     if (time.textContent) meta.append(time);
   }
+  const copy = h("button", "hist-turn-copy", COPY_ICON); copy.type = "button";
+  copy.title = "Copy message"; copy.setAttribute("aria-label", "Copy message");
+  copy.onclick = async () => { const ok = await copyText(String(turn.text || "")); toast({ id: "history-copy", type: ok ? "success" : "error", body: ok ? "Message copied" : "Couldn't copy the message." }); };
+  meta.append(copy);
   const text = h("pre", "hist-text");
   const value = String(turn.text || "");
   let highlightNote = null;
@@ -209,6 +229,58 @@ function turnElement(turn) {
   }
   row.append(meta, text); if (highlightNote) row.append(highlightNote);
   return row;
+}
+
+// ── whole-conversation export ──
+// Reads every saved turn (newest page first, then older), independent of what the list has loaded or matched.
+let exporting = false;
+function fetchAllTurns(id) {
+  return new Promise((resolve, reject) => {
+    const turns = [], tag = "history-all-" + Date.now().toString(36) + "-";
+    let page = 0, before;
+    const off = store.on("transcript:page", (result) => {
+      if (result.sessionId !== id || typeof result.requestId !== "string" || result.requestId !== tag + page) return;
+      if (!result.success) { off(); reject(new Error(result.error || "Couldn't read the saved conversation.")); return; }
+      turns.unshift(...(Array.isArray(result.turns) ? result.turns : []));
+      if (result.hasMore === true && Number.isSafeInteger(result.cursor) && page < 2000) { before = result.cursor; next(); }
+      else { off(); resolve(turns); }
+    });
+    const next = () => {
+      if (!store.connected) { off(); reject(new Error("Offline — reconnect to export the conversation.")); return; }
+      page++; requestTranscriptPage(id, before, EXPORT_PAGE, { requestId: tag + page });
+    };
+    next();
+  });
+}
+function stamp(ts) { const d = ts ? new Date(ts) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : ""; }
+function formatConversation(name, turns, markdown) {
+  const who = (t) => (t.role === "user" ? "You" : "Agent");
+  if (markdown) {
+    return "# " + name + "\n\n" + turns.map((t) => "### " + who(t) + (stamp(t.ts) ? " · " + stamp(t.ts) : "") + "\n\n" + String(t.text || "").trim() + "\n").join("\n");
+  }
+  return name + "\n\n" + turns.map((t) => who(t) + (stamp(t.ts) ? " · " + stamp(t.ts) : "") + "\n" + String(t.text || "").trim() + "\n").join("\n");
+}
+async function exportConversation(kind, button) {
+  if (exporting || !sessionId) return;
+  const id = sessionId, session = store.sessions.get(id), name = (session && session.name) || shortId(id);
+  exporting = true; button.disabled = true; button.classList.add("busy");
+  try {
+    const turns = await fetchAllTurns(id);
+    if (!turns.length) { toast({ id: "history-export", type: "info", body: "There's no saved conversation yet." }); return; }
+    const text = formatConversation(name, turns, kind === "md");
+    if (kind === "copy") {
+      const ok = await copyText(text);
+      toast({ id: "history-export", type: ok ? "success" : "error", body: ok ? "Conversation copied (" + turns.length + " messages)" : "Couldn't copy. Use Download instead." });
+      return;
+    }
+    const file = (name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "conversation") + "-" + new Date().toISOString().slice(0, 10) + "." + kind;
+    const url = URL.createObjectURL(new Blob([text], { type: (kind === "md" ? "text/markdown" : "text/plain") + ";charset=utf-8" }));
+    const a = h("a"); a.href = url; a.download = file; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast({ id: "history-export", type: "success", body: "Saved " + file });
+  } catch (error) {
+    toast({ id: "history-export", type: "error", body: error.message || "Couldn't export the conversation." });
+  } finally { exporting = false; button.disabled = false; button.classList.remove("busy"); }
 }
 
 function renderMore(empty = false) {

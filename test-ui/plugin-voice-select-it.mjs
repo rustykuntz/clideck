@@ -2,7 +2,7 @@
 // the engine inventory echo/reopen, and deliver the updated ordinary setting to the live plugin Worker.
 import { installFakeDom, installFakeWs } from "./fakedom.mjs";
 
-const { body } = installFakeDom();
+const { body, winFire } = installFakeDom();
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel", userAgent: "", clipboard: {} } });
 const ws = installFakeWs();
 for (const id of ["settings-btn", "theme-btn", "plugin-actions"]) { const el = document.createElement("button"); el.id = id; body.append(el); }
@@ -18,10 +18,17 @@ globalThis.Worker = FakeWorker;
 // that played from one that silently did nothing — which is the whole of the missing-clip report.
 const audios = [];
 globalThis.Audio = class {
-  constructor(src) { this.src = src; this.listeners = new Map(); audios.push(this); }
+  constructor(src) { this.src = src; this.listeners = new Map(); this.paused = true; this.currentTime = 0; this.plays = 0; audios.push(this); }
   addEventListener(event, handler) { this.listeners.set(event, handler); }
-  play() { return globalThis.__previewFails ? Promise.reject(new Error('no source')) : Promise.resolve(); }
-  pause() {} removeAttribute() {} load() {}
+  play() {
+    this.plays++;
+    if (globalThis.__previewFails) return Promise.reject(new Error('no source'));
+    if (globalThis.__previewPending) return new Promise(resolve => { this.resolvePlay = () => { this.paused = false; resolve(); }; });
+    this.paused = false; return Promise.resolve();
+  }
+  pause() { this.paused = true; }
+  removeAttribute() { this.src = ''; }
+  load() { this.currentTime = 0; }
 };
 globalThis.__previewFails = false;
 
@@ -44,6 +51,7 @@ const { connectWs } = await import("../public/js/ws.js");
 const { store } = await import("../public/js/store.js");
 const { initPluginHost } = await import("../public/js/ui/plugin-host.js");
 const { openPluginSettings } = await import("../public/js/ui/settings.js");
+const { reserveRealtimeMedia } = await import("../public/js/ui/plugin-media.js");
 connectWs(); await tick(); initPluginHost(); store.applyEvent({ type: "plugins", plugins: [plugin("female-1")] });
 openPluginSettings("supertonic"); await tick();
 
@@ -74,11 +82,34 @@ audios.length = 0; globalThis.__previewFails = false;
 previewBtn._fire("click"); await tick();
 ok("it plays the SELECTED option's clip, resolved under the plugin's own static path",
   audios.length === 1 && audios[0].src === "/plugins/supertonic/public/voices/female-1-preview.mp3");
-ok("and it shows it is playing, so a second click can stop it",
-  previewBtn.className.includes("playing") && previewBtn.getAttribute("aria-pressed") === "true");
+ok("and it offers Pause while the selected sample plays",
+  previewBtn.className.includes("playing") && previewBtn.getAttribute("aria-pressed") === "true" && previewBtn.getAttribute("aria-label") === "Pause Female 1 preview");
+audios[0].currentTime = 1.25;
 previewBtn._fire("click"); await tick();
-ok("a second click stops it and paints the button back",
-  !previewBtn.className.includes("playing") && previewBtn.getAttribute("aria-pressed") === "false");
+ok("Pause silences the sample and preserves its playback position",
+  audios[0].paused && audios[0].currentTime === 1.25 && !previewBtn.className.includes("playing") && previewBtn.getAttribute("aria-pressed") === "false");
+previewBtn._fire("click"); await tick();
+ok("Play resumes the same sample without another audio object or resetting its position",
+  audios.length === 1 && audios[0].plays === 2 && !audios[0].paused && audios[0].currentTime === 1.25);
+const first = audios[0]; select.value = 'female-2'; select._fire('change');
+ok("changing voice immediately stops and releases the previous sample without autoplay",
+  first.paused && first.src === '' && previewBtn.getAttribute('aria-label') === 'Play Female 2 preview' && audios.length === 1);
+previewBtn._fire('click'); await tick(); first.listeners.get('ended')();
+ok("an old sample's ended event cannot stop the new voice", !audios[1].paused && previewBtn.getAttribute('aria-pressed') === 'true');
+audios[1].listeners.get('ended')();
+ok("natural completion returns the control to Play", previewBtn.getAttribute('aria-pressed') === 'false');
+select.value = 'female-1'; select._fire('change');
+globalThis.__previewPending = true; previewBtn._fire('click'); const late = audios.at(-1);
+select.value = 'female-2'; select._fire('change'); late.resolvePlay(); await tick();
+ok("late loading completion cannot restart a voice after selection changes", late.paused && previewBtn.getAttribute('aria-label') === 'Play Female 2 preview');
+previewBtn._fire('click'); const paused = audios.at(-1); previewBtn._fire('click'); paused.resolvePlay(); await tick();
+ok("Pause while loading also prevents late playback", paused.paused && previewBtn.getAttribute('aria-pressed') === 'false');
+globalThis.__previewPending = false; select.value = 'female-1'; select._fire('change');
+previewBtn._fire('click'); await tick(); const unfocused = audios.at(-1); winFire('blur', {});
+ok('leaving the browser stops and releases the sample', unfocused.paused && unfocused.src === '');
+const release = reserveRealtimeMedia('voice-agent'), beforeBusy = audios.length;
+previewBtn._fire('click'); await tick();
+ok('a preview cannot play into an active voice conversation', audios.length === beforeBusy); release();
 
 // The one that matters: a clip that cannot play must SAY so.
 audios.length = 0; globalThis.__previewFails = true;

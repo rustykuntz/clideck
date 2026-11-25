@@ -1,6 +1,7 @@
 const http = require('http');
 const https = require('https');
 const { open, readFile } = require('fs/promises');
+const { existsSync } = require('fs');
 const { resolve } = require('path');
 const { MAX_CONTENT_BYTES } = require('./content-store');
 const { readPluginManifest } = require('./plugin-manifest');
@@ -17,16 +18,23 @@ function usage(pluginCommands = []) {
     '  clideck ask status [--all] [--json] [--url <url>]',
     '  clideck ask <target> <message> [--timeout 10m] [--url <url>]',
     '  clideck ask <target> <message> --steer [--url <url>]',
+    '  clideck monitor add --run <command> [--every 5m] [--wake <session>] [--resume-session]',
+    '  clideck monitor list|read|pause|resume|remove|check|acknowledge [id] [--json]',
+    '  clideck monitor --help',
+    '  clideck errors [list | acknowledge <id>] [--json] [--url <url>]',
     '  cat message.txt | clideck ask <target> [--timeout 10m]',
     '  clideck show <path> [--kind <kind>] [--url <url>]',
     '  clideck show --template > report.html',
     '  cat output | clideck show --stdin --kind <kind> --name <name>',
     '  clideck prompt "<question>" [--options "a,b,c"] [--timeout 10m]',
     '  clideck annotate <image-file> [--timeout 10m]',
-    '  clideck plugins [--json] [--url <url>]',
-    '  clideck plugin install <folder> [--url <url>]',
+    '  clideck plugins [--all] [--json] [--url <url>]',
+    '  clideck plugin info|enable|disable <id> [--json]',
+    '  clideck plugin settings <id> [--stdin] [--json]',
+    '  clideck plugin install <id-or-folder> [--url <url>]',
     '  clideck plugin validate <folder> [--json]',
     '  clideck [--url <url>] <plugin-id>/<command> [arguments]',
+    '  clideck notify "<short message>" [--json]',
     '',
     'Running clideck starts the local engine on port 4000; --port, CLIDECK_PORT, or PORT overrides it.',
     'Agents lists current-project sessions, including dormant (stopped) ones; --all groups every project.',
@@ -202,12 +210,18 @@ function requestJson(baseUrl, pathname, options = {}) {
           new Error(connectionMessage),
         ));
         response.on('end', () => {
+          const status = response.statusCode || 500;
           let responseBody = {};
           try {
-            responseBody = text ? JSON.parse(text) : {};
-          } catch {}
-          const status = response.statusCode || 500;
-          if (status < 200 || status >= 300) {
+            responseBody = JSON.parse(text);
+          } catch {
+            finish(rejectRequest, new Error(status < 200 || status >= 300 ? friendlyError({}, status, pathname)
+              : 'CliDeck returned an invalid JSON response. The operation could not be confirmed; check before retrying.'));
+            return;
+          }
+          if (!responseBody || typeof responseBody !== 'object' || Array.isArray(responseBody)) {
+            finish(rejectRequest, new Error('CliDeck returned an invalid response. The operation could not be confirmed; check before retrying.'));
+          } else if (status < 200 || status >= 300 || responseBody.ok === false || responseBody.error) {
             finish(rejectRequest, new Error(friendlyError(responseBody, status, pathname)));
           } else finish(resolveRequest, responseBody);
         });
@@ -356,25 +370,70 @@ function formatPlugins(plugins) {
     const commands = (plugin.commands || []).map((command) => (
       command.usage
     )).join(', ');
-    return `${plugin.enabled ? plugin.status : 'disabled'}  ${plugin.name} ${plugin.version}`
-      + `${commands ? ` — ${commands}` : ''}`;
+    return `${plugin.installed === false ? 'available' : plugin.enabled ? plugin.status : 'disabled'}  ${plugin.id} — ${plugin.name} ${plugin.version}`
+      + `${plugin.description ? `\n  ${oneLine(plugin.description, 300)}` : ''}${commands ? `\n  ${commands}` : ''}`;
   }).join('\n');
 }
 
 async function runPlugins(args, env, io) {
-  const options = parseOptions(args, env);
+  const options = parseOptions(args, env, { allowAll: true });
+  if (options.help) return io.stdout.write('clideck plugins [--all] [--json]\nLists installed plugins; --all includes available packages without loading them. Use clideck plugin info <id> for setup and commands.\n');
   if (options.positional.length) throw new Error(usage());
-  const plugins = await getPlugins(options.url);
+  const plugins = options.all ? (await requestJson(options.url, '/api/plugins?all=true')).plugins : await getPlugins(options.url);
   io.stdout.write(options.json
     ? `${JSON.stringify(plugins, null, 2)}\n`
     : `${formatPlugins(plugins)}\n`);
 }
 
-async function runPluginAdmin(args, env, io) {
+async function runErrors(args, env, io) {
   const options = parseOptions(args, env);
+  if (options.help) return io.stdout.write('clideck errors [list | acknowledge <id>] [--json]\nInspect this session\'s background failures. Only acknowledge uncertain delivery after checking the terminal; nothing is resent.\n');
+  const [action = 'list', id, ...extra] = options.positional;
+  if (!['list', 'acknowledge'].includes(action) || extra.length || (action === 'list' ? id : !id)) throw Error('Use clideck errors list or clideck errors acknowledge <id>.');
+  const callerId = requireCaller(env);
+  const result = await requestJson(options.url, '/api/session/errors' + (action === 'list' ? `?callerSessionId=${encodeURIComponent(callerId)}` : ''),
+    action === 'list' ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, id, callerSessionId: callerId }) });
+  if (options.json) return io.stdout.write(JSON.stringify(result.notices, null, 2) + '\n');
+  const safe = value => String(value).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, char => `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`);
+  io.stdout.write(result.notices.length ? result.notices.map(row => safe(`${row.id} | ${row.operation} | ${row.state}\n${row.message}\n${row.details}`)).join('\n\n') + '\n' : 'No error notices for this session.\n');
+}
+
+async function runNotify(args, env, io) {
+  const options = parseOptions(args, env);
+  if (options.help) return io.stdout.write('clideck notify "<short message>" [--json]\nNotify the user when a background result matters. Saved in CliDeck; configured plugins may also deliver it.\n');
+  if (options.positional.length !== 1) throw Error('Use clideck notify "<short message>".');
+  const result = await requestJson(options.url, '/api/session/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callerSessionId: requireCaller(env), text: options.positional[0] }) });
+  io.stdout.write(options.json ? JSON.stringify(result) + '\n' : result.message + '\n');
+}
+
+async function runPluginAdmin(args, env, io) {
+  const options = parseOptions(args, env, { allowContent: true });
+  if (options.help) return io.stdout.write('clideck plugin info|enable|disable|install|validate|settings <id-or-folder> [--json]\nsettings displays values with secrets hidden; --stdin applies a JSON object. Only install or change plugins when the user requests or approves it.\n');
   const [operation, path, ...extra] = options.positional;
-  if (!path || extra.length || (operation !== 'install' && operation !== 'validate')) {
+  if (!path || extra.length || !['install', 'validate', 'info', 'enable', 'disable', 'settings'].includes(operation)
+    || options.stdin && operation !== 'settings' || options.template || options.kind || options.name) {
     throw new Error(usage());
+  }
+  if (['info', 'settings', 'enable', 'disable'].includes(operation)) {
+    let result;
+    if (operation === 'info' || operation === 'settings' && !options.stdin) {
+      result = await requestJson(options.url, `/api/plugins/info?id=${encodeURIComponent(path)}`);
+    } else {
+      let values;
+      if (options.stdin) {
+        try { values = JSON.parse(await readPluginStdin(io.stdin)); } catch { throw Error('Pass a JSON object on stdin; secret values are never printed.'); }
+      }
+      result = await requestJson(options.url, '/api/plugins/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: operation, id: path, ...(options.stdin && { values }) }), timeoutMs: 30_000 });
+    }
+    const plugin = result.plugin;
+    if (options.json) io.stdout.write(JSON.stringify(plugin, null, 2) + '\n');
+    else if (operation === 'info') io.stdout.write(formatPlugins([plugin]) + '\n' + (plugin.help || 'No additional setup instructions.') + '\n');
+    else if (operation === 'settings') io.stdout.write(JSON.stringify({ settings: plugin.settings, values: plugin.values || {}, configured: plugin.configured || {} }, null, 2) + '\n');
+    else io.stdout.write(`${path}: ${plugin.status}.\n`);
+    return;
   }
   if (operation === 'validate') {
     const manifest = readPluginManifest(resolve(process.cwd(), path));
@@ -398,10 +457,10 @@ async function runPluginAdmin(args, env, io) {
   const result = await requestJson(options.url, '/api/plugins/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: resolve(process.cwd(), path) }),
+    body: JSON.stringify(/^[a-z][a-z0-9-]{0,62}$/.test(path) && !existsSync(resolve(process.cwd(), path)) ? { id: path } : { path: resolve(process.cwd(), path) }),
     timeoutMs: 30_000,
   });
-  io.stdout.write(`Installed ${result.pluginId}.\n`);
+  io.stdout.write(options.json ? JSON.stringify(result) + '\n' : `Installed ${result.pluginId}.\n`);
 }
 
 async function runPluginCommand(address, args, env, io) {
@@ -417,8 +476,9 @@ async function runPluginCommand(address, args, env, io) {
         sessionId: requireCaller(env),
         args,
         stdin: await readPluginStdin(io.stdin),
+        timeoutMs: MAX_TIMEOUT_MS,
       }),
-      timeoutMs: 60 * 60 * 1000,
+      timeoutMs: MAX_TIMEOUT_MS + 5000,
     },
   );
   if (result.stdout) io.stdout.write(String(result.stdout));
@@ -608,6 +668,9 @@ async function run(args, env = process.env, io = process) {
   const [command, ...rest] = commandArgs;
   if (command === 'agents') return runAgents(rest, commandEnv, io);
   if (command === 'ask') return runAsk(rest, commandEnv, io);
+  if (command === 'monitor') return require('./monitor-cli').runMonitorCli(rest, commandEnv, io, requestJson);
+  if (command === 'errors') return runErrors(rest, commandEnv, io);
+  if (command === 'notify') return runNotify(rest, commandEnv, io);
   if (command === 'show') return runShow(rest, commandEnv, io);
   if (command === 'prompt') return runPrompt(rest, commandEnv, io);
   if (command === 'annotate') return runAnnotate(rest, commandEnv, io);

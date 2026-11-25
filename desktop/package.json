@@ -1,0 +1,20 @@
+{
+  "name": "clideck-desktop",
+  "version": "2.7.0",
+  "private": true,
+  "description": "CliDeck desktop client and independently running local engine",
+  "author": "Or Kuntzman",
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "prepare:runtime": "node scripts/prepare-runtime.cjs",
+    "build": "npm run prepare:runtime && electron-builder --config builder.cjs --publish never",
+    "build:dir": "npm run prepare:runtime && electron-builder --config builder.cjs --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0"
+  }
+}

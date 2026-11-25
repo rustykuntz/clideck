@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CliDeck</title>
+<link rel="stylesheet" href="renderer.css">
+<script src="renderer.js" defer></script>
+</head>
+<body>
+<main class="stage" id="stage" data-state="starting" aria-live="polite">
+  <img class="mark" src="../assets/icon.png" alt="" width="104" height="104" draggable="false">
+  <h1 class="title" id="title">CliDeck</h1>
+  <p class="sub" id="sub">Starting the engine…</p>
+  <div class="bar" aria-hidden="true"><i></i></div>
+  <section class="problem" id="problem" hidden>
+    <div class="detail">
+      <pre class="error" id="error"></pre>
+      <button class="copy" id="copy" type="button" title="Copy details" aria-label="Copy details">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+      </button>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="retry" type="button">Try again</button>
+      <button class="btn" id="logs" type="button" hidden>Show logs</button>
+      <button class="btn quiet" id="quit" type="button">Quit</button>
+    </div>
+  </section>
+</main>
+<footer class="foot" id="version"></footer>
+</body>
+</html>

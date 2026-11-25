@@ -14,8 +14,12 @@ import { allThemes, getTheme, defaultThemeId, setDefaultTheme } from "../termina
 import { previewHtml } from "./theme-picker.js";
 import { themePref, setThemePref, onThemePref, THEME_PREFS, THEME_LABELS } from "../theme.js";
 import { getPrefs, setPref, onPrefs, enableBrowser, notifyPermission, previewSound, SOUND_OPTS, DISPATCH_OPTS, MINWORK_OPTS } from "../notify.js";
-import { pluginClientError, onPluginHostChange } from "./plugin-host.js";
+import { pluginClientError, onPluginHostChange, pluginActionContext } from "./plugin-host.js";
+import { resolveActions, runAction, onActionsChange } from "./action-registry.js";
+import { actionIcon, isNamedIcon } from "./action-icon.js";
+import { realtimeMediaOwner } from "./plugin-media.js";
 import { backupControls, isRestoreOpen, isBackupBusy } from "./backup-restore.js";
+import { isDesktop, desktop, desktopState } from "./desktop.js";
 import { hotkeyComboFromEvent, hotkeyConflict, hotkeyCodeFromEvent, isFunctionKey, ctrlVPasteEnabled } from "./hotkeys.js";
 
 const CLOSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -27,6 +31,7 @@ const CATS = [
   { id: "plugins", label: "Plugins" },
   { id: "notifications", label: "Notifications" },
   { id: "appearance", label: "Appearance" },
+  ...(isDesktop() ? [{ id: "desktop", label: "Desktop app" }] : []),
 ];
 
 let overlay = null, els = null, cat = "general", offs = [];
@@ -37,6 +42,7 @@ let providerArgsOpen = false;
 let unsaved = false;
 let selectedPlugin = null, pluginQuery = "", pluginTrust = false, pluginNotice = null, pluginBusy = null;
 const quietSettingRequests = new Set();
+const pluginSettingGroups = new Set();
 const IS_MAC = /Mac|iPhone|iPad/i.test((typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || "");
 
 const genId = () => "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -44,6 +50,10 @@ const genId = () => "c" + Date.now().toString(36) + Math.random().toString(36).s
 export function openSettings() {
   if (overlay) { close(); return; }
   build();
+  const stopHiddenPreview = () => { if (document.hidden) stopPluginPreview(); };
+  window.addEventListener("blur", stopPluginPreview);
+  document.addEventListener("visibilitychange", stopHiddenPreview);
+  offs.push(() => { window.removeEventListener("blur", stopPluginPreview); document.removeEventListener("visibilitychange", stopHiddenPreview); });
   offs.push(store.on("archive.status", paintArchiveStatus), store.on("connection", () => { settingsSection("archive")?._syncArchive?.(); paintArchiveStatus(); }));
   offs.push(store.on("engine.update", renderFooter), store.on("connection", renderFooter));
   offs.push(store.on("availability", () => { if (cat === "agents") renderBody(); }));
@@ -55,6 +65,7 @@ export function openSettings() {
   }));
   offs.push(store.on("plugin:result", onPluginResult));
   offs.push(onPluginHostChange(() => { if (cat === "plugins") renderBody(); }));
+  offs.push(onActionsChange(() => { if (cat === "plugins" && selectedPlugin) renderBody(); }));
   offs.push(onThemePref(() => { if (cat === "appearance") renderNav(); }));
   offs.push(onPrefs(() => { if (cat === "notifications") renderBody(); }));
   offs.push(store.on("config", () => {
@@ -140,6 +151,7 @@ function renderBody() {
   else if (cat === "plugins") renderPlugins();
   else if (cat === "notifications") renderNotifications();
   else if (cat === "appearance") renderAppearance();
+  else if (cat === "desktop") renderDesktopApp();
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
@@ -167,6 +179,40 @@ function section(title, key, note) {
   s.appendChild(head);
   return s;
 }
+// ── Desktop app (only inside the Electron shell) ───────────────────────────
+// The shell stores these; the page shows them from its last state and writes changes straight back.
+function renderDesktopApp() {
+  const prefs = { externalLinks: "browser", closeToTray: true, startAtLogin: false, ...((desktopState() || {}).preferences || {}) };
+  const mac = desktop.platform === "darwin";
+  const save = (patch, control) => Promise.resolve().then(() => desktop.setPreferences(patch)).catch(() => {
+    if (control) control();
+    import("./toast.js").then(({ toast }) => toast({ type: "error", body: "Could not save this desktop setting." }));
+  });
+  const sec = section("Window and links", "desktop");
+  const links = h("div", "set-row");
+  const lbl = h("div", "set-row-lbl");
+  lbl.append(h("div", "set-row-t", "Open web links"), h("div", "set-row-s", "From agents, documents and plugins. Google sign-in always uses your browser."));
+  const wrap = h("div", "set-sel-wrap"), sel = h("select", "set-select");
+  sel.setAttribute("aria-label", "Open web links");
+  for (const [value, label] of [["browser", "In your browser"], ["app", "In CliDeck"]]) { const op = h("option"); op.value = value; op.textContent = label; sel.append(op); }
+  sel.value = prefs.externalLinks === "app" ? "app" : "browser";
+  sel.addEventListener("change", () => { const was = sel.value === "app" ? "browser" : "app"; save({ externalLinks: sel.value }, () => { sel.value = was; }); });
+  wrap.append(sel); links.append(lbl, wrap); sec.append(links);
+  const tray = toggleRow(mac ? "Keep in the menu bar" : "Keep in the system tray",
+    "Closing the window leaves CliDeck " + (mac ? "in the menu bar" : "in the tray") + ". Agents keep running either way.",
+    prefs.closeToTray !== false, (on) => save({ closeToTray: on }, () => revert(tray, !on)));
+  const linux = desktop.platform === "linux";
+  const login = toggleRow("Open at login", linux ? "Not available on Linux yet." : "Start CliDeck when you sign in to this computer.",
+    !linux && prefs.startAtLogin === true, (on) => save({ startAtLogin: on }, () => revert(login, !on)));
+  if (linux) { const b = login.querySelector("[role=switch]"); b.disabled = true; b.setAttribute("aria-disabled", "true"); }
+  sec.append(tray, login);
+  els.body.append(sec);
+}
+function revert(row, on) {
+  const b = row.querySelector("[role=switch]"); if (!b) return;
+  b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on));
+}
+
 // ── General ─────────────────────────────────────────────────────────────────
 function renderGeneral() {
   renderAboutMe();
@@ -686,7 +732,7 @@ const BACK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
 const RELOAD = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>';
 const OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
 const PREVIEW_PLAY = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 5 8 5-8 5z"/></svg>';
-const PREVIEW_STOP = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.5"/></svg>';
+const PREVIEW_PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="4.5" width="3" height="11" rx="1"/><rect x="11.5" y="4.5" width="3" height="11" rx="1"/></svg>';
 let pluginPreview = null;
 
 function previewOption(select, definition) {
@@ -701,26 +747,49 @@ function previewUrl(plugin, source) {
 function paintPreviewButton(button, option, playing) {
   const name = String(option && option.label || "voice");
   button.classList.toggle("playing", playing);
-  button.innerHTML = playing ? PREVIEW_STOP : PREVIEW_PLAY;
+  button.innerHTML = playing ? PREVIEW_PAUSE : PREVIEW_PLAY;
   button.setAttribute("aria-pressed", playing ? "true" : "false");
-  button.setAttribute("aria-label", (playing ? "Stop " : "Play ") + name + " preview");
-  button.title = (playing ? "Stop " : "Play ") + name + " preview";
+  button.setAttribute("aria-label", (playing ? "Pause " : "Play ") + name + " preview");
+  button.title = (playing ? "Pause " : "Play ") + name + " preview";
 }
 function stopPluginPreview() {
   const active = pluginPreview; pluginPreview = null;
   if (!active) return;
+  active.attempt++;
   try { active.audio.pause(); active.audio.removeAttribute("src"); active.audio.load(); } catch {}
+  active.button.removeAttribute("aria-busy");
   paintPreviewButton(active.button, active.option, false);
 }
+function playPluginPreview(active) {
+  const attempt = ++active.attempt;
+  active.playing = true; active.button.setAttribute("aria-busy", "true");
+  paintPreviewButton(active.button, active.option, true);
+  try {
+    Promise.resolve(active.audio.play()).then(() => {
+      if (pluginPreview !== active || !active.playing) { active.audio.pause(); return; }
+      if (active.attempt === attempt) active.button.removeAttribute("aria-busy");
+    }).catch(() => { if (pluginPreview === active && active.attempt === attempt) active.failed(); });
+  } catch { active.failed(); }
+}
 function togglePluginPreview(plugin, definition, select, button) {
-  if (pluginPreview && pluginPreview.button === button) { stopPluginPreview(); return; }
+  if (realtimeMediaOwner()) {
+    import("./toast.js").then(({ toast }) => toast.info({ title: "Voice is active", body: "Pause your voice conversation before playing a sample." }));
+    return;
+  }
+  if (pluginPreview && pluginPreview.button === button) {
+    const active = pluginPreview;
+    if (active.playing) {
+      active.attempt++; active.playing = false; active.audio.pause(); button.removeAttribute("aria-busy");
+      paintPreviewButton(button, active.option, false);
+    } else playPluginPreview(active);
+    return;
+  }
   stopPluginPreview();
   const option = previewOption(select, definition), url = previewUrl(plugin, option && option.preview);
   if (!url) return;
   let audio;
   try { audio = new Audio(url); } catch { paintPreviewButton(button, option, false); return; }
-  const active = { audio, button, option }; pluginPreview = active;
-  paintPreviewButton(button, option, true);
+  const active = { audio, button, option, attempt: 0, playing: false }; pluginPreview = active;
   const finish = () => { if (pluginPreview === active) stopPluginPreview(); };
   // A preview that cannot play must SAY so. The button paints itself back to Play either way, and on a
   // missing or unplayable file that is indistinguishable from a dead control — which is what a user reports
@@ -736,7 +805,7 @@ function togglePluginPreview(plugin, definition, select, button) {
   };
   audio.addEventListener("ended", finish, { once: true });
   audio.addEventListener("error", failed, { once: true });
-  try { Promise.resolve(audio.play()).catch(failed); } catch { failed(); }
+  active.failed = failed; playPluginPreview(active);
 }
 
 function pluginById(id) { return store.plugins.find((plugin) => plugin.id === id) || null; }
@@ -749,7 +818,8 @@ function statusOf(plugin) {
 function pluginMark(plugin) {
   const mark = h("div", "plg-icon");
   const icon = String(plugin.icon || "").trim();
-  if (icon && icon.length <= 4 && !/[<>]/.test(icon)) mark.textContent = icon;
+  if (isNamedIcon(icon)) mark.append(actionIcon(icon));      // a named mark ("mic", "send") is drawn, never spelled out
+  else if (icon && icon.length <= 4 && !/[<>]/.test(icon)) mark.textContent = icon;
   else { mark.innerHTML = PLUGIN_ICON; mark.dataset.letter = String(plugin.name || plugin.id || "P").slice(0, 1).toUpperCase(); }
   return mark;
 }
@@ -786,14 +856,17 @@ function renderPlugins() {
   if (selected) { renderPluginDetail(selected); return; }
   selectedPlugin = null;
   const hero = h("div", "plg-head");
-  const intro = h("div", "plg-intro"); intro.append(h("div", "plg-kicker", "Local extensions"), h("div", "plg-copy", "Add viewers, tools and full workspaces without changing CliDeck."));
-  const install = actionButton("Install plugin", "plg-primary", "+", () => { pluginTrust = true; renderBody(); });
+  // Plugins that ship with CliDeck are always in the list (optional ones start off); the folder action is only
+  // for a plugin someone downloaded, so it says so rather than reading like the way to get the shipped ones.
+  const intro = h("div", "plg-intro"); intro.append(h("div", "plg-kicker", "Local extensions"), h("div", "plg-copy", "Plugins that come with CliDeck are already listed; turn on the ones you want. Downloaded plugins are added from their folder."));
+  const install = actionButton("Add from folder", "plg-primary", "+", () => { pluginTrust = true; renderBody(); });
+  install.title = "Add a plugin you downloaded, from its unpacked folder";
   hero.append(intro, install); els.body.append(hero);
 
   if (pluginTrust) {
     const trust = h("div", "plg-trust");
     const shield = h("div", "plg-trust-ic", PLUGIN_ICON);
-    const copy = h("div", "plg-trust-copy"); copy.append(h("div", "plg-trust-title", "Install trusted local code"), h("div", "plg-trust-sub", "Plugins run with your filesystem and network access, just like a CLI tool. CliDeck validates and copies the folder; it never runs an installer."));
+    const copy = h("div", "plg-trust-copy"); copy.append(h("div", "plg-trust-title", "Add a downloaded plugin"), h("div", "plg-trust-sub", "Choose its unpacked folder, the one with clideck-plugin.json. Plugins run with your files and network access, like a command-line tool. CliDeck checks and copies the folder; it never runs an installer."));
     const acts = h("div", "plg-trust-actions");
     const choose = actionButton("Choose plugin folder", "plg-primary", FOLDER, () => openFolderPicker(store.defaultCwd || "/", (path) => setPluginBusy("install", installPlugin(path))));
     const cancel = h("button", "plg-quiet", "Cancel"); cancel.type = "button"; cancel.onclick = () => { pluginTrust = false; renderBody(); };
@@ -804,12 +877,13 @@ function renderPlugins() {
   const search = h("div", "plg-search"); search.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>';
   const input = h("input"); input.type = "search"; input.placeholder = "Search plugins"; input.value = pluginQuery; input.setAttribute("aria-label", "Search plugins"); search.append(input);
   const open = actionButton("Open folder", "plg-tool", OPEN, () => setPluginBusy("openFolder", openPluginFolder()));
+  open.title = "Open CliDeck’s plugins folder";
   const refresh = actionButton("Refresh", "plg-tool", RELOAD, () => setPluginBusy("refresh", refreshPlugins()));
   tools.append(search, open, refresh); els.body.append(tools);
   if (pluginNotice) els.body.append(pluginNoticeEl());
   if (!store.connected) { els.body.append(stateCard("offline", "Engine offline", "Plugin management will return when CliDeck reconnects.")); return; }
   if (!store.pluginsLoaded) { els.body.append(pluginLoading()); return; }
-  if (!store.plugins.length) { els.body.append(stateCard("empty", "No plugins installed", "Choose a trusted plugin folder, or copy one into CliDeck’s plugin folder and refresh.")); return; }
+  if (!store.plugins.length) { els.body.append(stateCard("empty", "No plugins installed", "Add a downloaded plugin from its folder, or copy one into CliDeck’s plugins folder and press Refresh.")); return; }
   const list = h("div", "plg-list"); for (const plugin of store.plugins) list.append(pluginRow(plugin));
   const noMatches = stateCard("empty", "No matching plugins", "Try a name, ID or capability."); noMatches.hidden = true;
   const filter = () => {
@@ -848,6 +922,7 @@ function renderPluginDetail(plugin) {
   ident.append(names); top.append(back, ident, statusChip(status)); els.body.append(top);
   if (plugin.description) els.body.append(h("p", "plg-detail-desc", esc(plugin.description)));
   if (pluginNotice) els.body.append(pluginNoticeEl());
+  els.body.append(pluginSettingsActions(plugin));
   if (status.error) {
     const failure = h("div", "plg-failure"); failure.setAttribute("role", "alert"); failure.append(h("div", "plg-failure-title", status.state === "incompatible" ? "This plugin is incompatible" : "This plugin could not start"), h("div", "plg-failure-copy", esc(status.error)));
     els.body.append(failure);
@@ -870,6 +945,26 @@ function renderPluginDetail(plugin) {
   } else actions.append(h("span", "plg-bundled", "Bundled plugin · cannot be removed"));
   danger.append(actions); els.body.append(danger);
 }
+// A plugin's own buttons on its card (placement "plugin.settings"), e.g. Configure → its workspace. Generic:
+// any plugin may add them; they run with the active session's context and close Settings so the result shows.
+let pluginActionSeq = 0;
+function pluginSettingsActions(plugin) {
+  const host = h("div", "plg-card-actions"); host.hidden = true;
+  const seq = ++pluginActionSeq;
+  resolveActions("plugin.settings", pluginActionContext("settings", "", { plugin: { id: plugin.id } })).then((actions) => {
+    if (seq !== pluginActionSeq || !host.isConnected) return;
+    const mine = actions.filter((action) => action.pluginId === plugin.id);
+    host.hidden = !mine.length;
+    host.replaceChildren(...mine.map((action, index) => {
+      const button = h("button", index ? "plg-btn" : "plg-primary"); button.type = "button"; button.textContent = action.label;
+      if (action.description) button.title = action.description;
+      button.disabled = !store.connected;
+      button.onclick = () => { close(); runAction(action, action.context); };
+      return button;
+    }));
+  }).catch(() => {});
+  return host;
+}
 function showRemoveConfirm(host, plugin) {
   const confirm = h("div", "plg-remove-confirm"); confirm.append(h("span", null, "Remove “" + esc(plugin.name) + "”?"));
   const cancel = h("button", "plg-quiet", "Cancel"); cancel.type = "button"; cancel.onclick = () => renderBody();
@@ -879,7 +974,23 @@ function showRemoveConfirm(host, plugin) {
 function renderPluginSettingFields(plugin) {
   if (!Array.isArray(plugin.settings) || !plugin.settings.length) return;
   const sec = section("Settings");
-  for (const definition of plugin.settings) sec.append(pluginSetting(plugin, definition));
+  const groups = new Map();
+  for (const definition of plugin.settings) {
+    if (!definition.group) { sec.append(pluginSetting(plugin, definition)); continue; }
+    let group = groups.get(definition.group);
+    if (!group) {
+      group = h("details", "plg-setting-group");
+      const key = plugin.id + ":" + definition.group;
+      group.open = pluginSettingGroups.has(key);
+      group.style.cssText = "border-top:1px solid var(--border);padding:14px 0 4px;margin-top:10px";
+      const title = h("summary", ""); title.textContent = definition.group;
+      title.style.cssText = "cursor:pointer;color:var(--dim);font-size:13px;font-weight:550;padding:4px 0 12px";
+      group.append(title); group.addEventListener("toggle", () => { if (group.open) pluginSettingGroups.add(key); else pluginSettingGroups.delete(key); });
+      groups.set(definition.group, group);
+    }
+    group.append(pluginSetting(plugin, definition));
+  }
+  for (const group of groups.values()) sec.append(group);
   els.body.append(sec);
 }
 function pluginSetting(plugin, definition) {
@@ -980,7 +1091,7 @@ function renderNotifications() {
   sec.append(soundRow);
   sec.append(selectRow("Sound", SOUND_OPTS, "id", prefs.pick, (v) => setPref("pick", v), () => previewSound("sound")));
   sec.append(selectRow("Minimum work before alerting", MINWORK_OPTS, "v", prefs.minWorkSec, (v) => setPref("minWorkSec", Number(v))));
-  sec.append(toggleRow("Browser alerts", "A desktop notification when the tab is hidden.", !!prefs.browser, (v) => { if (v) enableBrowser(); else setPref("browser", false); }));
+  sec.append(toggleRow(isDesktop() ? "Desktop alerts" : "Browser alerts", isDesktop() ? "A notification when CliDeck’s window isn’t in front." : "A desktop notification when the tab is hidden.", !!prefs.browser, (v) => { if (v) enableBrowser(); else setPref("browser", false); }));
   const perm = notifyPermission();
   if (perm === "denied") sec.append(h("div", "set-hint warn", "Notifications are blocked — enable them for this site in your browser settings."));
   else if (perm === "unsupported") sec.append(h("div", "set-hint", "This browser doesn't support notifications."));

@@ -1,6 +1,6 @@
 export type PluginEventType =
   | 'session.created' | 'session.closed' | 'turn.user' | 'agent.final'
-  | 'status' | 'menu' | 'content.show' | 'config' | 'output';
+  | 'status' | 'menu' | 'content.show' | 'config' | 'output' | 'session.reply' | 'user.notice';
 
 export interface PluginEvent {
   type: PluginEventType;
@@ -55,6 +55,8 @@ export interface PluginContent {
 
 export interface PluginServerApi {
   readonly apiVersion: 1;
+  /** Supplied by the running engine. Older engines may omit this object. */
+  readonly capabilities?: Readonly<{ sessionSteer?: boolean; boundedTurns?: boolean }>;
   readonly engineVersion: string;
   readonly id: string;
   readonly dir: string;
@@ -74,8 +76,24 @@ export interface PluginServerApi {
   getSession(id: string): Promise<SessionSnapshot | null>;
   getSessions(): Promise<SessionSnapshot[]>;
   getProjects(): Promise<object[]>;
-  getTurns(id: string, count?: number): Promise<Turn[]>;
+  /** maxChars (1..64000) bounds total returned text and reads at most 1 MiB from the tail.
+   * Requires capabilities.boundedTurns. Keeps newest text; the first turn may be clipped. */
+  getTurns(id: string, count?: number, maxChars?: number): Promise<Turn[]>;
+  /** Resolves after confirmed submission; rejects on refusal/interruption. Do not blindly resend. */
   sendPrompt(id: string, text: string): Promise<boolean>;
+  /** Stable IDs require identical session/text/options. steer permits busy delivery only; it never owns that turn's reply. */
+  submitRequest(sessionId: string, requestId: string, text: string, options?: { resume?: boolean; steer?: boolean }): Promise<{ state: 'waiting' | 'sent' | 'uncertain' | 'error'; message: string; steered?: boolean }>;
+  getRequests(): Promise<Array<{ id: string; sessionId: string; state: string; answer?: string; message: string; steered?: boolean }>>;
+  /** Releases a finished request; returns false for uncertain submission. Never stops unrelated agent work. */
+  releaseRequest(id: string): Promise<boolean>;
+  /** After inspecting the terminal, clear uncertain submission without resending. */
+  acknowledgeRequest(id: string): Promise<boolean>;
+  cancelRequest(id: string): Promise<boolean>;
+  reportError(sessionId: string, key: string, text: string): Promise<unknown>;
+  clearError(key: string): Promise<boolean>;
+  notifyUser(sessionId: string, text: string): Promise<{ id: string; sessionId: string; text: string; at: number }>;
+  getNotifications(): Promise<Array<{ id: string; sessionId: string; text: string; at: number }>>;
+  readNotification(id: string): Promise<boolean>;
   writeInput(id: string, data: string): Promise<boolean>;
   createSession(options: object): Promise<SessionSnapshot>;
   closeSession(id: string): Promise<boolean>;
@@ -90,6 +108,8 @@ export interface PluginServerApi {
 }
 
 export interface PluginActionContext {
+  /** Present for actions rendered on a plugin's Settings card. */
+  plugin?: { id: string };
   /** `anchor` is an opaque host token for WHERE a terminal selection sits. Carry it back verbatim
    *  (`playAudio`'s `readAlong.anchor`, a cache key); never parse it. Empty off the terminal surface. */
   selection?: { text: string; surface?: string; anchor?: string };
@@ -104,7 +124,11 @@ export interface PluginAction {
   label: string;
   icon?: string;
   description?: string;
-  placements: Array<'terminal.context' | 'viewer.context' | 'terminal.header' | 'viewer.header' | 'session.menu' | 'project.menu' | 'toolbar'>;
+  /** terminal.primary can show the icon alone; label remains its accessible name. */
+  iconOnly?: boolean;
+  /** Optional toggle state for terminal.primary, exposed as aria-pressed. */
+  pressed?: boolean;
+  placements: Array<'terminal.context' | 'viewer.context' | 'terminal.header' | 'terminal.primary' | 'terminal.voice' | 'viewer.header' | 'session.menu' | 'project.menu' | 'toolbar' | 'plugin.settings'>;
   when?: (context: PluginActionContext) => boolean;
   run(context: PluginActionContext): unknown;
 }
@@ -146,6 +170,17 @@ export interface PluginClientSettings {
 
 export interface PluginClientApi {
   readonly id: string;
+  /** Supplied by the browser host; older hosts omit capabilities. */
+  readonly capabilities?: Readonly<{ realtimeAudio?: boolean }>;
+  /** Opens this plugin's Settings card, never an arbitrary plugin. */
+  openSettings(): Promise<boolean>;
+  onActiveSessionChange(handler: (focus: PluginSessionFocus) => unknown): () => void;
+  /** signal cancels a pending opening, before an id is returned. After opening, close by id. */
+  openRealtimeAudio(options: { sessionId: string; channelLabel?: string; signal?: AbortSignal }): Promise<{ id: string; offerSdp: string }>;
+  setRealtimeAudioAnswer(id: string, sdp: string): Promise<boolean>;
+  sendRealtimeAudioData(id: string, data: string): Promise<boolean>;
+  closeRealtimeAudio(id: string): Promise<boolean>;
+  onRealtimeAudioEvent(handler: (event: PluginRealtimeAudioEvent) => unknown): () => void;
   send(event: string, data?: unknown): void;
   onMessage(event: string, handler: (data: unknown) => unknown): () => void;
   registerAction(action: PluginAction): () => void;
@@ -185,6 +220,33 @@ export interface PluginClientApi {
    *  prepared when they stopped. Call `stopAudio()` after the last part to put the transport away. */
   playAudioAndWait(buffer: ArrayBuffer, options?: PluginAudioOptions): Promise<boolean>;
   stopAudio(): void;
+  startMicrophone(): Promise<PluginMicrophoneInfo>;
+  stopMicrophone(): Promise<boolean>;
+  onMicrophoneData(handler: (buffer: ArrayBuffer, info: PluginMicrophoneInfo) => unknown): () => void;
+  onMicrophoneState(handler: (state: { state: 'listening' | 'stopped' | 'ended' }) => unknown): () => void;
+}
+
+export interface PluginSessionFocus {
+  session: PluginClientSessionSnapshot | null;
+  focused: boolean;
+  visible: boolean;
+  connected: boolean;
+}
+
+export interface PluginRealtimeAudioEvent {
+  id: string;
+  sessionId: string;
+  type: 'state' | 'data' | 'error';
+  /** connected means the data channel is open and sendRealtimeAudioData may be used. */
+  state?: 'connecting' | 'connected' | 'closed';
+  data?: string;
+  error?: string;
+}
+
+export interface PluginMicrophoneInfo {
+  sampleRate: 16000;
+  channels: 1;
+  format: 'pcm-s16le';
 }
 
 export interface PluginAudioOptions {

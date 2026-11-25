@@ -5,6 +5,7 @@
 import { store } from "./store.js";
 import { updateConfig } from "./ws.js";
 import { basename, firstLine, shortId } from "./util.js";
+import { isDesktop, desktopNotify } from "./ui/desktop.js";
 
 export const SOUND_OPTS = [
   { id: "default-beep", label: "Default" }, { id: "soft-beep", label: "Soft" },
@@ -49,7 +50,9 @@ function onIdle(id, workMs) {
   if (!s || s.muted) return;
   const backgrounded = docHidden() || store.activeId !== id;
   if (prefs.sound && backgrounded && workMs >= (prefs.minWorkSec || 0) * 1000) play(prefs.pick);
-  if (prefs.browser && docHidden() && canNotify() && Notification.permission === "granted") fireNotification(s);
+  // The desktop app counts as "away" as soon as its window loses focus; a browser tab only once it is hidden.
+  const away = isDesktop() ? !document.hasFocus() : docHidden();
+  if (prefs.browser && away && canNotify() && Notification.permission === "granted") fireNotification(s);
 }
 
 // dispatch cue when /ask injects into a session — suppressed if the TARGET is muted (v1 app.js:40-46).
@@ -65,6 +68,7 @@ function fireNotification(s) {
   const group = basename(s.cwd);
   const title = group && group !== "/" ? group + ": " + name : name;
   const preview = firstLine(s.latestAgent);
+  if (desktopNotify({ title, body: preview ? "Now idle · " + preview : "Now idle", sessionId: s.id })) return;   // native; click → focus-session
   try {
     const n = new Notification(title, { body: preview ? "Now idle · " + preview : "Now idle", tag: s.id });   // tag dedupes per session
     n.onclick = () => { try { window.focus(); } catch {} store.select(s.id); n.close(); };

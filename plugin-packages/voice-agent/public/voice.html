@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Talk to this session</title>
+<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="voice.css">
+</head>
+<body>
+<main class="voice-page">
+  <header class="voice-heading"><div><p class="eyebrow">VOICE AGENT</p><h1>Talk to this session</h1><p class="intro">Ask a question. Choose a next step. Keep the conversation going.</p></div><div><button id="usage" class="quiet" type="button">Usage & cost</button><button id="settings" class="quiet" type="button">Voice settings</button></div></header>
+  <section class="conversation" aria-labelledby="session-name">
+    <div class="session-line"><span class="session-dot" aria-hidden="true"></span><span id="session-name">Your session</span><span id="connection" class="connection">Getting ready</span></div>
+    <div class="voice-stage" id="stage" data-state="off">
+      <div class="voice-symbol" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <h2 id="headline">A conversation, without typing</h2>
+      <p id="description">Your microphone stays off until you start.</p>
+      <div class="main-actions"><button id="primary" class="primary" type="button" disabled>Getting ready…</button><button id="end" class="secondary" type="button" hidden>Stop voice</button></div>
+      <p class="focus-note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="13" rx="5"/><path d="M4 11a8 8 0 0 0 16 0M12 19v3"/></svg><span id="focus-note">Switching to another session pauses this microphone and its sound.</span></p>
+    </div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <div id="request" class="notice request" role="status" hidden></div>
+  </section>
+  <section id="setup" class="setup" aria-labelledby="setup-heading" hidden>
+    <div class="step-number">1</div><div class="setup-copy"><h2 id="setup-heading">Connect OpenAI once</h2><p>OpenAI provides the voice. Add an API key, then choose a voice you like. No phone account or telephone number needed.</p><p class="cost-note">An OpenAI API account is billed separately from a ChatGPT subscription.</p><div class="setup-actions"><button id="add-key" class="primary small" type="button">Add API key in settings</button><button id="get-key" class="quiet" type="button">Get an OpenAI key ↗</button></div></div>
+  </section>
+  <section id="ready" class="ready-row" hidden><span id="ready-text">OpenAI key saved</span><button id="check" class="quiet" type="button">Check connection</button></section>
+  <section class="try-section" id="suggestions" aria-label="Things you can say"><p class="eyebrow">TRY SAYING</p><div class="suggestions"><span>“What’s the recap?”</span><span>“What should we do next?”</span><span>“Let’s go with option B.”</span></div></section>
+  <details class="transcript" id="transcript-section" hidden><summary>Recent conversation <span>Text only · saved with this session</span></summary><div id="transcript"></div></details>
+  <footer><p>Voice can ask your session agent to do work. Pausing voice leaves that work running.</p><button id="calls" class="quiet" type="button">Phone calls <span class="optional">optional</span></button></footer>
+  <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+</main>
+<script src="voice.js"></script>
+</body></html>

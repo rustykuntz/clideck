@@ -28,6 +28,10 @@ const DEFAULTS = Object.freeze({
   playbackRate: 1,
 });
 
+const CLAIM_REPLY_MS = 4_000;
+const ALIVE_MS = 20_000;
+const STOPPED_EARLY = 'Playback was stopped or replaced before it finished.';
+
 const playbackRate = value => [1, 1.1, 1.25, 1.5].includes(Number(value)) ? Number(value) : 1;
 
 let preferences = { ...DEFAULTS };
@@ -236,7 +240,16 @@ async function synthesize(engine, sourceText, settings, style, cancelled = () =>
   return { audio, cues };
 }
 
-async function speak(api, rawText, target, autoToken = '') {
+function playbackError(error) {
+  const message = error?.message || String(error);
+  return /NotAllowed|not allowed|interact|gesture/i.test(message)
+    ? 'The browser blocked audio. Click anywhere in the CliDeck window, then try again.'
+    : message;
+}
+
+// `report` is set only for an agent's speak request: answered once, 'finished' only after the last clip
+// played to its natural end.
+async function speak(api, rawText, target, autoToken = '', report = null) {
   const raw = String(rawText || '');
   const sourceText = raw.trim();
   if (!sourceText) return false;
@@ -252,13 +265,16 @@ async function speak(api, rawText, target, autoToken = '') {
   };
   const key = speechKey(sourceText, settings);
   if (autoToken && reading && !reading.autoToken) return false;
-  if (!autoToken && reading?.key === key && targetKey(reading.target) === targetKey(target)) {
+  // Toggling a cached clip is for people. An agent asking again always gets a fresh reading.
+  if (!autoToken && !report && reading?.key === key && targetKey(reading.target) === targetKey(target)) {
     try { if (await api.toggleAudio?.()) return true; } catch {}
     return false;
   }
   if (reading) { reading = null; api.stopAudio?.(); }
-  if (!autoToken && speechCache?.key === key) return toggleCached(api, key, target);
-  const job = { key, target, autoToken, sequence: `supertonic-${Date.now()}-${++sequence}` };
+  if (!autoToken && !report && speechCache?.key === key) return toggleCached(api, key, target);
+  const job = {
+    key, target, autoToken, requestId: report?.requestId || '', sequence: `supertonic-${Date.now()}-${++sequence}`,
+  };
   reading = job;
   const cancelled = () => reading !== job;
   try {
@@ -273,7 +289,7 @@ async function speak(api, rawText, target, autoToken = '') {
         .map(part => ({ start: block.start + part.start, end: block.start + part.end })));
     if (!parts.length) return false;
     const long = parts.length > 1;
-    if ((long || autoToken) && typeof api.playAudioAndWait !== 'function') throw new Error('Refresh CliDeck to enable automatic and long-document reading.');
+    if ((long || autoToken || report) && typeof api.playAudioAndWait !== 'function') throw new Error('Refresh CliDeck to enable automatic and long-document reading.');
     const prepare = (part) => {
       const task = synthesisQueue.then(async () => {
         if (cancelled()) return null;
@@ -300,20 +316,27 @@ async function speak(api, rawText, target, autoToken = '') {
       if (cancelled()) return false;
       if (result.error) throw result.error;
       const clip = result.value;
-      if (!long && !autoToken) {
+      if (!long && !autoToken && !report) {
         speechCache = { ...clip, wav: clip.wav.slice(0) };
         api.playAudio(clip.wav, audioOptions(clip));
         return true;
       }
       // At most the playing clip and ONE prepared clip; never accumulate a document's audio in memory.
       if (index + 1 < parts.length) pending = prepare(parts[index + 1]);
+      job.playing = true; // from here the plugin's audio belongs to this reading
       if (!await api.playAudioAndWait(clip.wav, { ...audioOptions(clip), sequence: job.sequence })) return false;
     }
     if (cancelled()) return false;
     api.stopAudio?.();
+    report?.('finished');
     return true;
   } catch (error) {
-    if (!cancelled()) { api.stopAudio?.(); progress(api, error?.message || String(error), 'error'); }
+    if (!cancelled()) {
+      const message = playbackError(error);
+      api.stopAudio?.();
+      progress(api, message, 'error');
+      report?.('failed', message);
+    }
     return false;
   } finally {
     if (!cancelled()) reading = null;
@@ -393,6 +416,55 @@ export async function activate(api) {
     preferences = { ...DEFAULTS, ...(value || {}) };
     bindHotkey();
   }));
+  // Conversation hosts can prepare speech before the first reply arrives.
+  cleanups.push(api.onMessage('warmup', async () => {
+    try {
+      const engine = await runtime(api);
+      await voiceStyle(engine, preferences.voice);
+      api.send('voice-ready', { ready: true });
+    } catch (error) { api.send('voice-ready', { ready: false, error: playbackError(error) }); }
+  }));
+  // Agent speak requests: only a browser showing the caller's session asks to play it, and only
+  // the one the server picks does. The result goes back to the waiting `supertonic/speak` command.
+  const claims = new Map();
+  cleanups.push(api.onMessage('speak-claim', (value) => {
+    const settle = claims.get(value?.requestId);
+    if (settle) settle(value.granted === true && typeof value.claim === 'string' ? value.claim : '');
+  }));
+  const claimAgentRequest = requestId => new Promise((resolve) => {
+    const timer = setTimeout(() => settle(''), CLAIM_REPLY_MS);
+    const settle = (claim) => { clearTimeout(timer); claims.delete(requestId); resolve(claim); };
+    claims.set(requestId, settle);
+    api.send('speak-claim', { requestId });
+  });
+  const agentSpeak = async (value) => {
+    const session = await api.getActiveSession();
+    if (value.sessionId && value.sessionId !== session?.id) return;
+    const claim = await claimAgentRequest(value.requestId);
+    if (!claim) return;
+    let answered = false;
+    const report = (status, message = '') => {
+      if (answered) return;
+      answered = true;
+      api.send('speak-result', {
+        requestId: value.requestId, claim, status, ...(message ? { message: String(message).slice(0, 300) } : {}),
+      });
+    };
+    report.requestId = value.requestId;
+    const alive = setInterval(() => api.send('speak-alive', { requestId: value.requestId, claim }), ALIVE_MS);
+    try {
+      if (!await speak(api, value.text, { surface: 'terminal', sessionId: value.sessionId }, '', report)) {
+        report('failed', STOPPED_EARLY);
+      }
+    } catch (error) {
+      report('failed', error?.message || String(error));
+    } finally {
+      clearInterval(alive);
+    }
+  };
+  cleanups.push(api.onMessage('speak-request', (value) => {
+    if (typeof value?.requestId === 'string' && value.requestId) return agentSpeak(value);
+  }));
   cleanups.push(api.onMessage('speak', async (value) => {
     const automatic = value?.source === 'auto';
     const token = automatic && typeof value.token === 'string' ? value.token : '';
@@ -411,6 +483,15 @@ export async function activate(api) {
     }
   }));
   cleanups.push(api.onMessage('speak-cancel', value => {
+    // The server gave up on this agent request: end it, and stop the audio only if it is this reading's.
+    if (value?.requestId) {
+      if (reading?.requestId === value.requestId) {
+        const job = reading;
+        reading = null;
+        if (job.playing) api.stopAudio?.();
+      }
+      return;
+    }
     if (value?.token === currentAutoToken) currentAutoToken = '';
     if (value?.token && reading?.autoToken === value.token) reading = null;
     // The host stops only this token's audio; never stop a newer manual read here.

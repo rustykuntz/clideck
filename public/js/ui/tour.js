@@ -54,10 +54,10 @@ const STOPS = [
   },
   {
     id: "prompts",
-    anchor: () => byId("prompts-btn"),
+    anchor: () => byId("app-menu"),
     title: "Saved prompts",
-    body: "Save project introductions, links and instructions in Prompts, then type // in any terminal to find and reuse them.",
-    fallback: "Save project introductions, links and instructions in Prompts, then type // in any terminal to find and reuse them.",
+    body: "Open this menu for Prompts. Save project introductions, links and instructions there, then type // in any terminal to find and reuse them.",
+    fallback: "Prompts are in the menu at the bottom left. Save project introductions, links and instructions there, then type // in any terminal to find and reuse them.",
   },
   {
     id: "ask",

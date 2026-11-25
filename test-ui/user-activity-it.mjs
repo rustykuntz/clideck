@@ -93,9 +93,14 @@ try {
   ws.clear(); mount._fire("compositionupdate", { type: "compositionupdate", isTrusted: false, target: terminal.textarea });
   ok("untrusted composition sends nothing", inputs().length === 0);
 
-  ws.clear(); terminal.dataHandler("x"); terminal.dataHandler("\x1b[12;40R"); terminal.dataHandler("\x1b[I");
+  ws.clear(); terminal.dataHandler("x"); terminal.dataHandler("\x1b[12;40R"); terminal.dataHandler("\x1b[?62;c");
   ok("raw xterm data, including protocol replies, is never marked",
-    inputs().length === 3 && inputs().every((m) => !("userActivity" in m)) && inputs()[1].data === "\x1b[12;40R");
+    inputs().length === 3 && inputs().every((m) => !("userActivity" in m)) && inputs()[1].data === "\x1b[12;40R" && inputs()[2].data === "\x1b[?62;c");
+  ws.clear(); terminal.dataHandler("\x1b[I"); terminal.dataHandler("\x1b[O"); terminal.dataHandler("\x1b[O\x1b[I\x1b[O");
+  ok("pure focus-in/out reports (single or concatenated) are not sent, so focus can't cancel a phone reply", inputs().length === 0);
+  ws.clear(); terminal.dataHandler("\x1b[Ia"); terminal.dataHandler("\x1b[A"); terminal.dataHandler("\x1b[200~\x1b[I\x1b[201~");
+  ok("keys, arrows and paste that merely contain a focus sequence still go through",
+    inputs().map((m) => m.data).join("|") === "\x1b[Ia|\x1b[A|\x1b[200~\x1b[I\x1b[201~");
 
   ws.clear();
   mount._fire("paste", { type: "paste", isTrusted: true, target: terminal.textarea, clipboardData: { getData: () => "hello" } });

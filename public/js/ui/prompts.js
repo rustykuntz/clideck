@@ -365,7 +365,7 @@ let lastTriggerTime = 0, lastTriggerKey = "", lastKeyWasPrintable = false;
 // ── typo tolerance: an APPENDED tail, never a re-rank ──────────────────────────────────────────────
 // The LITERAL pipeline above runs first and this scores only the items it REJECTED, so a literal result can
 // never be displaced, reordered or duplicated by the tail — true by construction, not by a filter someone has
-// to keep correct later. `test-ui/picker-order-it.mjs` records that order.
+// to keep correct later.
 //
 // ⚠️ NEVER PROMPT BODIES. A row shows `truncate(m.text, 80)`, so a near-match 2000 characters into a body
 // renders a row whose visible text contains nothing like what was typed. A result the user cannot see the

@@ -224,7 +224,7 @@ clideck --help
 `CLIDECK_PORT` or `PORT` also sets the port. CliDeck binds to localhost and stores
 its data in `~/.clideck-next` by default. Agent CLIs use their own network connections.
 
-For development: `npm ci`, `npm test`, then `npm start`.
+To run from source, use `npm ci`, then `npm start`.
 
 ## Coming from v1
 

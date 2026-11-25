@@ -1,3 +1,16 @@
 node_modules/
 *.log
 .DS_Store
+
+# Kept in the development checkout
+test/
+test-ui/
+tests/
+__tests__/
+*.test.*
+/parity/
+/smoke*.js
+/desktop/scripts/smoke*.cjs
+/experimental/
+/.captures/
+/*HANDOFF*.md

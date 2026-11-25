@@ -12,6 +12,4 @@ instructions and may sound different in pace, tone or language.
 Generated through the [official Live primary WebSocket API](https://developers.openai.com/api/reference/resources/live/primary-websocket),
 with recording storage disabled. PCM output was trimmed, loudness-normalized
 and encoded as mono 24 kHz MP3 at 64 kbps. No user speech or session context was
-included. The opt-in maintainer tool is
-`parity/probes/generate-voice-previews.cjs --generate [voice...]`; it uses billable
-API sessions and skips existing files.
+included.

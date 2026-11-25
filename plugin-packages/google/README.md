@@ -76,15 +76,6 @@ tools using that same gog profile. It does not revoke Google's grant; manage tha
 separately in your Google account. Removing a connection file is refused while
 saved accounts use it.
 
-Developers can test a real fresh download on Mac or Ubuntu without removing any
-existing gog: `node parity/probes/gog-install-smoke.cjs`. It uses a temporary
-installation directory and empty gog profile, checks the actual plugin's
-status/help/version/error commands and access rules, then deletes its test files.
-It never reads existing accounts, calls Google APIs or starts sign-in. During a
-download outage, `CLIDECK_GOG_SMOKE_ARCHIVE=/path/to/official-archive.tar.gz`
-supplies the archive for this test; the installer's pinned checksum and size
-checks still apply. This test option does not change production downloads.
-
 ## Agent access
 
 Connect each email once with **Add account**, then open **Agent access** for that

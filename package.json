@@ -22,19 +22,7 @@
     "UPGRADING.md"
   ],
   "scripts": {
-    "start": "node bin/clideck.js",
-    "smoke": "node smoke.js",
-    "smoke:codex": "node smoke-codex.js",
-    "smoke:gemini": "node smoke-gemini.js",
-    "smoke:opencode": "node smoke-opencode.js",
-    "smoke:pi": "node smoke-pi.js",
-    "smoke:menu": "node smoke-menu.js",
-    "smoke:multi": "node smoke-multi.js",
-    "smoke:ask": "node smoke-ask.js",
-    "smoke:resume": "node smoke-resume.js",
-    "smoke:shell": "node smoke-shell.js",
-    "test": "node --test",
-    "test:backend": "node --test test/*.test.js"
+    "start": "node bin/clideck.js"
   },
   "dependencies": {
     "@xterm/addon-unicode11": "0.9.0",

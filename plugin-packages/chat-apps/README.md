@@ -75,10 +75,3 @@ clideck chat-apps/whatsapp disconnect
 `bind` defaults to the calling agent. Always obtain the user's requested group
 and agent; never guess a destination or route unrelated chats. The user must scan
 the pairing QR themselves. Agent status deliberately omits the QR credential.
-
-## Verification
-
-`node --test test/chat-apps.test.js` tests routing, replay/loop prevention,
-uncertainty/recovery, group membership, supported agents and credential handling.
-`node test-ui/chat-apps-plugin-it.mjs` exercises the setup UI.
-Live phone pairing and real group round trips require the user's account.

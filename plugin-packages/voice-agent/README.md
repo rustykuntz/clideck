@@ -208,10 +208,6 @@ in call records. Other trusted local plugins have the user's filesystem access.
 
 ## Development
 
-Run `node --test test/voice-agent.test.js` from the CliDeck repo. Tests use fake
-providers and an isolated engine; they do not place real calls. UI tests run with
-`node test-ui/voice-agent-plugin-it.mjs`.
-
 `vendor/ws` is the MIT-licensed ws 8.21.0 package, copied from the repo's existing
 dependency with its LICENSE. It is bundled so installing the plugin never needs
 npm. Call logic is in `calls.js`, OpenAI transport in `openai.js`, command/UI

@@ -87,11 +87,3 @@ Engine logs live at `<desktop profile>/logs/engine.log`. UI/plugin state uses th
 same engine protocol in the browser and desktop clients. Native plugin features
 must go through the existing host SDK rather than granting plugin frames Node or
 Electron access.
-
-## Verification
-
-`npm --prefix desktop test` covers native URL boundaries, settings, runtime
-retention, engine reuse, real PTY operation and survival after launcher exit.
-The UI tests cover the desktop bridge and browser fallback. Release validation
-must also exercise a packaged app on each supported OS, including native helper
-execution, copy/paste, external sign-in return and close/reopen session continuity.

@@ -12,7 +12,31 @@ for you to review as they go.
 
 *Projects and sessions on the left; the selected agent's terminal on the right.*
 
-**Google Workspace sign-in warning.** Google is still reviewing the permissions requested by CliDeck’s built-in Google Workspace connection. You may see “Google hasn’t verified this app” during sign-in.
+## What’s new in 2.7.0
+
+**Give your agents access to Google Workspace.** Ask an agent to find a client’s email in Gmail, check the meeting time in Calendar and draft a brief in Docs using files from Drive and figures from Sheets. Enable Google Workspace in Settings. For each account, choose which projects and agents can use it, which services they can reach and whether they can make changes. Set a default account for each project or let an agent request a connection for you to approve.
+
+Setup works without an open session. CliDeck prepares the Google helper on supported Mac and Ubuntu systems. Open or copy the Google sign in link, then use the shortcut beside your newly connected account to set up access. You can check, reconnect or disconnect accounts from the same screen.
+
+**Let an agent watch for you.** Ask it to tell you when a build finishes, a report changes or a new item arrives. The engine runs the checks while your computer is awake. Open Monitors to see the schedule, the last five results and which session gets the finding. Filter for checks that need attention, run one now, pause or resume it, clear a pending delivery or delete the check.
+
+**Take a session with you.** Pair Telegram to give a Claude or Codex session its own private topic. Choose which sessions reach your phone while you’re away. For WhatsApp, scan the QR code in the experimental Chat apps plugin and link an agent to a group where you’re the only member. You can send a test, see pending messages and receive a working status and the final reply in that group. Switching windows keeps the reply connected to your phone.
+
+**Talk to your agent.** Ask for a recap and give your Claude or Codex session its next task by voice. Preview voices before turning on the microphone. The waveform shows when the agent listens or speaks. Switching sessions stops the microphone. See voice minutes and estimated cost by day or session. Experimental phone controls also let you supervise outbound calls with a compatible carrier setup.
+
+**Arrange your workspace.** Drag a session to the exact spot you want in its project or another project. The sidebar scrolls as you drag and remembers the order. Drag document tabs like browser tabs or scroll the strip with the mouse wheel. A selected tab slides into view with its close button clear of the toolbar. Switching sessions opens the terminal. Clicking a document notification opens that document.
+
+**Keep a conversation.** Copy a single message or the whole conversation. Download the full saved history as text or Markdown, even when you’re looking at search results or only the latest messages are on screen.
+
+**Find tools and busy processes.** Open the sidebar footer menu for the prompt library, Task Manager, Monitors, plugins and theme. A dot flags monitors that need attention. The session header keeps history, microphone, reading and session actions together. Task Manager groups jobs under their agents and shows shorter process names. Click Process, CPU, RAM, Running or PID to sort. Click again to reverse it. CliDeck remembers your choice.
+
+**Try the desktop preview.** Build it from source on GitHub to open your existing projects and sessions in a desktop window. Native menus, keyboard shortcuts, a collapsible sidebar, unread badges and notifications help you jump to the right agent. Closing the window leaves agents running. Desktop settings cover links, the system tray and opening at login on supported platforms. If startup stalls, you can retry or open the engine logs.
+
+**Read the terminal at a glance.** The context meter turns yellow at 25%, orange at 50% and red at 70%. The last reply clock flags a possible prompt cache expiry after 30 idle minutes for Codex or 60 for Claude Code. Hover or focus it for the token count. Local web addresses and file paths beginning with `~/` are clickable in the terminal. Plain web links work in Markdown previews too.
+
+**Control what you hear.** Turn word highlighting and automatic scrolling off while a document keeps playing. Turn them back on to pick up at the current words. The player remembers your choice and has a separate button to stop and close it. Supertonic reads English dates, ranges, durations and amounts such as “50K” more naturally.
+
+**Other workspace changes.** Agents get an explanation when a monitor or preview fails and a receipt when a reading finishes. Their notifications stay visible until you open the session or dismiss them. Settings lists every bundled plugin, including the four new optional plugins, and labels the folder picker for downloaded plugins. Plugin cards support setup buttons and show their own icons. Menus return keyboard control to the window they open. Missing project folders now get a specific error. When a newer interface is ready, you can refresh the browser while your sessions keep running.
 
 ## Quick start
 
@@ -44,7 +68,7 @@ counts, and activity times let you follow many sessions while working in one.
   highlights that stay visible as you scroll. Filter to unread sessions when
   catching up.
 - **Task Manager.** See running processes, CPU and memory use, grouped by project
-  and agent. Open the bar-chart button beside Plugins. Filter, expand child
+  and agent. Open Task Manager from the sidebar footer menu. Filter, expand child
   processes, and stop a selected job after confirmation. It refreshes only while
   open and visible; available on macOS and Linux.
 - **Saved prompts.** Type `//` to reuse a prompt. `{{session_name}}` and
@@ -62,7 +86,7 @@ without resending it and allows later background messages through.
 
 ## Monitors
 
-Ask an agent to watch something, then open **Monitors** beside Task Manager to see
+Ask an agent to watch something, then open **Monitors** from the sidebar footer menu to see
 its checks, findings, errors and delivery status. Pause, resume, check now or
 delete a monitor there. Commands run independently of agent sessions, while the
 CliDeck engine is running and the computer is awake. After upgrading, restart the engine and refresh your browser to use monitors.
@@ -231,3 +255,5 @@ removed because harnesses provide their own remote access.
 ## License
 
 [MIT](LICENSE)
+
+**Google verification notice.** Google is still reviewing the permissions requested by CliDeck’s Google Workspace connection. You may see “Google hasn’t verified this app” when you sign in.
